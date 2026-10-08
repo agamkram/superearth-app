@@ -1,0 +1,2754 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color:#020308">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#020308" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="SuperEarth" />
+  <meta name="description" content="Hi-res 3D Earth with live sun, space weather, and surface events for your location." />
+  <!-- social-share meta (tier-a) -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Mark Maga" />
+  <meta property="og:title" content="SuperEarth — 3D Earth with live sun for your place" />
+  <meta property="og:description" content="Hi-res 3D Earth with live sun, space weather, and surface events for your location." />
+  <meta property="og:url" content="https://superearth.markmaga.com/" />
+  <link rel="canonical" href="https://superearth.markmaga.com/" />
+  <meta property="og:image" content="https://superearth.markmaga.com/icon-512.png" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="SuperEarth — 3D Earth with live sun for your place" />
+  <meta name="twitter:description" content="Hi-res 3D Earth with live sun, space weather, and surface events for your location." />
+  <meta name="twitter:image" content="https://superearth.markmaga.com/icon-512.png" />
+  <title>SuperEarth — 3D Earth with live sun for your place | Mark Maga</title>
+  <script>
+    /* iOS A2HS: lock fill height before first paint.
+       Phone: screen.height > inner → use screen.
+       iPad: screen.* often *undershoots* inner → add safe-area extra. */
+    (function () {
+      var n = window.navigator;
+      var standalone =
+        n.standalone === true ||
+        window.matchMedia("(display-mode: standalone)").matches ||
+        window.matchMedia("(display-mode: fullscreen)").matches;
+      if (!standalone) return;
+      var root = document.documentElement;
+      root.classList.add("pwa-standalone");
+      var iw = window.innerWidth || 0;
+      var ih = window.innerHeight || 0;
+      var sw = window.screen.width || 0;
+      var sh = window.screen.height || 0;
+      var screenMax = Math.max(sw, sh);
+      var screenMin = Math.min(sw, sh);
+      var fillH = ih >= iw ? Math.max(ih, screenMax) : Math.max(ih, screenMin);
+      var extra = 0;
+      if (Math.min(iw, ih) >= 600 && screenMax < ih - 10) {
+        extra = 20; /* refined to real insetB once body exists */
+      }
+      root.style.setProperty("--pwa-fill-h", fillH + "px");
+      root.style.setProperty("--pwa-extra-b", extra + "px");
+    })();
+  </script>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="favicon.ico" sizes="32x32" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+  <link rel="icon" type="image/png" href="icon-192.png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <link rel="preload" href="earth-2k.jpg" as="image" type="image/jpeg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Michroma&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://unpkg.com" crossorigin />
+  <link rel="modulepreload" href="https://unpkg.com/three@0.160.0/build/three.module.js" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --text: #e8f4fc;
+      --muted: #7eb8d8;
+      --dim: #6aa8cc;
+      --faint: #4a88a8;
+      --cell: transparent;
+      --panel: rgba(18, 22, 30, 0.58);
+      --line: rgba(42, 49, 64, 0.65);
+      --moon: #c8d0e0;
+      --mono: "Inter", system-ui, sans-serif;
+      --font: "Inter", system-ui, sans-serif;
+      /* Compact instrument labels */
+      --label-size: 8px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      min-height: 100%;
+      min-height: -webkit-fill-available;
+      overflow: hidden;
+      background: #020308;
+      color: var(--text);
+      font-family: var(--font);
+      -webkit-text-size-adjust: 100%;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    input,
+    textarea {
+      -webkit-user-select: text;
+      user-select: text;
+    }
+
+    /*
+     * Full-bleed GL stack. Do NOT use max-height:100dvh — undershoots on iOS.
+     * Safari: env() overpaint. Home-screen PWA: height locked to screen (see JS)
+     * because innerHeight stays short of screen.height and clips env() overshoot.
+     */
+    #stage,
+    #moon-host,
+    #touch-plane {
+      position: fixed;
+      top: calc(-1 * env(safe-area-inset-top, 0px));
+      right: calc(-1 * env(safe-area-inset-right, 0px));
+      bottom: calc(-1 * env(safe-area-inset-bottom, 0px));
+      left: calc(-1 * env(safe-area-inset-left, 0px));
+    }
+
+    html.pwa-standalone,
+    html.pwa-standalone body {
+      height: calc(var(--pwa-fill-h, 100%) + var(--pwa-extra-b, 0px));
+      min-height: calc(var(--pwa-fill-h, 100%) + var(--pwa-extra-b, 0px));
+    }
+
+    html.pwa-standalone #stage,
+    html.pwa-standalone #moon-host,
+    html.pwa-standalone #touch-plane {
+      top: 0;
+      right: 0;
+      bottom: auto;
+      left: 0;
+      width: 100%;
+      height: calc(var(--pwa-fill-h, 100%) + var(--pwa-extra-b, 0px));
+    }
+
+    /* Clips the oversized GL canvas; black matches clear color */
+    #moon-host {
+      z-index: 1;
+      overflow: hidden;
+      background: #020308;
+    }
+
+    /* Gesture layer above canvas, under real UI controls */
+    #touch-plane {
+      z-index: 2;
+      touch-action: none;
+      background: transparent;
+    }
+
+    #moon-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      cursor: grab;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      background: #020308;
+    }
+
+    #moon-canvas.is-ready { opacity: 1; }
+    /* PWA: no fade — opacity pop reads as a flash on open */
+    html.pwa-standalone #moon-canvas {
+      transition: none;
+    }
+    #moon-canvas:active { cursor: grabbing; }
+
+    .chrome {
+      position: fixed;
+      z-index: 4;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: calc(0.375in + env(safe-area-inset-top, 0px));
+      padding:
+        env(safe-area-inset-top, 0px)
+        max(1rem, env(safe-area-inset-right))
+        0
+        max(1rem, env(safe-area-inset-left));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      text-align: center;
+    }
+
+    /* Same title treatment as Solar Dashboard (Michroma), CamelCase */
+    .build-mark {
+      position: absolute;
+      right: max(0.45rem, env(safe-area-inset-right));
+      bottom: 1px;
+      font-family: var(--mono);
+      font-size: 8px;
+      letter-spacing: 0.04em;
+      color: var(--faint);
+      line-height: 1;
+    }
+
+    .app-title {
+      margin: 0;
+      font-family: "Michroma", var(--font), system-ui, sans-serif;
+      font-weight: 400;
+      font-size: clamp(1.05rem, 3.2vmin, 1.35rem); /* match LightSlice title */
+      letter-spacing: 0.1em;
+      line-height: 1.15;
+      color: var(--text);
+      text-align: center;
+      text-shadow: 0 1px 12px rgba(0, 0, 0, 0.55);
+    }
+
+    /*
+     * Bottom metrics: one quiet panel, compact instrument rows.
+     * pointer-events:none on shell — only controls capture so 2fs works over empty areas.
+     * Moon zooms over this; un-zoom / Live to use the controls.
+     */
+    .loc-bar {
+      position: fixed;
+      z-index: 3;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      width: 100%;
+      max-width: 430px;
+      margin: 0 auto;
+      padding:
+        0.1rem
+        max(0.3rem, env(safe-area-inset-right))
+        max(0.3rem, env(safe-area-inset-bottom, 0px))
+        max(0.3rem, env(safe-area-inset-left));
+      background: transparent;
+      pointer-events: none;
+      touch-action: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.12rem;
+    }
+
+    .loc-bar input,
+    .loc-bar button,
+    .loc-bar input[type="range"],
+    .loc-bar .cycle,
+    .loc-bar .cycle-controls,
+    .loc-bar .slider-track {
+      pointer-events: auto;
+      touch-action: manipulation;
+    }
+
+    /* Horizontal scrub must win over page/globe pan on iPad Safari */
+    .loc-bar #phase-slider {
+      touch-action: pan-x;
+    }
+
+    :root {
+      --m-row-h: 1.7rem;
+      --m-cell-pad: 2px 0.4rem;
+      --m-cell-gap: 1px;
+    }
+
+    .metrics-panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.18rem 0.14rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.06rem;
+      pointer-events: none;
+    }
+
+    .m-grid {
+      display: grid;
+      /* Modest Phase bias — keep Illum / Cycle / To full readable */
+      grid-template-columns: 1.35fr 0.9fr 1fr 0.85fr;
+      grid-auto-rows: var(--m-row-h);
+      gap: 0;
+      pointer-events: none;
+    }
+
+    /* Station bias — tide times stay compact (clock strings) */
+    .m-grid-3 {
+      grid-template-columns:
+        minmax(0, 1.7fr)
+        minmax(3.6rem, 0.38fr)
+        minmax(3.6rem, 0.38fr)
+        minmax(3.6rem, 0.38fr);
+      grid-auto-rows: var(--m-row-h);
+      gap: 0;
+    }
+
+    /* Rise / high / set + tool strip (actions ≠ stats) */
+    .m-grid-rise {
+      grid-template-columns:
+        minmax(0, 0.82fr) minmax(0, 0.82fr) minmax(0, 0.82fr)
+        minmax(9.6rem, 1.4fr);
+      grid-auto-rows: var(--m-row-h);
+      align-items: stretch;
+      gap: 0;
+    }
+
+    .tool-strip {
+      display: flex;
+      align-items: stretch;
+      gap: 1px;
+      min-width: 9.6rem;
+      width: 100%;
+      padding: 1px;
+      border-radius: 5px;
+      background: rgba(255, 255, 255, 0.05);
+      border: none;
+      pointer-events: auto;
+    }
+
+    #m-station {
+      font-size: 11px;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .vision-btn {
+      flex: 1 1 auto;
+      min-width: 2.7rem;
+      height: 100%;
+      min-height: 0;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--dim);
+      font-family: var(--font);
+      font-size: 8px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      cursor: pointer;
+      touch-action: manipulation;
+      line-height: 1;
+      padding: 0 0.45rem;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #sites-btn {
+      min-width: 3.8rem;
+    }
+
+    /* On only — no hover “third” look */
+    .vision-btn[aria-pressed="true"] {
+      background: rgba(232, 244, 252, 0.18);
+      color: var(--text);
+    }
+
+    #sites-btn[data-mode="famous"] {
+      color: #f0d78c;
+      background: rgba(240, 215, 140, 0.18);
+    }
+
+    #sites-btn[data-mode="landings"] {
+      color: #8bcdf0;
+      background: rgba(104, 188, 232, 0.18);
+    }
+
+    #sites-btn[data-mode="all"] {
+      color: #8fd4a8;
+      background: rgba(107, 191, 138, 0.2);
+    }
+
+    body.is-red-mode .vision-btn {
+      background: transparent;
+      color: var(--dim);
+    }
+
+    body.is-red-mode .vision-btn[aria-pressed="true"] {
+      background: rgba(200, 28, 36, 0.55);
+      color: var(--text);
+    }
+
+    .m-cell {
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      padding: var(--m-cell-pad);
+      min-width: 0;
+      min-height: var(--m-row-h);
+      height: var(--m-row-h);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: stretch;
+      gap: var(--m-cell-gap);
+      overflow: hidden;
+    }
+
+    .m-grid > .m-cell + .m-cell,
+    .m-grid-3 > .m-cell + .m-cell,
+    .m-grid-rise > .m-cell + .m-cell {
+      box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.05);
+    }
+
+    button.m-cell-fact {
+      font: inherit;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+      -webkit-appearance: none;
+      appearance: none;
+      touch-action: manipulation;
+      width: 100%;
+    }
+
+    button.m-cell-fact:active {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .m-cell .k {
+      font-size: var(--label-size);
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--dim);
+      line-height: 1.1;
+      flex: 0 0 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      opacity: 0.9;
+    }
+
+    .m-cell .v {
+      font-family: var(--font);
+      font-weight: 600;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.01em;
+      line-height: 1.15;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 0 0 auto;
+      min-width: 0;
+    }
+
+    .m-cell .v.sm { font-size: 11px; }
+    .m-cell .v.moon {
+      color: var(--moon);
+      font-size: 11px;
+      letter-spacing: -0.015em;
+    }
+
+    /*
+     * Tablets (iPad and similar): phone landscape is excluded via min-height.
+     * Coarse pointer + both sides ≥600px ≈ tablet class across platforms.
+     */
+    @media (pointer: coarse) and (min-width: 600px) and (min-height: 600px) {
+      :root {
+        --m-row-h: 2rem;
+        --m-cell-pad: 3px 0.45rem;
+        --m-cell-gap: 1px;
+        --label-size: 9px;
+      }
+
+      .loc-bar {
+        max-width: 620px;
+        gap: 0.16rem;
+        padding-left: max(0.55rem, env(safe-area-inset-left));
+        padding-right: max(0.55rem, env(safe-area-inset-right));
+      }
+
+      .metrics-panel {
+        border-radius: 12px;
+        padding: 0.22rem 0.18rem;
+        gap: 0.08rem;
+      }
+
+      .m-grid {
+        grid-template-columns: 1.35fr 0.9fr 1fr 0.85fr;
+      }
+
+      .m-grid-3 {
+        grid-template-columns:
+          minmax(0, 1.7fr)
+          minmax(4.1rem, 0.38fr)
+          minmax(4.1rem, 0.38fr)
+          minmax(4.1rem, 0.38fr);
+      }
+
+      .m-cell .k {
+        letter-spacing: 0.03em;
+      }
+
+      .m-cell .v,
+      .m-cell .v.sm,
+      .m-cell .v.moon {
+        font-size: 13px;
+      }
+
+      #m-station {
+        font-size: 12px;
+      }
+
+      .m-grid-rise {
+        grid-template-columns:
+          minmax(0, 0.82fr) minmax(0, 0.82fr) minmax(0, 0.82fr)
+          minmax(11rem, 1.4fr);
+      }
+
+      .vision-btn {
+        font-size: 10px;
+        min-width: 2.8rem;
+        padding: 0 0.45rem;
+      }
+
+      #sites-btn {
+        min-width: 4.2rem;
+      }
+
+      .loc-strip {
+        gap: 0;
+      }
+
+      .loc-card {
+        max-height: 2.35rem;
+        border-radius: 0;
+      }
+
+      .loc-place-row {
+        min-height: 1.2rem;
+        height: 1.2rem;
+        gap: 0.3rem;
+      }
+
+      .loc-coords {
+        font-size: 13px;
+      }
+
+      .loc-place-row button,
+      .geo-btn,
+      .hemi button {
+        font-size: 10px;
+        min-height: 1.2rem;
+      }
+
+      .hemi {
+        min-height: 1.2rem;
+        height: 1.2rem;
+      }
+
+      .cycle-date {
+        font-size: 13px;
+      }
+
+      .live-btn {
+        font-size: 11px;
+        min-height: 1.4rem;
+        padding: 0 0.55rem;
+      }
+
+      .slider-track {
+        height: 56px;
+        margin: -6px 0;
+        padding: 6px 0;
+        box-sizing: content-box;
+      }
+
+      #phase-slider {
+        height: 56px;
+      }
+
+      #phase-slider::-webkit-slider-runnable-track {
+        height: 10px;
+      }
+
+      #phase-slider::-webkit-slider-thumb {
+        width: 44px;
+        height: 44px;
+        margin-top: -17px;
+      }
+
+      #phase-slider::-moz-range-track {
+        height: 10px;
+      }
+
+      #phase-slider::-moz-range-thumb {
+        width: 44px;
+        height: 44px;
+      }
+    }
+
+    /*
+     * Phone landscape only (short height). iPad landscape is taller (≥600px)
+     * and keeps the normal / tablet layouts. Shrink stats so the moon stays visible.
+     */
+    @media (orientation: landscape) and (max-height: 500px) {
+      .chrome {
+        height: calc(0.28in + env(safe-area-inset-top, 0px));
+      }
+
+      .app-title {
+        font-size: 0.16in;
+      }
+
+      .loc-bar {
+        max-width: min(620px, 96vw);
+        gap: 0.06rem;
+        padding-top: 0.06rem;
+        /* zoom reduces used layout height on iOS (transform would not) */
+        zoom: 0.72;
+      }
+
+      :root {
+        --m-row-h: 1.35rem;
+        --m-cell-pad: 1px 0.28rem;
+        --m-cell-gap: 0;
+        --label-size: 6.5px;
+      }
+
+      .metrics-panel {
+        gap: 0.06rem;
+      }
+
+      .m-cell .v,
+      .m-cell .v.sm,
+      .m-cell .v.moon {
+        font-size: 9px;
+      }
+
+      .vision-btn {
+        font-size: 7px;
+        min-width: 2rem;
+        padding: 0 0.25rem;
+      }
+
+      #sites-btn {
+        min-width: 2.8rem;
+      }
+
+      .loc-strip {
+        gap: 0;
+      }
+
+      .cycle {
+        padding: 0.06rem 0.22rem 0.02rem;
+        gap: 0.06rem;
+      }
+    }
+
+    /* Phone portrait: trim space under slider / Live row */
+    @media (pointer: coarse) and (max-width: 599px) {
+      .cycle {
+        padding-bottom: 1px;
+      }
+    }
+
+    /* Compact location + hemi row (desktop was ballooning under the cycle slider) */
+    .loc-strip {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+      flex: 0 0 auto;
+      align-items: stretch;
+      min-height: 0;
+      margin-top: 0.06rem;
+      padding-top: 0.06rem;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    .loc-card {
+      display: flex;
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      min-width: 0;
+      min-height: 0;
+      height: auto;
+      max-height: 2.05rem;
+      box-sizing: border-box;
+    }
+
+    .loc-card-place,
+    .loc-card.hemi-card {
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: space-between;
+      gap: 0.12rem;
+      padding: 0.12rem 0.35rem;
+    }
+
+    .loc-card.hemi-card {
+      box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.05);
+    }
+
+    .loc-label,
+    .hemi-label {
+      font-size: var(--label-size);
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--dim);
+      line-height: 1.15;
+      text-align: left;
+      margin: 0;
+      flex: 0 0 auto;
+    }
+
+    .hemi-label {
+      text-align: center;
+    }
+
+    .loc-place-row {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      min-width: 0;
+      width: 100%;
+      flex: 0 0 auto;
+      min-height: 1.15rem;
+      height: 1.15rem;
+    }
+
+    .loc-coords {
+      font-family: var(--font);
+      font-size: 11px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.01em;
+      line-height: 1.1;
+      flex: 1 1 auto;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text);
+    }
+
+    .geo-btn {
+      flex: 0 0 auto;
+      width: 1.4rem;
+      height: 1.15rem;
+      min-width: 1.4rem;
+      padding: 0 !important;
+      display: inline-flex !important;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      line-height: 0;
+    }
+
+    .geo-btn svg {
+      width: 12px;
+      height: 12px;
+      display: block;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.75;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .hemi {
+      display: flex;
+      gap: 2px;
+      flex: 0 0 auto;
+      width: 100%;
+      min-height: 1.15rem;
+      height: 1.15rem;
+      align-items: stretch;
+    }
+
+    .hemi button {
+      flex: 1 1 0;
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+      padding: 0 0.15rem;
+      font-size: 8px;
+      letter-spacing: 0.02em;
+      line-height: 1.1;
+    }
+
+    .loc-card button {
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 5px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 8px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      padding: 0.08rem 0.26rem;
+      cursor: pointer;
+      line-height: 1.05;
+      white-space: nowrap;
+    }
+
+    .hemi button {
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 5px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      font-family: var(--font);
+      font-weight: 600;
+      text-transform: uppercase;
+      cursor: pointer;
+      line-height: 1.05;
+      white-space: nowrap;
+    }
+
+    .hemi button.active {
+      background: rgba(255, 255, 255, 0.14);
+      border-color: rgba(255, 255, 255, 0.28);
+    }
+
+    /* Hidden lat/lon still updated for hemi flip / storage */
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    /* Map location picker (Edit) */
+    .loc-dialog {
+      position: fixed;
+      inset: 0;
+      z-index: 300;
+      margin: 0;
+      padding: 0;
+      max-width: none;
+      max-height: none;
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: rgba(2, 3, 8, 0.72);
+      color: var(--text);
+    }
+
+    .loc-dialog[hidden] {
+      display: none !important;
+    }
+
+    .loc-dialog-sheet {
+      position: absolute;
+      left: 50%;
+      bottom: 0;
+      transform: translateX(-50%);
+      width: min(430px, 100%);
+      max-height: min(78vh, 560px);
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      background: #0a0e16;
+      border: 1px solid var(--line);
+      border-bottom: none;
+      border-radius: 12px 12px 0 0;
+      overflow: hidden;
+      padding-bottom: max(0.4rem, env(safe-area-inset-bottom));
+      box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.55);
+      pointer-events: auto;
+    }
+
+    .loc-dialog-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.45rem 0.55rem;
+      border-bottom: 1px solid var(--line);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--dim);
+    }
+
+    .loc-dialog-head button,
+    .loc-dialog-foot button {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.28rem 0.55rem;
+      cursor: pointer;
+      pointer-events: auto;
+      touch-action: manipulation;
+    }
+
+    .loc-dialog-foot button.primary {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(255, 255, 255, 0.22);
+    }
+
+    .loc-map {
+      height: min(48vh, 340px);
+      width: 100%;
+      background: #12161e;
+      z-index: 0;
+      touch-action: none;
+    }
+
+    .loc-dialog-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.4rem 0.55rem 0.15rem;
+    }
+
+    .loc-map-coords {
+      font-family: var(--font);
+      font-size: 11px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Mission pin detail — short sheet over the globe */
+    .mission-sheet {
+      position: fixed;
+      z-index: 12;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      top: 0;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding:
+        0
+        max(0.75rem, env(safe-area-inset-right))
+        max(0.75rem, env(safe-area-inset-bottom))
+        max(0.75rem, env(safe-area-inset-left));
+      background: rgba(0, 0, 0, 0.45);
+      pointer-events: auto;
+      touch-action: manipulation;
+    }
+
+    .mission-sheet[hidden] {
+      display: none !important;
+    }
+
+    .mission-sheet-card {
+      width: min(420px, 100%);
+      background: rgba(12, 16, 24, 0.94);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.85rem 1rem 0.95rem;
+      display: grid;
+      gap: 0.35rem;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+    }
+
+    .mission-sheet-card h2 {
+      margin: 0;
+      font-family: var(--font);
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: 0.02em;
+    }
+
+    .mission-sheet-meta {
+      margin: 0;
+      font-family: var(--font);
+      font-size: 11px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--dim);
+      letter-spacing: -0.01em;
+    }
+
+    .mission-sheet-blurb {
+      margin: 0.15rem 0 0.35rem;
+      font-family: var(--font);
+      font-size: 0.88rem;
+      line-height: 1.35;
+      color: var(--text);
+    }
+
+    .mission-sheet-card button {
+      justify-self: end;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 0.35rem 0.85rem;
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    body.is-red-mode .mission-sheet-card {
+      background: rgba(18, 4, 6, 0.94);
+      border-color: #3a0c0c;
+    }
+
+    body.is-red-mode .mission-sheet-card button {
+      background: rgba(40, 4, 4, 0.55);
+      border-color: #3a0c0c;
+    }
+
+    body.is-red-mode button.m-cell-fact:active {
+      background: rgba(40, 4, 4, 0.55);
+    }
+
+    /* Fact sheet outside .loc-bar so full-screen overlay receives taps */
+    .fact-sheet {
+      position: fixed;
+      z-index: 20;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      top: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding:
+        max(0.75rem, env(safe-area-inset-top))
+        max(0.75rem, env(safe-area-inset-right))
+        max(0.75rem, env(safe-area-inset-bottom))
+        max(0.75rem, env(safe-area-inset-left));
+      background: rgba(0, 0, 0, 0.62);
+      pointer-events: auto;
+      touch-action: manipulation;
+    }
+
+    .fact-sheet[hidden] {
+      display: none !important;
+    }
+
+    /* Real button behind the card — iOS won't reliably click empty overlay divs */
+    .fact-sheet-scrim {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      cursor: pointer;
+      -webkit-appearance: none;
+      appearance: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    .fact-sheet-inner {
+      position: relative;
+      z-index: 1;
+      width: min(360px, 100%);
+      padding: 16px 16px 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #0c1018;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+      pointer-events: auto;
+    }
+
+    .fact-sheet-inner h2 {
+      font-family: var(--font);
+      font-size: 1.05rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      margin: 0 0 10px;
+      color: var(--text);
+    }
+
+    .fact-sheet-inner p {
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--dim);
+      margin: 0 0 12px;
+      white-space: pre-wrap;
+    }
+
+    .fact-sheet-inner p.fact-credit {
+      margin: 12px 0 0;
+      font-size: 10px;
+      letter-spacing: 0.02em;
+      color: var(--faint);
+    }
+
+    .fact-sheet-close {
+      margin-top: 4px;
+      width: 100%;
+      border: 1px solid var(--line);
+      background: var(--cell);
+      color: var(--text);
+      font: inherit;
+      font-weight: 600;
+      padding: 9px;
+      border-radius: 7px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    body.is-red-mode .fact-sheet-inner {
+      background: #0a0000;
+      border-color: #3a0c0c;
+    }
+
+    body.is-red-mode .fact-sheet-close {
+      background: rgba(40, 4, 4, 0.55);
+      border-color: #3a0c0c;
+    }
+
+    body.is-red-mode .loc-dialog {
+      background: rgba(2, 0, 0, 0.8);
+    }
+
+    body.is-red-mode .loc-dialog-sheet {
+      background: #0a0000;
+      border-color: #3a0c0c;
+    }
+
+    body.is-red-mode .loc-dialog-head button,
+    body.is-red-mode .loc-dialog-foot button {
+      background: rgba(40, 4, 4, 0.55);
+      border-color: #3a0c0c;
+      color: var(--text);
+    }
+
+    body.is-red-mode .loc-map {
+      background: #0c0000;
+      /* Red cast that keeps map labels/roads readable */
+      filter: sepia(0.9) hue-rotate(-52deg) saturate(3.8) brightness(0.58) contrast(1.02);
+    }
+
+    .cycle {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.1rem 0.28rem 0.1rem;
+      display: grid;
+      gap: 0.08rem;
+      flex: 0 0 auto;
+      position: relative;
+      z-index: 2;
+    }
+
+    .cycle-date {
+      font-family: var(--font);
+      font-size: 11px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.01em;
+      color: var(--text);
+      line-height: 1.05;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+
+    /* Slider shortened; Live sits after it in the freed width */
+    .cycle-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      min-width: 0;
+    }
+
+    .slider-track {
+      position: relative;
+      flex: 1 1 auto;
+      min-width: 0;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      margin: -4px 0;
+      padding: 4px 0;
+      box-sizing: content-box;
+    }
+
+    #phase-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 44px;
+      margin: 0;
+      background: transparent;
+      cursor: pointer;
+      pointer-events: auto;
+      touch-action: pan-x;
+    }
+
+    #phase-slider::-webkit-slider-runnable-track {
+      height: 8px;
+      border-radius: 4px;
+      background: rgba(200, 212, 232, 0.28);
+    }
+
+    #phase-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 28px;
+      height: 28px;
+      margin-top: -10px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      background: #e8edf7;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+    }
+
+    #phase-slider::-moz-range-track {
+      height: 8px;
+      border-radius: 4px;
+      background: rgba(200, 212, 232, 0.28);
+      border: none;
+    }
+
+    #phase-slider::-moz-range-thumb {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      background: #e8edf7;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+    }
+
+    .live-btn {
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 0.28rem 0.55rem;
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      cursor: pointer;
+      pointer-events: auto;
+      touch-action: manipulation;
+      line-height: 1.1;
+      white-space: nowrap;
+      z-index: 2;
+    }
+
+    .live-btn.is-preview {
+      background: rgba(255, 255, 255, 0.16);
+      border-color: rgba(255, 255, 255, 0.28);
+    }
+
+
+
+    .status {
+      position: fixed;
+      z-index: 2;
+      left: 0;
+      right: 0;
+      top: calc(0.45in + env(safe-area-inset-top, 0px));
+      text-align: center;
+      pointer-events: none;
+      font-size: 0.65rem;
+      color: var(--muted);
+      opacity: 0.65;
+      text-shadow: 0 1px 8px rgba(0, 0, 0, 0.65);
+    }
+
+    /*
+     * Night vision: kill white / bright UI so dark-adapted eyes survive.
+     * App stays fully usable. Tap moon (or the badge) to toggle.
+     */
+    body.is-red-mode {
+      --text: #c81820;
+      --muted: #9a1018;
+      --dim: #7a0c10;
+      --faint: #4a0608;
+      --cell: rgba(12, 0, 0, 0.58);
+      --line: #4a0808;
+      --moon: #e02028;
+      --panel: rgba(10, 0, 0, 0.94);
+      --red-track: #2e0606;
+      --red-thumb: #a01018;
+      background: #030000;
+      color: var(--text);
+      color-scheme: dark;
+    }
+
+    body.is-red-mode #moon-host,
+    body.is-red-mode #stage {
+      background: #030000;
+    }
+
+    /* Deeper blood cast on the globe */
+    body.is-red-mode #moon-host {
+      filter: sepia(1) hue-rotate(-48deg) saturate(6.2) brightness(0.38) contrast(1.08);
+    }
+
+    body.is-red-mode .loc-bar {
+      background: transparent;
+    }
+
+    body.is-red-mode .metrics-panel,
+    body.is-red-mode .cycle {
+      border-color: #3a0c0c;
+      background: rgba(40, 4, 4, 0.45);
+    }
+
+    body.is-red-mode .live-btn,
+    body.is-red-mode .loc-card button,
+    body.is-red-mode .hemi button,
+    body.is-red-mode .edit-panel button,
+    body.is-red-mode .edit-panel input {
+      background: rgba(40, 4, 4, 0.55);
+      border-color: #3a0c0c;
+      color: var(--text);
+      accent-color: #6a1010;
+    }
+
+    body.is-red-mode .hemi button.active,
+    body.is-red-mode .live-btn.is-preview {
+      background: rgba(70, 10, 10, 0.55);
+      border-color: #551010;
+    }
+
+    body.is-red-mode #phase-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      accent-color: #6a1010;
+      background: transparent;
+      color: #6a1010;
+    }
+
+    /* WebKit / Blink range thumb stays white unless styled explicitly */
+    body.is-red-mode #phase-slider::-webkit-slider-runnable-track {
+      height: 8px;
+      border-radius: 4px;
+      background: var(--red-track);
+    }
+
+    body.is-red-mode #phase-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 28px;
+      height: 28px;
+      margin-top: -10px;
+      border-radius: 50%;
+      border: 1px solid #4a0c0c;
+      background: var(--red-thumb);
+      box-shadow: none;
+    }
+
+    body.is-red-mode #phase-slider::-moz-range-track {
+      height: 8px;
+      border-radius: 4px;
+      background: var(--red-track);
+      border: none;
+    }
+
+    body.is-red-mode #phase-slider::-moz-range-thumb {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 1px solid #4a0c0c;
+      background: var(--red-thumb);
+      box-shadow: none;
+    }
+
+    @media (pointer: coarse) and (min-width: 600px) and (min-height: 600px) {
+      body.is-red-mode #phase-slider::-webkit-slider-runnable-track {
+        height: 10px;
+      }
+      body.is-red-mode #phase-slider::-webkit-slider-thumb {
+        width: 44px;
+        height: 44px;
+        margin-top: -17px;
+      }
+      body.is-red-mode #phase-slider::-moz-range-track {
+        height: 10px;
+      }
+      body.is-red-mode #phase-slider::-moz-range-thumb {
+        width: 44px;
+        height: 44px;
+      }
+    }
+
+    body.is-red-mode .app-title,
+    body.is-red-mode .build-mark {
+      color: #c0141c;
+      text-shadow: 0 1px 10px rgba(40, 0, 0, 0.7);
+    }
+
+    body.is-red-mode .m-cell .v.moon {
+      color: #e01820;
+    }
+
+
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="stage">
+    <div id="moon-host">
+      <canvas
+        id="moon-canvas"
+        aria-label="3D Earth. One finger rotates, pinch zooms, two-finger slide pans. Live resets. Surface: NASA. Clouds: EUMETSAT."
+      ></canvas>
+    </div>
+    <div id="touch-plane" aria-hidden="true"></div>
+  </div>
+
+  <header class="chrome">
+    <h1 class="app-title">SuperEarth</h1>
+    <span class="build-mark" id="build-mark">e1</span>
+  </header>
+
+  <p class="status" id="status" data-state="loading">Loading surface…</p>
+
+  <div class="loc-bar" id="loc-bar">
+    <div class="metrics-panel">
+      <div class="m-grid" aria-label="Earth metrics">
+        <button type="button" class="m-cell m-cell-fact" data-fact="phase" title="Tap for explanation">
+          <div class="k">Kp</div>
+          <div class="v moon" id="m-phase">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="illum" title="Tap for explanation">
+          <div class="k">Solar wind</div>
+          <div class="v" id="m-illum">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="cycle" title="Tap for explanation">
+          <div class="k">Bz</div>
+          <div class="v sm" id="m-cycle">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="tofull" title="Tap for explanation">
+          <div class="k">X-ray</div>
+          <div class="v" id="m-tofull">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="dist" title="Tap for explanation">
+          <div class="k">Storm</div>
+          <div class="v sm" id="m-dist">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="ang" title="Tap for explanation">
+          <div class="k">Aurora</div>
+          <div class="v sm" id="m-ang">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="vsavg" title="Tap for explanation">
+          <div class="k">Quakes</div>
+          <div class="v sm" id="m-vsavg">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="vsmax" title="Tap for explanation">
+          <div class="k">Largest</div>
+          <div class="v sm" id="m-vsmax">—</div>
+        </button>
+      </div>
+      <!-- Row order: metrics, rise/high/set + tools, local, location -->
+      <div class="m-grid m-grid-rise" aria-label="Sunrise solar noon sunset and display controls">
+        <button type="button" class="m-cell m-cell-fact" data-fact="rise" title="Tap for explanation">
+          <div class="k">Sunrise</div>
+          <div class="v sm" id="m-rise">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="high" title="Tap for explanation">
+          <div class="k">Solar noon</div>
+          <div class="v sm" id="m-high">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="set" title="Tap for explanation">
+          <div class="k">Sunset</div>
+          <div class="v sm" id="m-set">—</div>
+        </button>
+        <div class="tool-strip" role="group" aria-label="Display controls">
+          <button
+            type="button"
+            class="vision-btn"
+            id="vision-btn"
+            title="Night vision: red display for dark-adapted eyes"
+            aria-pressed="false"
+          >
+            Red
+          </button>
+          <button
+            type="button"
+            class="vision-btn"
+            id="orbit-btn"
+            title="Slow continuous Earth orbit (tap again to stop)"
+            aria-pressed="false"
+          >
+            Orbit
+          </button>
+          <button
+            type="button"
+            class="vision-btn"
+            id="sites-btn"
+            title="Show events: Quakes, Storms, then All"
+            aria-pressed="false"
+            data-mode="off"
+          >
+            Events
+          </button>
+        </div>
+      </div>
+      <div class="m-grid m-grid-3" aria-label="Local Earth">
+        <button type="button" class="m-cell m-cell-fact" data-fact="station" title="Tap for explanation">
+          <div class="k">Day length</div>
+          <div class="v sm" id="m-station">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="htide" title="Tap for explanation">
+          <div class="k">Season</div>
+          <div class="v sm" id="m-htide">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="mtide" title="Tap for explanation">
+          <div class="k">Open events</div>
+          <div class="v sm" id="m-mtide">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="ltide" title="Tap for explanation">
+          <div class="k">Alert</div>
+          <div class="v sm" id="m-ltide">—</div>
+        </button>
+      </div>
+
+      <div class="loc-strip">
+        <div class="loc-card loc-card-place">
+          <div class="loc-label" id="loc-label">Current location</div>
+          <div class="loc-place-row">
+            <div class="loc-coords" id="loc-coords">—</div>
+            <button type="button" id="edit-btn" title="Choose location on map">Edit</button>
+            <button
+              type="button"
+              class="geo-btn"
+              id="geo-btn"
+              title="Use device location"
+              aria-label="Use device location"
+            >
+              <!-- Classic maps locate-me crosshair -->
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <circle cx="12" cy="12" r="3" />
+                <circle cx="12" cy="12" r="8" />
+                <path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="loc-card hemi-card">
+          <span class="hemi-label">Hemisphere</span>
+          <div class="hemi" role="group" aria-label="Hemisphere">
+            <button type="button" id="hemi-n" class="active">Northern</button>
+            <button type="button" id="hemi-s">Southern</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Kept for hemi flip / applyLocation; not shown -->
+    <input id="lat-input" class="sr-only" type="number" step="0.0001" min="-90" max="90" value="0" tabindex="-1" aria-hidden="true" />
+    <input id="lon-input" class="sr-only" type="number" step="0.0001" min="-180" max="180" value="0" tabindex="-1" aria-hidden="true" />
+
+    <div id="loc-dialog" class="loc-dialog" hidden role="dialog" aria-modal="true" aria-label="Choose location on map">
+      <div class="loc-dialog-sheet">
+        <div class="loc-dialog-head">
+          <span>Tap map to set location</span>
+          <button type="button" id="loc-dialog-cancel">Cancel</button>
+        </div>
+        <div id="loc-map" class="loc-map" role="application" aria-label="Location map"></div>
+        <div class="loc-dialog-foot">
+          <span class="loc-map-coords" id="loc-map-coords">—</span>
+          <button type="button" class="primary" id="loc-dialog-use">Use this place</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="mission-sheet" class="mission-sheet" hidden role="dialog" aria-modal="true" aria-label="Mission details">
+      <div class="mission-sheet-card">
+        <h2 id="mission-name">—</h2>
+        <p class="mission-sheet-meta" id="mission-meta">—</p>
+        <p class="mission-sheet-blurb" id="mission-blurb">—</p>
+        <button type="button" id="mission-close">Close</button>
+      </div>
+    </div>
+
+    <div class="cycle">
+      <div class="cycle-date" id="cycle-date">—</div>
+      <div class="cycle-controls">
+        <div class="slider-track">
+          <input
+            type="range"
+            id="phase-slider"
+            min="0"
+            max="1000"
+            value="0"
+            step="1"
+            aria-label="Local day from midnight to midnight"
+          />
+        </div>
+        <button type="button" class="live-btn is-live" id="live-btn" title="Reset to live Earth for now">Live</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Outside .loc-bar: parent pointer-events:none blocks full-screen overlay taps -->
+  <div id="fact-sheet" class="fact-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="fact-title">
+    <button type="button" class="fact-sheet-scrim" id="fact-scrim" aria-label="Dismiss explanation"></button>
+    <div class="fact-sheet-inner">
+      <h2 id="fact-title">—</h2>
+      <p id="fact-body">—</p>
+      <p class="fact-credit">Surface: NASA. Clouds: EUMETSAT.</p>
+      <button type="button" class="fact-sheet-close" id="fact-close">Close</button>
+    </div>
+  </div>
+
+  <script src="astronomy.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script type="module">
+    import { createEarthGlobe } from "./earth.js?v=e1";
+
+    const STORAGE_KEY = "earth-globe-loc-v1";
+    /** Used when GPS/permission unavailable (X in-app browser, denied, etc.) */
+    const DEFAULT_LOC = { lat: 35.5956, lon: -82.5519, name: "Asheville, NC" };
+
+    const canvas = document.getElementById("moon-canvas");
+    const status = document.getElementById("status");
+    const latInput = document.getElementById("lat-input");
+    const lonInput = document.getElementById("lon-input");
+    const locCoords = document.getElementById("loc-coords");
+    const locLabel = document.getElementById("loc-label");
+    const editBtn = document.getElementById("edit-btn");
+    const geoBtn = document.getElementById("geo-btn");
+    const locDialog = document.getElementById("loc-dialog");
+    const locMapEl = document.getElementById("loc-map");
+    const locMapCoords = document.getElementById("loc-map-coords");
+    const locDialogCancel = document.getElementById("loc-dialog-cancel");
+    const locDialogUse = document.getElementById("loc-dialog-use");
+    const phaseSlider = document.getElementById("phase-slider");
+    const cycleDate = document.getElementById("cycle-date");
+    const liveBtn = document.getElementById("live-btn");
+    const hemiN = document.getElementById("hemi-n");
+    const hemiS = document.getElementById("hemi-s");
+
+    /** @type {import("leaflet").Map | null} */
+    let locationMap = null;
+    /** @type {import("leaflet").Marker | null} */
+    let locationMarker = null;
+    let pickLat = 0;
+    let pickLon = 0;
+
+    const el = {
+      phase: document.getElementById("m-phase"),
+      illum: document.getElementById("m-illum"),
+      cycle: document.getElementById("m-cycle"),
+      tofull: document.getElementById("m-tofull"),
+      dist: document.getElementById("m-dist"),
+      ang: document.getElementById("m-ang"),
+      vsavg: document.getElementById("m-vsavg"),
+      vsmax: document.getElementById("m-vsmax"),
+      station: document.getElementById("m-station"),
+      htide: document.getElementById("m-htide"),
+      mtide: document.getElementById("m-mtide"),
+      ltide: document.getElementById("m-ltide"),
+      rise: document.getElementById("m-rise"),
+      high: document.getElementById("m-high"),
+      set: document.getElementById("m-set"),
+    };
+
+    const FACTS = {
+      phase: {
+        title: "Kp",
+        body:
+          "The planetary K-index, a 0–9 measure of how disturbed Earth’s magnetic field is.\n\n" +
+          "Around 5 and above, aurora can reach mid-latitudes. The number is NOAA’s estimated Kp.",
+      },
+      illum: {
+        title: "Solar wind",
+        body:
+          "Speed of the solar wind at the Sun–Earth L1 point, in kilometers per second.\n\n" +
+          "Typical quiet wind is near 300–450 km/s. A jump often means a coronal mass ejection or a fast stream has arrived. If the live satellite drops out, this stays on the last good sample.",
+      },
+      cycle: {
+        title: "Bz",
+        body:
+          "The north–south part of the solar-wind magnetic field, in nanotesla.\n\n" +
+          "A negative (southward) Bz opens Earth’s field and drives aurora and geomagnetic storms. Positive Bz mostly glances off.",
+      },
+      tofull: {
+        title: "X-ray",
+        body:
+          "GOES soft X-ray class of the Sun right now (0.1–0.8 nm).\n\n" +
+          "A and B are quiet. C is a small flare. M and X are strong flares that can black out the sunlit side of Earth on HF radio.",
+      },
+      dist: {
+        title: "Storm",
+        body:
+          "NOAA’s space-weather scales right now.\n\n" +
+          "R is radio blackout, S is solar radiation, G is geomagnetic storm. Quiet means all three are at zero.",
+      },
+      ang: {
+        title: "Aurora",
+        body:
+          "Chance of visible aurora overhead at your chosen location, from NOAA’s OVATION model.\n\n" +
+          "It is a forecast grid, not a photo of the sky. High latitude and a negative Bz raise the number.",
+      },
+      vsavg: {
+        title: "Quakes",
+        body:
+          "How many earthquakes of magnitude 4.5 or larger USGS has reported in the past day.\n\n" +
+          "The Events button draws them on the globe.",
+      },
+      vsmax: {
+        title: "Largest",
+        body:
+          "The biggest earthquake in that same past-day USGS list.\n\n" +
+          "Tap Events, then a pin, for the place and time.",
+      },
+      rise: {
+        title: "Sunrise",
+        body:
+          "Local time the Sun rises at your chosen location on the day shown by the slider.\n\n" +
+          "A dash means the Sun stays up or stays down (polar day or night).",
+      },
+      high: {
+        title: "Solar noon",
+        body:
+          "Local time the Sun is highest in your sky that day.\n\n" +
+          "That is the shortest shadow, not always 12:00 on the clock.",
+      },
+      set: {
+        title: "Sunset",
+        body:
+          "Local time the Sun sets at your chosen location on the day shown by the slider.\n\n" +
+          "A dash means the Sun stays up or stays down.",
+      },
+      station: {
+        title: "Day length",
+        body:
+          "Hours and minutes of daylight at your location on the day shown.\n\n" +
+          "It stretches toward the summer solstice and shrinks toward the winter one. Hemisphere flips the seasons.",
+      },
+      htide: {
+        title: "Season",
+        body:
+          "The astronomical season at your location: the stretch between solstice and equinox.\n\n" +
+          "South of the equator, summer and winter trade places with the north.",
+      },
+      mtide: {
+        title: "Open events",
+        body:
+          "Natural events NASA EONET still lists as open: fires, storms, volcanoes, ice.\n\n" +
+          "These are curated reports, not every hotspot on Earth. Surface: NASA. Clouds: EUMETSAT.",
+      },
+      ltide: {
+        title: "Alert",
+        body:
+          "The latest NOAA space-weather alert, shortened.\n\n" +
+          "None means the alert list is empty. Storm scales can still be above zero when an alert has expired.",
+      },
+    };
+
+    const factSheet = document.getElementById("fact-sheet");
+    const factTitle = document.getElementById("fact-title");
+    const factBody = document.getElementById("fact-body");
+    const factClose = document.getElementById("fact-close");
+    const factScrim = document.getElementById("fact-scrim");
+
+    function openFactSheet(key) {
+      const f = FACTS[key];
+      if (!f || !factSheet) return;
+      factTitle.textContent = f.title;
+      const shown = (document.getElementById(
+        key === "phase" ? "m-phase"
+        : key === "illum" ? "m-illum"
+        : key === "cycle" ? "m-cycle"
+        : key === "tofull" ? "m-tofull"
+        : key === "dist" ? "m-dist"
+        : key === "ang" ? "m-ang"
+        : key === "vsavg" ? "m-vsavg"
+        : key === "vsmax" ? "m-vsmax"
+        : key === "rise" ? "m-rise"
+        : key === "high" ? "m-high"
+        : key === "set" ? "m-set"
+        : key === "station" ? "m-station"
+        : key === "htide" ? "m-htide"
+        : key === "mtide" ? "m-mtide"
+        : "m-ltide"
+      )?.textContent || "").trim();
+      factBody.textContent =
+        shown && shown !== "—"
+          ? `Right now this box shows “${shown}”.\n\n${f.body}`
+          : f.body;
+      factSheet.hidden = false;
+    }
+
+    function closeFactSheet() {
+      if (factSheet) factSheet.hidden = true;
+    }
+
+    document.querySelectorAll(".m-cell-fact").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        openFactSheet(btn.dataset.fact);
+      });
+    });
+
+    function onFactDismiss(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeFactSheet();
+    }
+
+    factClose?.addEventListener("click", onFactDismiss);
+    factScrim?.addEventListener("click", onFactDismiss);
+
+    let previewMode = false;
+    let previewRaf = 0;
+    let metricsRaf = 0;
+    const globeRef = { current: null };
+    const feed = {
+      kp: "—",
+      wind: "—",
+      bz: "—",
+      xray: "—",
+      storm: "—",
+      quakes: "—",
+      largest: "—",
+      events: "—",
+      alert: "—",
+    };
+    let auroraGrid = null;
+    let quakeSites = [];
+    let eventSites = [];
+    let feedTimer = 0;
+    let heavyAt = 0;
+    let feedsBusy = false;
+
+    function fmtCoord(n, pos, neg) {
+      const a = Math.abs(n);
+      const hemi = n >= 0 ? pos : neg;
+      return `${a.toFixed(2)}°${hemi}`;
+    }
+
+    function fmtTime(date) {
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "—";
+      let h = date.getHours();
+      const m = date.getMinutes();
+      const ap = h >= 12 ? "p" : "a";
+      h = h % 12;
+      if (h === 0) h = 12;
+      return `${h}:${String(m).padStart(2, "0")}${ap}`;
+    }
+
+    function fmtDateTime(date) {
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "—";
+      const mon = date.toLocaleString(undefined, { month: "short" });
+      const day = date.getDate();
+      return `${mon} ${day} · ${fmtTime(date)}`;
+    }
+
+    function ymdCompact(d) {
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(d.getUTCDate()).padStart(2, "0");
+      return `${y}${m}${day}`;
+    }
+
+    function haversineKm(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const p1 = (lat1 * Math.PI) / 180;
+      const p2 = (lat2 * Math.PI) / 180;
+      const dp = ((lat2 - lat1) * Math.PI) / 180;
+      const dl = ((lon2 - lon1) * Math.PI) / 180;
+      const a =
+        Math.sin(dp / 2) ** 2 +
+        Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+      return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+    }
+
+    function xrayClass(flux) {
+      if (!(flux > 0)) return "—";
+      const bands = [
+        [1e-4, "X"],
+        [1e-5, "M"],
+        [1e-6, "C"],
+        [1e-7, "B"],
+        [1e-8, "A"],
+      ];
+      for (const [thr, letter] of bands) {
+        if (flux >= thr) return letter + (flux / thr).toFixed(1);
+      }
+      return "A" + (flux / 1e-8).toFixed(1);
+    }
+
+    function lastActive(rows, pick) {
+      if (!Array.isArray(rows)) return null;
+      for (let i = rows.length - 1; i >= 0; i--) {
+        const row = rows[i];
+        if (row && row.active && pick(row) != null) return row;
+      }
+      return null;
+    }
+
+    function auroraAt(lat, lon) {
+      const coords = auroraGrid;
+      if (!coords || !coords.length) return null;
+      let best = null;
+      let bestD = 1e9;
+      const step = coords.length > 8000 ? 4 : 1;
+      for (let i = 0; i < coords.length; i += step) {
+        const c = coords[i];
+        const dlat = c[0] - lat;
+        let dlon = c[1] - lon;
+        if (dlon > 180) dlon -= 360;
+        if (dlon < -180) dlon += 360;
+        const d = dlat * dlat + dlon * dlon;
+        if (d < bestD) {
+          bestD = d;
+          best = c[2];
+        }
+      }
+      return best;
+    }
+
+    function pushSites() {
+      const g = globeRef.current;
+      if (g) g.setSites(quakeSites.concat(eventSites));
+    }
+
+    function eonetPoint(ev) {
+      const g = (ev.geometry || [])[0];
+      if (!g || !g.coordinates) return null;
+      if (g.type === "Point") {
+        return { lon: Number(g.coordinates[0]), lat: Number(g.coordinates[1]) };
+      }
+      const ring = Array.isArray(g.coordinates[0]) ? g.coordinates[0] : null;
+      if (!ring || !ring.length) return null;
+      let lon = 0;
+      let lat = 0;
+      let n = 0;
+      for (const pt of ring) {
+        if (!pt || pt.length < 2) continue;
+        lon += Number(pt[0]);
+        lat += Number(pt[1]);
+        n++;
+      }
+      return n ? { lon: lon / n, lat: lat / n } : null;
+    }
+
+    async function loadFeeds(forceHeavy) {
+      if (feedsBusy) return;
+      feedsBusy = true;
+      const heavy = forceHeavy || Date.now() - heavyAt > 5 * 60 * 1000;
+      try {
+        const jobs = [
+          fetch("https://services.swpc.noaa.gov/json/planetary_k_index_1m.json"),
+          fetch("https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json"),
+          fetch("https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json"),
+          fetch("https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json"),
+          fetch("https://services.swpc.noaa.gov/products/noaa-scales.json"),
+          fetch("https://services.swpc.noaa.gov/products/alerts.json"),
+        ];
+        if (heavy) {
+          jobs.push(
+            fetch("https://services.swpc.noaa.gov/json/ovation_aurora_latest.json"),
+            fetch("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson"),
+            fetch("https://eonet.gsfc.nasa.gov/api/v3/events?status=open")
+          );
+        }
+        const res = await Promise.all(jobs.map((p) => p.then((r) => (r.ok ? r.json() : null)).catch(() => null)));
+        const [kp, wind, mag, xray, scales, alerts, ovation, quakes, eonet] = res;
+
+        if (Array.isArray(kp) && kp.length) {
+          const row = kp[kp.length - 1];
+          const n = Number(row.estimated_kp);
+          if (Number.isFinite(n)) feed.kp = n.toFixed(1);
+        }
+        const w = lastActive(wind, (r) => (r.proton_speed > 0 ? r.proton_speed : null));
+        if (w) feed.wind = `${Math.round(w.proton_speed)} km/s`;
+        const b = lastActive(mag, (r) => (Number.isFinite(Number(r.bz_gsm)) ? r.bz_gsm : null));
+        if (b) {
+          const n = Number(b.bz_gsm);
+          feed.bz = `${n > 0 ? "+" : ""}${n.toFixed(1)}`;
+        }
+        if (Array.isArray(xray)) {
+          const row = [...xray].reverse().find((r) => r && r.energy === "0.1-0.8nm" && r.flux > 0);
+          if (row) feed.xray = xrayClass(Number(row.flux));
+        }
+        const cur = scales && (scales["0"] || scales[0]);
+        if (cur && cur.R && cur.S && cur.G) {
+          const parts = [];
+          if (Number(cur.R.Scale) > 0) parts.push("R" + cur.R.Scale);
+          if (Number(cur.S.Scale) > 0) parts.push("S" + cur.S.Scale);
+          if (Number(cur.G.Scale) > 0) parts.push("G" + cur.G.Scale);
+          feed.storm = parts.length ? parts.join(" ") : "Quiet";
+        }
+        if (Array.isArray(alerts) && alerts.length) {
+          const msg = String(alerts[0].message || "");
+          const line =
+            msg.split(/\r?\n/).find((l) => /^ALERT:/i.test(l.trim())) ||
+            msg.split(/\r?\n/).find((l) => l.trim()) ||
+            "";
+          const clean = line.replace(/^ALERT:\s*/i, "").trim();
+          feed.alert = clean ? clean.slice(0, 22) : "Alert";
+        } else if (alerts) {
+          feed.alert = "None";
+        }
+
+        if (heavy) {
+          heavyAt = Date.now();
+          const coords = ovation && (ovation.coordinates || ovation.Coordinates);
+          if (Array.isArray(coords) && coords.length) auroraGrid = coords;
+          if (quakes && Array.isArray(quakes.features)) {
+            const feats = quakes.features.filter((f) => f && f.geometry && f.properties);
+            feed.quakes = String(feats.length);
+            let best = null;
+            quakeSites = feats.map((f) => {
+              const mag = Number(f.properties.mag);
+              const place = String(f.properties.place || "Earthquake");
+              if (!best || mag > best.mag) best = { mag, place };
+              const [lon, lat] = f.geometry.coordinates;
+              return {
+                name: place,
+                lat,
+                lon,
+                year: fmtTime(new Date(f.properties.time)),
+                agency: "USGS",
+                outcome: Number.isFinite(mag) ? `M${mag.toFixed(1)}` : "Quake",
+                kind: "quake",
+                tier: "quake",
+                famous: mag >= 4.5,
+                pinColor: mag >= 6 ? 0xf0d78c : 0x68bce8,
+                blurb: String(f.properties.title || place),
+              };
+            });
+            feed.largest = best && Number.isFinite(best.mag) ? `M${best.mag.toFixed(1)}` : "—";
+          }
+          if (eonet && Array.isArray(eonet.events)) {
+            feed.events = String(eonet.events.length);
+            const colors = {
+              wildfires: 0xe05838,
+              volcanoes: 0xe07040,
+              severeStorms: 0x6bbf8a,
+              seaLakeIce: 0x8ec8e8,
+            };
+            eventSites = [];
+            for (const ev of eonet.events) {
+              const pt = eonetPoint(ev);
+              if (!pt || !Number.isFinite(pt.lat) || !Number.isFinite(pt.lon)) continue;
+              const cat = (ev.categories && ev.categories[0]) || {};
+              eventSites.push({
+                name: ev.title || "Event",
+                lat: pt.lat,
+                lon: pt.lon,
+                year: cat.title || "EONET",
+                agency: "NASA",
+                outcome: cat.title || "Event",
+                kind: "event",
+                tier: "event",
+                pinColor: colors[cat.id] || 0xc8d0e0,
+                blurb: ev.description || ev.title || "",
+              });
+            }
+          }
+          pushSites();
+        }
+      } catch (_) {
+        /* keep last good numbers */
+      } finally {
+        feedsBusy = false;
+      }
+    }
+
+    function refreshFeeds(heavy) {
+      loadFeeds(!!heavy).then(() => {
+        if (globeRef.current) showPhase(globeRef.current.getPhaseInfo());
+      });
+    }
+
+    function saveLoc(lat, lon, source) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ lat, lon, source }));
+      } catch (_) {}
+    }
+
+    function loadSavedLoc() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return null;
+        const o = JSON.parse(raw);
+        if (!Number.isFinite(o.lat) || !Number.isFinite(o.lon)) return null;
+        return o;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function dayPhase01(date = new Date()) {
+      const h = date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
+      return h / 24;
+    }
+
+    /** Local midnight → next midnight. Live thumb sits on the current hour. */
+    function dateFromDayPhase(targetPhase, refDate = new Date()) {
+      const p = Math.min(1, Math.max(0, Number(targetPhase) || 0));
+      const start = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate());
+      return new Date(start.getTime() + p * 86400000);
+    }
+
+    function sunEventOnDay(A, obs, dir, dayStart) {
+      const dayEnd = new Date(dayStart.getTime() + 86400000);
+      let t = new Date(dayStart.getTime() - 20 * 3600000);
+      for (let i = 0; i < 4; i++) {
+        const ev = A.SearchRiseSet(A.Body.Sun, obs, dir, t, 2);
+        if (!ev || !ev.date) return null;
+        if (ev.date >= dayStart && ev.date < dayEnd) return ev.date;
+        if (ev.date >= dayEnd) return null;
+        t = new Date(ev.date.getTime() + 60000);
+      }
+      return null;
+    }
+
+    function seasonName(A, when, lat) {
+      const y = when.getFullYear();
+      const prev = A.Seasons(y - 1);
+      const cur = A.Seasons(y);
+      const marks = [
+        [prev.dec_solstice.date, "Winter"],
+        [cur.mar_equinox.date, "Spring"],
+        [cur.jun_solstice.date, "Summer"],
+        [cur.sep_equinox.date, "Fall"],
+        [cur.dec_solstice.date, "Winter"],
+      ];
+      let name = "Winter";
+      for (const [d, n] of marks) {
+        if (when >= d) name = n;
+      }
+      if (lat < 0) {
+        name = { Winter: "Summer", Spring: "Fall", Summer: "Winter", Fall: "Spring" }[name] || name;
+      }
+      return name;
+    }
+
+    function fmtSpan(ms) {
+      if (!(ms > 0)) return "—";
+      const min = Math.round(ms / 60000);
+      const h = Math.floor(min / 60);
+      const m = min % 60;
+      return `${h}h ${String(m).padStart(2, "0")}m`;
+    }
+
+    function computeMetrics(info) {
+      const A = globalThis.Astronomy;
+      if (!A || !info) return null;
+      const when = info.when instanceof Date ? info.when : new Date(info.when);
+      const lat = Number(info.lat);
+      const lon = Number(info.lon);
+      const dayStart = new Date(when.getFullYear(), when.getMonth(), when.getDate());
+      let rise = null;
+      let high = null;
+      let set = null;
+      let dayLen = "—";
+      let season = "—";
+      try {
+        if (Number.isFinite(lat) && Number.isFinite(lon)) {
+          const obs = new A.Observer(lat, lon, 0);
+          rise = sunEventOnDay(A, obs, +1, dayStart);
+          set = sunEventOnDay(A, obs, -1, dayStart);
+          const noon = A.SearchHourAngle(A.Body.Sun, obs, 0, dayStart, 1);
+          if (noon && noon.time && noon.time.date >= dayStart) {
+            const end = new Date(dayStart.getTime() + 86400000);
+            if (noon.time.date < end) high = noon.time.date;
+          }
+          if (rise && set) {
+            let ms = set.getTime() - rise.getTime();
+            if (ms < 0) ms += 86400000;
+            dayLen = fmtSpan(ms);
+          } else {
+            const time = A.MakeTime(new Date(dayStart.getTime() + 12 * 3600000));
+            const sun = A.Equator(A.Body.Sun, time, obs, true, true);
+            const hor = A.Horizon(time, obs, sun.ra, sun.dec, "normal");
+            dayLen = hor.altitude > 0 ? "24h" : "0h";
+          }
+          season = seasonName(A, when, lat);
+        }
+      } catch (_) {}
+
+      const aur = Number.isFinite(lat) ? auroraAt(lat, lon) : null;
+
+      return {
+        phase01: dayPhase01(when),
+        rise,
+        high,
+        set,
+        dayLen,
+        season,
+        aurora: aur == null ? "—" : `${Math.round(aur)}%`,
+        when,
+      };
+    }
+
+    function paintMetrics(info) {
+      const m = computeMetrics(info);
+      if (!m) return;
+      if (!previewMode && Number.isFinite(m.phase01)) syncSliderToPhase01(m.phase01);
+
+      el.phase.textContent = feed.kp;
+      el.illum.textContent = feed.wind;
+      el.cycle.textContent = feed.bz;
+      el.tofull.textContent = feed.xray;
+      el.dist.textContent = feed.storm;
+      el.ang.textContent = m.aurora;
+      el.vsavg.textContent = feed.quakes;
+      el.vsmax.textContent = feed.largest;
+      el.rise.textContent = fmtTime(m.rise);
+      el.high.textContent = fmtTime(m.high);
+      el.set.textContent = fmtTime(m.set);
+      el.station.textContent = m.dayLen;
+      el.htide.textContent = m.season;
+      el.mtide.textContent = feed.events;
+      el.ltide.textContent = feed.alert;
+      cycleDate.textContent = fmtDateTime(m.when);
+    }
+
+    function showPhase(info) {
+      if (!info) return;
+      if (metricsRaf) cancelAnimationFrame(metricsRaf);
+      metricsRaf = requestAnimationFrame(() => {
+        metricsRaf = 0;
+        paintMetrics(info);
+      });
+    }
+
+    function setLocationTitle(source) {
+      if (!locLabel) return;
+      // GPS → Current; baked-in fallback → Default; map/hemi/saved → Chosen
+      if (source === "gps") locLabel.textContent = "Current location";
+      else if (source === "default") locLabel.textContent = "Default location";
+      else locLabel.textContent = "Chosen location";
+    }
+
+    function applyDefaultLocation() {
+      applyLocation(DEFAULT_LOC.lat, DEFAULT_LOC.lon, "default");
+    }
+
+    function showLoc(lat, lon, source) {
+      latInput.value = Number(lat).toFixed(4);
+      lonInput.value = Number(lon).toFixed(4);
+      locCoords.textContent = `${fmtCoord(lat, "N", "S")} · ${fmtCoord(lon, "E", "W")}`;
+      const south = Number(lat) < 0;
+      hemiN.classList.toggle("active", !south);
+      hemiS.classList.toggle("active", south);
+      if (source != null) setLocationTitle(source);
+    }
+
+    function setHemisphere(southern) {
+      const latAbs = Math.abs(Number(latInput.value) || 35);
+      const lon = Number(lonInput.value) || 0;
+      const lat = southern ? -latAbs : latAbs;
+      applyLocation(lat, lon, "hemi");
+      if (!previewMode) goLive();
+    }
+
+    function setLiveUI() {
+      if (!liveBtn) return;
+      liveBtn.classList.toggle("is-preview", previewMode);
+      liveBtn.classList.toggle("is-live", !previewMode);
+      liveBtn.textContent = previewMode ? "Use live" : "Live";
+    }
+
+    /** Put slider thumb at phase 0…1 (new→new). Matches cycle-day metric. */
+    function syncSliderToPhase01(phase01) {
+      if (!phaseSlider) return;
+      const p = Number(phase01);
+      if (!Number.isFinite(p)) return;
+      const v = Math.round(Math.min(1, Math.max(0, p)) * 1000);
+      phaseSlider.value = String(v);
+    }
+
+    function goLive() {
+      previewMode = false;
+      try {
+        if (typeof closeLocationDialog === "function") closeLocationDialog();
+      } catch (_) {}
+      const now = new Date();
+      let info = null;
+      try {
+        info = globe.setTime(now, { lockOrient: false });
+        globe.resetView();
+      } catch (err) {
+        console.warn("goLive setTime/resetView", err);
+      }
+      // Prefer ephemeris phase (same source as “Cycle day”) so thumb matches
+      const p =
+        info && Number.isFinite(info.phase01)
+          ? info.phase01
+          : dayPhase01(now);
+      syncSliderToPhase01(p);
+      showPhase(info || globe.getPhaseInfo());
+      setLiveUI();
+    }
+
+    let redModeOn = false;
+    const visionBtn = document.getElementById("vision-btn");
+    const orbitBtn = document.getElementById("orbit-btn");
+    const sitesBtn = document.getElementById("sites-btn");
+    const missionSheet = document.getElementById("mission-sheet");
+    const missionName = document.getElementById("mission-name");
+    const missionMeta = document.getElementById("mission-meta");
+    const missionBlurb = document.getElementById("mission-blurb");
+    const missionClose = document.getElementById("mission-close");
+    let sitesMode = "off"; // "off" | "famous" | "landings" | "all"
+
+    function setRedMode(on) {
+      redModeOn = !!on;
+      document.body.classList.toggle("is-red-mode", redModeOn);
+      // Label = what you get when you press (next action)
+      visionBtn.textContent = redModeOn ? "White" : "Red";
+      visionBtn.setAttribute("aria-pressed", redModeOn ? "true" : "false");
+      visionBtn.title = redModeOn
+        ? "Return to normal (white) display"
+        : "Night vision: red display for dark-adapted eyes";
+    }
+
+    function toggleRedMode() {
+      setRedMode(!redModeOn);
+    }
+
+    visionBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      toggleRedMode();
+    });
+
+    function setOrbitUI(on) {
+      const active = !!on;
+      orbitBtn.setAttribute("aria-pressed", active ? "true" : "false");
+      orbitBtn.title = active
+        ? "Stop continuous Earth orbit"
+        : "Slow continuous Earth orbit (tap again to stop)";
+    }
+
+    function startOrbitDefault() {
+      if (globe.isOrbiting()) setOrbitUI(true);
+      else orbitBtn.click();
+    }
+
+    orbitBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const next = !globe.isOrbiting();
+      globe.setOrbiting(next);
+      setOrbitUI(next);
+    });
+
+    function closeMissionSheet() {
+      missionSheet.hidden = true;
+    }
+
+    function openMissionSheet(site) {
+      if (!site) return;
+      missionName.textContent = site.name || "—";
+      const year = site.year != null ? String(site.year) : "";
+      const agency = site.agency || "";
+      const outcome = site.outcome || "";
+      const accuracy = site.approximate ? "Approx. location" : "";
+      missionMeta.textContent =
+        [year, agency, outcome, accuracy].filter(Boolean).join(" · ") || "—";
+      missionBlurb.textContent = site.blurb || "";
+      missionSheet.hidden = false;
+    }
+
+    function setSitesUI(mode) {
+      sitesMode = mode;
+      sitesBtn.setAttribute("aria-pressed", mode === "off" ? "false" : "true");
+      sitesBtn.dataset.mode = mode;
+      if (mode === "famous") {
+        sitesBtn.textContent = "Quakes";
+        sitesBtn.title = "Magnitude 4.5 and up — tap for storms and fires";
+      } else if (mode === "landings") {
+        sitesBtn.textContent = "Storms";
+        sitesBtn.title = "Open fires, storms, and volcanoes — tap for both layers";
+      } else if (mode === "all") {
+        sitesBtn.textContent = "All";
+        sitesBtn.title = "Quakes and open events — tap to hide";
+      } else {
+        sitesBtn.textContent = "Events";
+        sitesBtn.title = "Show events: Quakes, Storms, then All";
+        closeMissionSheet();
+      }
+    }
+
+    sitesBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const next =
+        sitesMode === "off"
+          ? "famous"
+          : sitesMode === "famous"
+            ? "landings"
+            : sitesMode === "landings"
+              ? "all"
+              : "off";
+      globe.setMissionsMode(next);
+      setSitesUI(next);
+    });
+
+    missionClose.addEventListener("click", (e) => {
+      e.preventDefault();
+      closeMissionSheet();
+    });
+    missionSheet.addEventListener("click", (e) => {
+      if (e.target === missionSheet) closeMissionSheet();
+    });
+
+    // Block copy / select (showcase PWA); inputs still selectable via CSS
+    for (const evt of ["copy", "cut", "selectstart"]) {
+      document.addEventListener(
+        evt,
+        (e) => {
+          const t = e.target;
+          if (t && (t.closest?.("input,textarea") || t.isContentEditable)) return;
+          e.preventDefault();
+        },
+        { capture: true }
+      );
+    }
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      if (factSheet && !factSheet.hidden) {
+        closeFactSheet();
+        return;
+      }
+      if (!missionSheet.hidden) {
+        closeMissionSheet();
+        return;
+      }
+      if (!locDialog.hidden) {
+        closeLocationDialog();
+        return;
+      }
+      if (redModeOn) setRedMode(false);
+      if (globe.isOrbiting()) {
+        globe.setOrbiting(false);
+        setOrbitUI(false);
+      }
+      if (globe.getMissionsMode() !== "off") {
+        globe.setMissionsMode("off");
+        setSitesUI("off");
+      }
+    });
+
+    const globe = globeRef.current = createEarthGlobe(canvas, {
+      onReady() {
+        canvas.classList.add("is-ready");
+        status.textContent = "";
+        status.style.display = "none";
+      },
+      onQuality() {
+        /* quality upgrades stay silent */
+      },
+      onPhase: showPhase,
+      onMissionTap: openMissionSheet,
+    });
+
+    function applyLocation(lat, lon, source) {
+      globe.setObserver(lat, lon);
+      if (!previewMode) {
+        globe.setTime(new Date(), { lockOrient: false });
+      } else {
+        const phase = Number(phaseSlider.value) / 1000;
+        globe.setTime(dateFromDayPhase(phase), {
+          lockOrient: true,
+          orientDate: new Date(),
+        });
+      }
+      showLoc(lat, lon, source);
+      showPhase(globe.getPhaseInfo());
+      saveLoc(lat, lon, source);
+    }
+
+    phaseSlider.addEventListener("input", () => {
+      previewMode = true;
+      setLiveUI();
+      const phase = Number(phaseSlider.value) / 1000;
+      const date = dateFromDayPhase(phase);
+      if (previewRaf) cancelAnimationFrame(previewRaf);
+      previewRaf = requestAnimationFrame(() => {
+        previewRaf = 0;
+        // Freeze sky pose while scrubbing so only terminator walks the cycle
+        globe.setTime(date, { lockOrient: true, orientDate: new Date() });
+        showPhase(globe.getPhaseInfo());
+      });
+    });
+
+    function onLiveActivate(e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      goLive();
+    }
+
+    // click + pointerup: iOS sometimes eats click after touch-action wars
+    liveBtn.addEventListener("click", onLiveActivate);
+    liveBtn.addEventListener(
+      "pointerup",
+      (e) => {
+        if (e.pointerType === "mouse" && e.button !== 0) return;
+        onLiveActivate(e);
+      },
+      { passive: false }
+    );
+    hemiN.addEventListener("click", () => setHemisphere(false));
+    hemiS.addEventListener("click", () => setHemisphere(true));
+
+    function updateMapCoordsDisplay() {
+      locMapCoords.textContent = `${fmtCoord(pickLat, "N", "S")} · ${fmtCoord(pickLon, "E", "W")}`;
+    }
+
+    function setMapPin(lat, lon, pan = false) {
+      pickLat = lat;
+      pickLon = lon;
+      updateMapCoordsDisplay();
+      if (!locationMap || typeof L === "undefined") return;
+      if (!locationMarker) {
+        locationMarker = L.marker([lat, lon], { draggable: true }).addTo(
+          locationMap
+        );
+        locationMarker.on("dragend", () => {
+          const p = locationMarker.getLatLng();
+          setMapPin(p.lat, p.lng);
+        });
+      } else {
+        locationMarker.setLatLng([lat, lon]);
+      }
+      if (pan) locationMap.setView([lat, lon], locationMap.getZoom());
+    }
+
+    function initLocationMap() {
+      if (locationMap || typeof L === "undefined") return;
+      locationMap = L.map(locMapEl, {
+        zoomControl: true,
+        attributionControl: true,
+      });
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: "&copy; OpenStreetMap",
+      }).addTo(locationMap);
+      locationMap.on("click", (e) => setMapPin(e.latlng.lat, e.latlng.lng));
+    }
+
+    function closeLocationDialog() {
+      locDialog.hidden = true;
+    }
+
+    function openLocationDialog() {
+      const startLat = Number(latInput.value);
+      const startLon = Number(lonInput.value);
+      pickLat = Number.isFinite(startLat) ? startLat : 0;
+      pickLon = Number.isFinite(startLon) ? startLon : 0;
+      locDialog.hidden = false;
+      requestAnimationFrame(() => {
+        initLocationMap();
+        if (!locationMap) return;
+        const hasLoc =
+          Number.isFinite(startLat) &&
+          Number.isFinite(startLon) &&
+          !(startLat === 0 && startLon === 0);
+        const zoom = hasLoc ? 10 : 3;
+        locationMap.setView([pickLat, pickLon], zoom);
+        setMapPin(pickLat, pickLon);
+        locationMap.invalidateSize();
+      });
+    }
+
+    editBtn.addEventListener("click", () => openLocationDialog());
+    locDialogCancel.addEventListener("click", () => closeLocationDialog());
+    locDialog.addEventListener("click", (e) => {
+      // Tap dimmed backdrop (not the sheet) closes
+      if (e.target === locDialog) closeLocationDialog();
+    });
+    locDialogUse.addEventListener("click", () => {
+      if (!Number.isFinite(pickLat) || !Number.isFinite(pickLon)) return;
+      applyLocation(pickLat, pickLon, "map");
+      closeLocationDialog();
+      if (!previewMode) goLive();
+    });
+
+    geoBtn.addEventListener("click", () => {
+      if (!navigator.geolocation) {
+        locCoords.textContent = "GPS unavailable";
+        openLocationDialog();
+        return;
+      }
+      locCoords.textContent = "Locating…";
+      geoBtn.disabled = true;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          geoBtn.disabled = false;
+          applyLocation(pos.coords.latitude, pos.coords.longitude, "gps");
+          if (!previewMode) goLive();
+        },
+        (err) => {
+          geoBtn.disabled = false;
+          locCoords.textContent =
+            err.code === 1 ? "Permission denied" : "Location failed";
+          openLocationDialog();
+        },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+      );
+    });
+
+    function requestUserLocation({ force = false } = {}) {
+      if (!navigator.geolocation) {
+        if (force) openLocationDialog();
+        else if (!loadSavedLoc()) applyDefaultLocation();
+        return;
+      }
+      // Browsers block GPS on plain http://LAN-IP — need https (or localhost)
+      if (
+        typeof window.isSecureContext === "boolean" &&
+        !window.isSecureContext &&
+        location.hostname !== "localhost" &&
+        location.hostname !== "127.0.0.1"
+      ) {
+        locCoords.title =
+          "GPS needs HTTPS on this device. Tap locate on Mac/localhost, or Edit map.";
+        if (!loadSavedLoc() && !force) {
+          applyDefaultLocation();
+          return;
+        }
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          applyLocation(pos.coords.latitude, pos.coords.longitude, "gps");
+          if (!previewMode) goLive();
+        },
+        () => {
+          if (force) openLocationDialog();
+          else if (!loadSavedLoc()) applyDefaultLocation();
+        },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+      );
+    }
+
+    // Boot: saved or Asheville default first; GPS refines when allowed.
+    // Never open the map picker automatically (X / denied permission stay usable).
+    const saved = loadSavedLoc();
+    if (saved) {
+      applyLocation(saved.lat, saved.lon, saved.source || "saved");
+    } else {
+      applyDefaultLocation();
+    }
+    goLive();
+    refreshFeeds(true);
+    requestAnimationFrame(() => {
+      goLive();
+      startOrbitDefault();
+      requestUserLocation({ force: false });
+    });
+
+    setInterval(() => {
+      if (previewMode) return;
+      globe.setTime(new Date(), { lockOrient: false });
+      const p = dayPhase01();
+      phaseSlider.value = String(Math.round(p * 1000));
+      showPhase(globe.getPhaseInfo());
+      refreshFeeds(false);
+    }, 60000);
+
+    function pwaFillHeightPx() {
+      const iw = window.innerWidth || 0;
+      const ih = window.innerHeight || 0;
+      const sw = window.screen.width || 0;
+      const sh = window.screen.height || 0;
+      // iOS keeps screen.* in portrait metrics; pick the axis for current height.
+      if (ih >= iw) return Math.max(ih, Math.max(sw, sh));
+      return Math.max(ih, Math.min(sw, sh));
+    }
+
+    /** iPad PWA: screen.* undershoots CSS inner — phone uses screen height instead. */
+    function pwaExtraBottomPx() {
+      const iw = window.innerWidth || 0;
+      const ih = window.innerHeight || 0;
+      const sw = window.screen.width || 0;
+      const sh = window.screen.height || 0;
+      const screenMax = Math.max(sw, sh);
+      if (Math.min(iw, ih) < 600) return 0;
+      if (screenMax >= ih - 10) return 0;
+      return Math.max(readSafeInsetBottom(), 20);
+    }
+
+    function syncPwaFillHeight() {
+      const root = document.documentElement;
+      if (!root.classList.contains("pwa-standalone")) {
+        root.style.removeProperty("--pwa-fill-h");
+        root.style.removeProperty("--pwa-extra-b");
+        return 0;
+      }
+      const fillH = pwaFillHeightPx();
+      const extra = pwaExtraBottomPx();
+      root.style.setProperty("--pwa-fill-h", `${fillH}px`);
+      root.style.setProperty("--pwa-extra-b", `${extra}px`);
+      return fillH + extra;
+    }
+
+    function readSafeInsetBottom() {
+      const probe = document.createElement("div");
+      probe.style.cssText =
+        "position:fixed;visibility:hidden;pointer-events:none;padding-bottom:env(safe-area-inset-bottom,0px)";
+      document.body.appendChild(probe);
+      const px = parseFloat(getComputedStyle(probe).paddingBottom) || 0;
+      probe.remove();
+      return px;
+    }
+
+    function onResize() {
+      syncPwaFillHeight();
+      globe.fitToHost();
+    }
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", () => {
+      setTimeout(onResize, 50);
+      setTimeout(onResize, 300);
+    });
+    window.visualViewport?.addEventListener("resize", onResize);
+    window.addEventListener("pageshow", onResize);
+    syncPwaFillHeight();
+    onResize();
+    setTimeout(onResize, 100);
+    setTimeout(onResize, 400);
+  </script>
+  <script>
+    window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+.DS_Store
+.npm-cache
+.tmp
+.vercel
+orient-compare.png
+orient-compare-mirror.png
+
+.local-cert.pem
+.local-key.pem
