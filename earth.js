@@ -120,8 +120,8 @@ function createStarfield() {
 }
 
 const LOD = {
-  low: { map: "earth-2k.jpg?v=e2", night: "earth-night-2k.jpg?v=e2", segments: 128 },
-  high: { map: "earth-8k.jpg?v=e2", night: "earth-night-8k.jpg?v=e2", segments: 224 },
+  low: { map: "earth-2k.jpg?v=e3", night: "earth-night-2k.jpg?v=e3", segments: 128 },
+  high: { map: "earth-8k.jpg?v=e3", night: "earth-night-8k.jpg?v=e3", segments: 224 },
 };
 
 const NIGHT_VERT = `
@@ -721,14 +721,6 @@ export function createEarthGlobe(canvas, options = {}) {
     return missionMode;
   }
 
-  function highLod() {
-    const maxTex = renderer.capabilities.maxTextureSize || 8192;
-    if (maxTex >= 16384) {
-      return { map: "earth-16k.jpg?v=e2", night: "earth-night-8k.jpg?v=e2", segments: 256 };
-    }
-    return LOD.high;
-  }
-
   function loadLow() {
     const cfg = LOD.low;
     const map = loader.load(cfg.map, (tex) => {
@@ -750,7 +742,7 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function upgradeHigh() {
     if (disposed) return;
-    const cfg = highLod();
+    const cfg = LOD.high;
     let mapDone = null;
     let nightDone = null;
 
