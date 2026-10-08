@@ -120,8 +120,8 @@ function createStarfield() {
 }
 
 const LOD = {
-  low: { map: "earth-2k.jpg", night: "earth-night-2k.jpg", segments: 128 },
-  high: { map: "earth-8k.jpg", night: "earth-night-8k.jpg", segments: 224 },
+  low: { map: "earth-2k.jpg?v=e2", night: "earth-night-2k.jpg?v=e2", segments: 128 },
+  high: { map: "earth-8k.jpg?v=e2", night: "earth-night-8k.jpg?v=e2", segments: 224 },
 };
 
 const NIGHT_VERT = `
@@ -140,11 +140,11 @@ const NIGHT_FRAG = `
   varying vec3 vWorldNormal;
   void main() {
     float ndl = dot(normalize(vWorldNormal), normalize(uSunDir));
-    float night = smoothstep(0.18, -0.22, ndl);
+    float night = smoothstep(0.28, -0.08, ndl);
     vec3 col = texture2D(uNight, vUv).rgb;
     float lum = dot(col, vec3(0.299, 0.587, 0.114));
-    col *= mix(0.35, 1.0, smoothstep(0.02, 0.25, lum));
-    gl_FragColor = vec4(col * night * 1.35, night);
+    col *= mix(0.72, 1.15, smoothstep(0.0, 0.22, lum));
+    gl_FragColor = vec4(col * night * 2.6, night);
   }
 `;
 
@@ -401,8 +401,7 @@ export function createEarthGlobe(canvas, options = {}) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxPixelRatio));
   renderer.setClearColor(0x020308, 1);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  renderer.toneMapping = THREE.NoToneMapping;
 
   const starfield = createStarfield();
   scene.add(starfield);
@@ -549,7 +548,7 @@ export function createEarthGlobe(canvas, options = {}) {
 
     material = new THREE.MeshStandardMaterial({
       map,
-      roughness: 0.92,
+      roughness: 1.0,
       metalness: 0.0,
       emissive: new THREE.Color(0x0a1020),
       emissiveIntensity: 0.02,
@@ -722,6 +721,14 @@ export function createEarthGlobe(canvas, options = {}) {
     return missionMode;
   }
 
+  function highLod() {
+    const maxTex = renderer.capabilities.maxTextureSize || 8192;
+    if (maxTex >= 16384) {
+      return { map: "earth-16k.jpg?v=e2", night: "earth-night-8k.jpg?v=e2", segments: 256 };
+    }
+    return LOD.high;
+  }
+
   function loadLow() {
     const cfg = LOD.low;
     const map = loader.load(cfg.map, (tex) => {
@@ -743,7 +750,7 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function upgradeHigh() {
     if (disposed) return;
-    const cfg = LOD.high;
+    const cfg = highLod();
     let mapDone = null;
     let nightDone = null;
 
@@ -805,7 +812,7 @@ export function createEarthGlobe(canvas, options = {}) {
           roughness: 1,
           metalness: 0,
           color: 0xffffff,
-          opacity: 0.85,
+          opacity: 0.42,
         });
         cloudMesh = new THREE.Mesh(
           new THREE.SphereGeometry(RADIUS * 1.012, 96, 96),
@@ -924,12 +931,12 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function updateViewLighting() {
-    ambient.intensity = 0.05;
-    earthshine.intensity = 0;
-    key.color.setHex(0xfff4e6);
-    key.intensity = 2.55;
+    ambient.intensity = 0.22;
+    earthshine.intensity = 0.08;
+    key.color.setHex(0xfff8f0);
+    key.intensity = 3.4;
     if (material) {
-      material.emissiveIntensity = 0.02;
+      material.emissiveIntensity = 0.06;
       if (material.emissive) material.emissive.setHex(0x0a1020);
       if (material.color) material.color.setRGB(1.02, 1.01, 1.0);
     }
