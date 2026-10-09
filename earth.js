@@ -120,8 +120,8 @@ function createStarfield() {
 }
 
 const LOD = {
-  low: { map: "earth-2k.jpg?v=e5", night: "earth-night-2k.jpg?v=e5", segments: 128 },
-  high: { map: "earth-8k.jpg?v=e5", night: "earth-night-8k.jpg?v=e5", segments: 224 },
+  low: { map: "earth-2k.jpg?v=e6", night: "earth-night-2k.jpg?v=e6", segments: 128 },
+  high: { map: "earth-8k.jpg?v=e6", night: "earth-night-8k.jpg?v=e6", segments: 224 },
 };
 
 const NIGHT_VERT = `
@@ -796,26 +796,49 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function loadClouds() {
     const stamp = Math.floor(Date.now() / (3 * 3600 * 1000));
-    const url = `https://clouds.matteason.co.uk/images/4096/clouds-alpha.png?t=${stamp}`;
+    const url = `https://clouds.matteason.co.uk/images/4096x2048/clouds-alpha.png?t=${stamp}`;
     loader.load(
       url,
       (tex) => {
         if (disposed) return;
-        tex.colorSpace = THREE.NoColorSpace;
+        tex.colorSpace = THREE.SRGBColorSpace;
         tex.flipY = true;
         tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
         tex.needsUpdate = true;
         const mat = new THREE.MeshBasicMaterial({
-          alphaMap: tex,
+          map: tex,
           transparent: true,
           depthWrite: false,
           color: 0xffffff,
-          opacity: 0.55,
+          opacity: 0.92,
         });
+        mat.onBeforeCompile = (shader) => {
+          shader.uniforms.uSunDir = sunDirUniform;
+          shader.vertexShader = shader.vertexShader.replace(
+            "#include <common>",
+            "#include <common>\nvarying vec3 vWorldN;"
+          );
+          shader.vertexShader = shader.vertexShader.replace(
+            "#include <begin_vertex>",
+            "#include <begin_vertex>\nvWorldN = normalize(mat3(modelMatrix) * normalize(position));"
+          );
+          shader.fragmentShader = shader.fragmentShader.replace(
+            "#include <common>",
+            "#include <common>\nuniform vec3 uSunDir;\nvarying vec3 vWorldN;"
+          );
+          shader.fragmentShader = shader.fragmentShader.replace(
+            "#include <alphamap_fragment>",
+            `#include <alphamap_fragment>
+            float ndl = dot(normalize(vWorldN), normalize(uSunDir));
+            float lit = smoothstep(-0.2, 0.35, ndl);
+            diffuseColor.a *= mix(0.22, 1.0, lit);`
+          );
+        };
         cloudMesh = new THREE.Mesh(
           new THREE.SphereGeometry(RADIUS * 1.012, 96, 96),
           mat
         );
+        cloudMesh.renderOrder = 2;
         if (mesh) mesh.add(cloudMesh);
       },
       undefined,
