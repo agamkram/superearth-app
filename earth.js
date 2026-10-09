@@ -120,8 +120,8 @@ function createStarfield() {
 }
 
 const LOD = {
-  low: { map: "earth-2k.jpg?v=e10", night: "earth-night-2k.jpg?v=e10", segments: 128 },
-  high: { map: "earth-8k.jpg?v=e10", night: "earth-night-8k.jpg?v=e10", segments: 224 },
+  low: { map: "earth-2k.jpg?v=e11", night: "earth-night-2k.jpg?v=e11", segments: 128 },
+  high: { map: "earth-8k.jpg?v=e11", night: "earth-night-8k.jpg?v=e11", segments: 224 },
 };
 
 const NIGHT_VERT = `
@@ -874,13 +874,11 @@ export function createEarthGlobe(canvas, options = {}) {
       sub = subsolarPoint(when);
     } catch (_) {}
 
-    const placeLat = orientLocked ? frozenLat : observerLat;
     const placeLon = orientLocked ? frozenLon : observerLon;
-    const lat = placeLat;
     const lon = placeLon;
     if (mesh) {
       mesh.rotation.order = "XYZ";
-      mesh.rotation.x = THREE.MathUtils.degToRad(lat);
+      mesh.rotation.x = 0;
       mesh.rotation.y = -Math.PI / 2 - THREE.MathUtils.degToRad(lon);
       mesh.rotation.z = 0;
     }
@@ -906,7 +904,7 @@ export function createEarthGlobe(canvas, options = {}) {
       when: new Date(when.getTime()),
       subLat: sub.lat,
       subLon: sub.lon,
-      southern: lat < 0,
+      southern: observerLat < 0,
       orientLocked,
     };
     if (typeof onPhase === "function") onPhase(lastPhaseInfo);
