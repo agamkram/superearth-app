@@ -120,8 +120,8 @@ function createStarfield() {
 }
 
 const LOD = {
-  low: { map: "earth-2k.jpg?v=e12", night: "earth-night-2k.jpg?v=e12", segments: 128 },
-  high: { map: "earth-8k.jpg?v=e12", night: "earth-night-8k.jpg?v=e12", segments: 224 },
+  low: { map: "earth-2k.jpg?v=e13", night: "earth-night-2k.jpg?v=e13", segments: 128 },
+  high: { map: "earth-8k.jpg?v=e13", night: "earth-night-8k.jpg?v=e13", segments: 224 },
 };
 
 const NIGHT_VERT = `
@@ -874,11 +874,13 @@ export function createEarthGlobe(canvas, options = {}) {
       sub = subsolarPoint(when);
     } catch (_) {}
 
-    const placeLat = orientLocked ? frozenLat : observerLat;
     const placeLon = orientLocked ? frozenLon : observerLon;
     if (mesh) {
+      // Polar axis stays straight up. Longitude only. The camera, not the
+      // planet, is what sits on the user's latitude — otherwise a spin that
+      // keeps the US upright rolls Africa onto its side.
       mesh.rotation.order = "XYZ";
-      mesh.rotation.x = THREE.MathUtils.degToRad(placeLat);
+      mesh.rotation.x = 0;
       mesh.rotation.y = -Math.PI / 2 - THREE.MathUtils.degToRad(placeLon);
       mesh.rotation.z = 0;
     }
@@ -1139,6 +1141,8 @@ export function createEarthGlobe(canvas, options = {}) {
     homeLiftY = homeScreenOffsetY();
     applyCanvasPanTransform();
     readSpherical();
+    spherical.theta = 0;
+    spherical.phi = Math.PI / 2 - THREE.MathUtils.degToRad(observerLat);
     writeCamera();
     syncMoon();
     prevCamDist = homeDist;
