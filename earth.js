@@ -120,8 +120,8 @@ function createStarfield() {
 }
 
 const LOD = {
-  low: { map: "earth-2k.jpg?v=e6", night: "earth-night-2k.jpg?v=e6", segments: 128 },
-  high: { map: "earth-8k.jpg?v=e6", night: "earth-night-8k.jpg?v=e6", segments: 224 },
+  low: { map: "earth-2k.jpg?v=e7", night: "earth-night-2k.jpg?v=e7", segments: 128 },
+  high: { map: "earth-8k.jpg?v=e7", night: "earth-night-8k.jpg?v=e7", segments: 224 },
 };
 
 const NIGHT_VERT = `
@@ -490,6 +490,7 @@ export function createEarthGlobe(canvas, options = {}) {
 
   let observerLat = 0;
   let observerLon = 0;
+  let faceSun = false;
   let when = new Date();
   let lastPhaseInfo = null;
   let orientLocked = false;
@@ -872,8 +873,10 @@ export function createEarthGlobe(canvas, options = {}) {
       sub = subsolarPoint(when);
     } catch (_) {}
 
-    const lat = orientLocked ? frozenLat : observerLat;
-    const lon = orientLocked ? frozenLon : observerLon;
+    const placeLat = orientLocked ? frozenLat : observerLat;
+    const placeLon = orientLocked ? frozenLon : observerLon;
+    const lat = faceSun ? sub.lat : placeLat;
+    const lon = faceSun ? sub.lon : placeLon;
     if (mesh) {
       mesh.rotation.order = "YXZ";
       mesh.rotation.y = -Math.PI / 2 - THREE.MathUtils.degToRad(lon);
@@ -906,6 +909,12 @@ export function createEarthGlobe(canvas, options = {}) {
       orientLocked,
     };
     if (typeof onPhase === "function") onPhase(lastPhaseInfo);
+  }
+
+  function setFaceSun(on) {
+    faceSun = !!on;
+    applyEphemeris();
+    return faceSun;
   }
 
   function setObserver(lat, lon) {
@@ -1608,6 +1617,7 @@ export function createEarthGlobe(canvas, options = {}) {
     fitToHost,
     resetView,
     setObserver,
+    setFaceSun,
     setTime,
     setOrbiting,
     isOrbiting,

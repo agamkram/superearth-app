@@ -1436,7 +1436,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e6</span>
+    <span class="build-mark" id="build-mark">e7</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1564,10 +1564,10 @@
           </div>
         </div>
         <div class="loc-card hemi-card">
-          <span class="hemi-label">Hemisphere</span>
-          <div class="hemi" role="group" aria-label="Hemisphere">
-            <button type="button" id="hemi-n" class="active">Northern</button>
-            <button type="button" id="hemi-s">Southern</button>
+          <span class="hemi-label">Center</span>
+          <div class="hemi" role="group" aria-label="Center">
+            <button type="button" id="hemi-n" class="active" title="Your place in front">Here</button>
+            <button type="button" id="hemi-s" title="The sunlit face in front">Sun</button>
           </div>
         </div>
       </div>
@@ -1633,7 +1633,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e6";
+    import { createEarthGlobe } from "./earth.js?v=e7";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     /** Used when GPS/permission unavailable (X in-app browser, denied, etc.) */
@@ -2264,18 +2264,16 @@
       latInput.value = Number(lat).toFixed(4);
       lonInput.value = Number(lon).toFixed(4);
       locCoords.textContent = `${fmtCoord(lat, "N", "S")} · ${fmtCoord(lon, "E", "W")}`;
-      const south = Number(lat) < 0;
-      hemiN.classList.toggle("active", !south);
-      hemiS.classList.toggle("active", south);
       if (source != null) setLocationTitle(source);
     }
 
-    function setHemisphere(southern) {
-      const latAbs = Math.abs(Number(latInput.value) || 35);
-      const lon = Number(lonInput.value) || 0;
-      const lat = southern ? -latAbs : latAbs;
-      applyLocation(lat, lon, "hemi");
-      if (!previewMode) goLive();
+    let faceSun = false;
+
+    function setCenter(sun) {
+      faceSun = !!sun;
+      hemiN.classList.toggle("active", !faceSun);
+      hemiS.classList.toggle("active", faceSun);
+      if (globeRef.current) globeRef.current.setFaceSun(faceSun);
     }
 
     function setLiveUI() {
@@ -2526,8 +2524,8 @@
       },
       { passive: false }
     );
-    hemiN.addEventListener("click", () => setHemisphere(false));
-    hemiS.addEventListener("click", () => setHemisphere(true));
+    hemiN.addEventListener("click", () => setCenter(false));
+    hemiS.addEventListener("click", () => setCenter(true));
 
     function updateMapCoordsDisplay() {
       locMapCoords.textContent = `${fmtCoord(pickLat, "N", "S")} · ${fmtCoord(pickLon, "E", "W")}`;
