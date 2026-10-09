@@ -1432,7 +1432,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e31</span>
+    <span class="build-mark" id="build-mark">e32</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1629,7 +1629,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e30";
+    import { createEarthGlobe } from "./earth.js?v=e32";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     /** Used when GPS/permission unavailable (X in-app browser, denied, etc.) */
@@ -2465,7 +2465,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e31 " + level;
+        if (mark) mark.textContent = "e32 " + level;
       },
       onPhase: showPhase,
       onMissionTap: openMissionSheet,

@@ -877,8 +877,9 @@ export function createEarthGlobe(canvas, options = {}) {
         mesh.geometry.dispose();
         mesh.geometry = new THREE.SphereGeometry(RADIUS, cfg.segments, cfg.segments);
       }
-      if (typeof onQuality === "function") onQuality("8k");
       kick();
+      // Mark 8k only once day and night maps are both in.
+      if (nightDone && typeof onQuality === "function") onQuality("8k");
     };
 
     loader.load(cfg.map, (tex) => {
@@ -887,21 +888,18 @@ export function createEarthGlobe(canvas, options = {}) {
       mapDone = tex;
       tryApply();
     });
-    // Night is only the dark side. A second 8192 image plus 8192 clouds
-    // is what made Safari reload the phone and leave the 2k map up.
-    if (!isTouch) {
-      loader.load(cfg.night, (tex) => {
-        if (disposed) return;
-        configureNight(tex);
-        nightDone = tex;
-        tryApply();
-      });
-    }
+    loader.load(cfg.night, (tex) => {
+      if (disposed) return;
+      configureNight(tex);
+      nightDone = tex;
+      tryApply();
+    });
   }
 
   function loadClouds() {
     const stamp = Math.floor(Date.now() / (3 * 3600 * 1000));
-    const size = isTouch ? "4096x2048" : "8192x4096";
+    // CDN max is 8192×4096 (~23 MB). 16384 returns HTML, not an image.
+    const size = "8192x4096";
     const url = `https://clouds.matteason.co.uk/images/${size}/clouds-alpha.png?t=${stamp}`;
     loader.load(
       url,
