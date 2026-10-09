@@ -50,10 +50,10 @@
     })();
   </script>
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="icon" href="favicon.ico" sizes="32x32" />
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
-  <link rel="icon" type="image/png" href="icon-192.png" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=e14" sizes="180x180" />
+  <link rel="icon" href="favicon.ico?v=e15" sizes="32x32" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=e15" />
+  <link rel="icon" type="image/png" href="icon-192.png?v=e15" />
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-180x180.png" />
   <link rel="preload" href="earth-2k.jpg" as="image" type="image/jpeg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -1436,7 +1436,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e14</span>
+    <span class="build-mark" id="build-mark">e15</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1633,7 +1633,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e14";
+    import { createEarthGlobe } from "./earth.js?v=e15";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     /** Used when GPS/permission unavailable (X in-app browser, denied, etc.) */
