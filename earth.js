@@ -120,8 +120,8 @@ function createStarfield() {
 }
 
 const LOD = {
-  low: { map: "earth-2k.jpg?v=e3", night: "earth-night-2k.jpg?v=e3", segments: 128 },
-  high: { map: "earth-8k.jpg?v=e3", night: "earth-night-8k.jpg?v=e3", segments: 224 },
+  low: { map: "earth-2k.jpg?v=e5", night: "earth-night-2k.jpg?v=e5", segments: 128 },
+  high: { map: "earth-8k.jpg?v=e5", night: "earth-night-8k.jpg?v=e5", segments: 224 },
 };
 
 const NIGHT_VERT = `
@@ -516,18 +516,50 @@ export function createEarthGlobe(canvas, options = {}) {
     tex.needsUpdate = true;
   }
 
-  function makeNightMaterial(tex) {
-    return new THREE.ShaderMaterial({
-      uniforms: {
-        uNight: { value: tex },
-        uSunDir: sunDirUniform,
-      },
-      vertexShader: NIGHT_VERT,
-      fragmentShader: NIGHT_FRAG,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
+  function configureNight(tex) {
+    tex.colorSpace = THREE.NoColorSpace;
+    tex.flipY = true;
+    tex.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = true;
+    tex.needsUpdate = true;
+  }
+
+  function makeSurfaceMaterial(map, night) {
+    const nightUniform = { value: night };
+    const material = new THREE.MeshBasicMaterial({ map, color: 0xffffff });
+    material.userData.nightUniform = nightUniform;
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.uNight = nightUniform;
+      shader.uniforms.uSunDir = sunDirUniform;
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <common>",
+        "#include <common>\nvarying vec3 vWorldN;"
+      );
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <begin_vertex>",
+        "#include <begin_vertex>\nvWorldN = normalize(mat3(modelMatrix) * normalize(position));"
+      );
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <common>",
+        "#include <common>\nuniform sampler2D uNight;\nuniform vec3 uSunDir;\nvarying vec3 vWorldN;"
+      );
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <color_fragment>",
+        `#include <color_fragment>
+        float ndl = dot(normalize(vWorldN), normalize(uSunDir));
+        float day = smoothstep(-0.04, 0.20, ndl);
+        vec3 dayCol = diffuseColor.rgb;
+        float lum = dot(dayCol, vec3(0.2126, 0.7152, 0.0722));
+        float blue = dayCol.b - max(dayCol.r, dayCol.g);
+        float ocean = smoothstep(0.035, 0.006, lum) * smoothstep(0.0, 0.004, blue);
+        dayCol = mix(dayCol, vec3(0.012, 0.11, 0.38), ocean);
+        vec3 nightCol = pow(texture2D(uNight, vMapUv).rgb, vec3(2.2));
+        diffuseColor.rgb = mix(nightCol * 2.1, dayCol, day);`
+      );
+    };
+    return material;
   }
 
   function buildMesh(map, night, cfg) {
@@ -546,27 +578,11 @@ export function createEarthGlobe(canvas, options = {}) {
     }
     nightMesh = null;
 
-    material = new THREE.MeshStandardMaterial({
-      map,
-      roughness: 1.0,
-      metalness: 0.0,
-      emissive: new THREE.Color(0x0a1020),
-      emissiveIntensity: 0.02,
-    });
-    material.color.setRGB(1.02, 1.01, 1.0);
-
+    material = makeSurfaceMaterial(map, night);
     mesh = new THREE.Mesh(
       new THREE.SphereGeometry(RADIUS, cfg.segments, cfg.segments),
       material
     );
-    if (night) {
-      nightMat = makeNightMaterial(night);
-      nightMesh = new THREE.Mesh(
-        new THREE.SphereGeometry(RADIUS * 1.002, cfg.segments, cfg.segments),
-        nightMat
-      );
-      mesh.add(nightMesh);
-    }
     if (cloudMesh) mesh.add(cloudMesh);
     moonGroup.add(mesh);
     attachMissionPins(mesh);
@@ -733,9 +749,9 @@ export function createEarthGlobe(canvas, options = {}) {
         setTimeout(() => upgradeHigh(), 400);
       }
     });
-    const night = loader.load(cfg.night, configureColor);
+    const night = loader.load(cfg.night, configureNight);
     configureColor(map);
-    configureColor(night);
+    configureNight(night);
     buildMesh(map, night, cfg);
     loadClouds();
   }
@@ -752,22 +768,14 @@ export function createEarthGlobe(canvas, options = {}) {
       material.map = mapDone;
       material.needsUpdate = true;
       if (oldMap && oldMap !== mapDone) oldMap.dispose();
-      if (nightDone && nightMat) {
-        const old = nightMat.uniforms.uNight.value;
-        nightMat.uniforms.uNight.value = nightDone;
+      if (nightDone && material.userData.nightUniform) {
+        const old = material.userData.nightUniform.value;
+        material.userData.nightUniform.value = nightDone;
         if (old && old !== nightDone) old.dispose();
       }
       if (mesh && mesh.geometry.parameters.widthSegments < cfg.segments) {
         mesh.geometry.dispose();
         mesh.geometry = new THREE.SphereGeometry(RADIUS, cfg.segments, cfg.segments);
-        if (nightMesh) {
-          nightMesh.geometry.dispose();
-          nightMesh.geometry = new THREE.SphereGeometry(
-            RADIUS * 1.002,
-            cfg.segments,
-            cfg.segments
-          );
-        }
       }
       if (typeof onQuality === "function") onQuality("8k");
     };
@@ -780,7 +788,7 @@ export function createEarthGlobe(canvas, options = {}) {
     });
     loader.load(cfg.night, (tex) => {
       if (disposed) return;
-      configureColor(tex);
+      configureNight(tex);
       nightDone = tex;
       tryApply();
     });
@@ -797,14 +805,12 @@ export function createEarthGlobe(canvas, options = {}) {
         tex.flipY = true;
         tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
         tex.needsUpdate = true;
-        const mat = new THREE.MeshStandardMaterial({
+        const mat = new THREE.MeshBasicMaterial({
           alphaMap: tex,
           transparent: true,
           depthWrite: false,
-          roughness: 1,
-          metalness: 0,
           color: 0xffffff,
-          opacity: 0.42,
+          opacity: 0.55,
         });
         cloudMesh = new THREE.Mesh(
           new THREE.SphereGeometry(RADIUS * 1.012, 96, 96),
@@ -927,10 +933,10 @@ export function createEarthGlobe(canvas, options = {}) {
     earthshine.intensity = 0.08;
     key.color.setHex(0xfff8f0);
     key.intensity = 3.4;
-    if (material) {
+    if (material && material.emissive) {
       material.emissiveIntensity = 0.06;
       if (material.emissive) material.emissive.setHex(0x0a1020);
-      if (material.color) material.color.setRGB(1.02, 1.01, 1.0);
+      if (material.color) material.color.setRGB(1, 1, 1);
     }
   }
 
