@@ -1185,11 +1185,11 @@
       position: relative;
       flex: 1 1 auto;
       min-width: 0;
-      height: 44px;
+      height: 32px;
       display: flex;
       align-items: center;
-      margin: -4px 0;
-      padding: 4px 0;
+      margin: 0;
+      padding: 0;
       box-sizing: content-box;
     }
 
@@ -1197,7 +1197,7 @@
       -webkit-appearance: none;
       appearance: none;
       width: 100%;
-      height: 44px;
+      height: 32px;
       margin: 0;
       background: transparent;
       cursor: pointer;
@@ -1214,9 +1214,9 @@
     #phase-slider::-webkit-slider-thumb {
       -webkit-appearance: none;
       appearance: none;
-      width: 28px;
-      height: 28px;
-      margin-top: -10px;
+      width: 22px;
+      height: 22px;
+      margin-top: -7px;
       border-radius: 50%;
       border: 1px solid rgba(255, 255, 255, 0.35);
       background: #e8edf7;
@@ -1231,8 +1231,8 @@
     }
 
     #phase-slider::-moz-range-thumb {
-      width: 28px;
-      height: 28px;
+      width: 22px;
+      height: 22px;
       border-radius: 50%;
       border: 1px solid rgba(255, 255, 255, 0.35);
       background: #e8edf7;
@@ -1355,9 +1355,9 @@
     body.is-red-mode #phase-slider::-webkit-slider-thumb {
       -webkit-appearance: none;
       appearance: none;
-      width: 28px;
-      height: 28px;
-      margin-top: -10px;
+      width: 22px;
+      height: 22px;
+      margin-top: -7px;
       border-radius: 50%;
       border: 1px solid #4a0c0c;
       background: var(--red-thumb);
@@ -1372,8 +1372,8 @@
     }
 
     body.is-red-mode #phase-slider::-moz-range-thumb {
-      width: 28px;
-      height: 28px;
+      width: 22px;
+      height: 22px;
       border-radius: 50%;
       border: 1px solid #4a0c0c;
       background: var(--red-thumb);
@@ -1432,7 +1432,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e21</span>
+    <span class="build-mark" id="build-mark">e31</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1629,7 +1629,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e21";
+    import { createEarthGlobe } from "./earth.js?v=e30";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     /** Used when GPS/permission unavailable (X in-app browser, denied, etc.) */
@@ -2463,8 +2463,9 @@
         status.textContent = "";
         status.style.display = "none";
       },
-      onQuality() {
-        /* quality upgrades stay silent */
+      onQuality(level) {
+        const mark = document.getElementById("build-mark");
+        if (mark) mark.textContent = "e31 " + level;
       },
       onPhase: showPhase,
       onMissionTap: openMissionSheet,
@@ -2647,7 +2648,7 @@
           if (force) openLocationDialog();
           else if (!loadSavedLoc()) applyDefaultLocation();
         },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+        { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 }
       );
     }
 
@@ -2667,14 +2668,17 @@
       requestUserLocation({ force: false });
     });
 
-    setInterval(() => {
-      if (previewMode) return;
+    function tickLive() {
+      if (previewMode || document.hidden) return;
       globe.setTime(new Date(), { lockOrient: false });
       const p = dayPhase01();
       phaseSlider.value = String(Math.round(p * 1000));
       showPhase(globe.getPhaseInfo());
       refreshFeeds(false);
-    }, 60000);
+    }
+
+    setInterval(tickLive, 60000);
+    document.addEventListener("visibilitychange", tickLive);
 
     function pwaFillHeightPx() {
       const iw = window.innerWidth || 0;

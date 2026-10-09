@@ -16,6 +16,50 @@ const MAX_PAN = RADIUS * 20;
 const PINCH_POWER = 0.4;
 const PINCH_EPS = 0.005;
 const WHEEL_DOLLY = 0.0012;
+
+/**
+ * Earth air. Same limb shell as Mars, bluer, just outside the clouds.
+ * BackSide; ray-altitude fade into space. Brighter on the day side.
+ */
+const ATMO_HEIGHT = 1.05;
+const ATMO_FADE = 0.75;
+const ATMO_INTENSITY = 0.55;
+const ATMO_COLOR = new THREE.Color(0x4da6ff);
+
+const ATMO_VERTEX = /* glsl */ `
+varying vec3 vWorldPos;
+varying vec3 vWorldNormal;
+void main() {
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vWorldPos = wp.xyz;
+  vWorldNormal = normalize(mat3(modelMatrix) * normal);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+const ATMO_FRAGMENT = /* glsl */ `
+uniform vec3 uColor;
+uniform float uIntensity;
+uniform float uFadePower;
+uniform vec3 uLightDir;
+uniform vec3 uPlanetCenter;
+uniform float uPlanetRadius;
+uniform float uAtmoRadius;
+varying vec3 vWorldPos;
+varying vec3 vWorldNormal;
+void main() {
+  vec3 rd = normalize(vWorldPos - cameraPosition);
+  vec3 oc = cameraPosition - uPlanetCenter;
+  float dist = length(oc - rd * dot(oc, rd));
+  float span = max(uAtmoRadius - uPlanetRadius, 1e-4);
+  float h = clamp((dist - uPlanetRadius) / span, 0.0, 1.0);
+  float radial = pow(1.0 - h, uFadePower);
+  vec3 nWorld = normalize(vWorldNormal);
+  float day = smoothstep(-0.15, 0.5, dot(nWorld, normalize(uLightDir)));
+  float glow = radial * mix(0.35, 1.0, day) * uIntensity;
+  gl_FragColor = vec4(uColor * glow, 1.0);
+}
+`;
 /** Base vertical FOV (degrees). Buffer render expands FOV so center crop matches this. */
 const BASE_FOV = 40;
 /**
@@ -120,8 +164,8 @@ function createStarfield() {
 }
 
 const LOD = {
-  low: { map: "earth-2k.jpg?v=e13", night: "earth-night-2k.jpg?v=e13", segments: 128 },
-  high: { map: "earth-8k.jpg?v=e13", night: "earth-night-8k.jpg?v=e13", segments: 224 },
+  low: { map: "earth-2k.jpg?v=e28", night: "earth-night-2k.jpg?v=e28", segments: 128 },
+  high: { map: "earth-8k.jpg?v=e28", night: "earth-night-8k.jpg?v=e28", segments: 224 },
 };
 
 const NIGHT_VERT = `
@@ -429,6 +473,10 @@ export function createEarthGlobe(canvas, options = {}) {
   let nightMat = null;
   let cloudMesh = null;
   let cloudsOn = true;
+  let atmosphere = null;
+  let atmosphereMat = null;
+  const _atmoCenter = new THREE.Vector3();
+  const _atmoScale = new THREE.Vector3();
   let frozenLat = 0;
   let frozenLon = 0;
   const raycaster = new THREE.Raycaster();
@@ -554,8 +602,10 @@ export function createEarthGlobe(canvas, options = {}) {
         vec3 dayCol = diffuseColor.rgb;
         float lum = dot(dayCol, vec3(0.2126, 0.7152, 0.0722));
         float blue = dayCol.b - max(dayCol.r, dayCol.g);
-        float ocean = smoothstep(0.035, 0.006, lum) * smoothstep(0.0, 0.004, blue);
-        dayCol = mix(dayCol, vec3(0.012, 0.11, 0.38), ocean);
+        float dark = smoothstep(0.16, 0.03, lum);
+        float blu = smoothstep(0.0, 0.02, blue);
+        float ocean = dark * blu;
+        dayCol = mix(dayCol, vec3(0.02, 0.11, 0.32), ocean * 0.88);
         vec3 nightCol = pow(texture2D(uNight, vMapUv).rgb, vec3(2.2));
         diffuseColor.rgb = mix(nightCol * 2.1, dayCol, day);`
       );
@@ -586,8 +636,51 @@ export function createEarthGlobe(canvas, options = {}) {
     );
     if (cloudMesh) mesh.add(cloudMesh);
     moonGroup.add(mesh);
+    ensureAtmosphere();
     attachMissionPins(mesh);
     applyEphemeris();
+  }
+
+  function ensureAtmosphere() {
+    if (atmosphere) return;
+    atmosphereMat = new THREE.ShaderMaterial({
+      vertexShader: ATMO_VERTEX,
+      fragmentShader: ATMO_FRAGMENT,
+      uniforms: {
+        uLightDir: { value: sunDir.clone() },
+        uColor: { value: ATMO_COLOR.clone() },
+        uIntensity: { value: ATMO_INTENSITY },
+        uFadePower: { value: ATMO_FADE },
+        uPlanetCenter: { value: new THREE.Vector3() },
+        uPlanetRadius: { value: RADIUS },
+        uAtmoRadius: { value: RADIUS * ATMO_HEIGHT },
+      },
+      side: THREE.BackSide,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      depthWrite: false,
+      depthTest: true,
+      toneMapped: false,
+    });
+    atmosphere = new THREE.Mesh(
+      new THREE.SphereGeometry(RADIUS, 64, 64),
+      atmosphereMat
+    );
+    atmosphere.renderOrder = 10;
+    atmosphere.frustumCulled = false;
+    atmosphere.scale.setScalar(ATMO_HEIGHT);
+    moonGroup.add(atmosphere);
+  }
+
+  function updateAtmosphereLight() {
+    if (!atmosphereMat || !atmosphere) return;
+    atmosphereMat.uniforms.uLightDir.value.copy(sunDir);
+    moonGroup.getWorldPosition(_atmoCenter);
+    moonGroup.getWorldScale(_atmoScale);
+    const g = _atmoScale.x || 1;
+    atmosphereMat.uniforms.uPlanetCenter.value.copy(_atmoCenter);
+    atmosphereMat.uniforms.uPlanetRadius.value = RADIUS * g;
+    atmosphereMat.uniforms.uAtmoRadius.value = RADIUS * ATMO_HEIGHT * g;
   }
 
   /**
@@ -665,6 +758,7 @@ export function createEarthGlobe(canvas, options = {}) {
   function setSites(list) {
     SURFACE_SITES = Array.isArray(list) ? list : [];
     if (mesh) attachMissionPins(mesh);
+    kick();
     return SURFACE_SITES.length;
   }
 
@@ -738,6 +832,12 @@ export function createEarthGlobe(canvas, options = {}) {
     return missionMode;
   }
 
+  function scheduleHigh() {
+    if (hqStarted) return;
+    hqStarted = true;
+    setTimeout(() => upgradeHigh(), 400);
+  }
+
   function loadLow() {
     const cfg = LOD.low;
     const map = loader.load(cfg.map, (tex) => {
@@ -745,16 +845,15 @@ export function createEarthGlobe(canvas, options = {}) {
       ready = true;
       if (typeof onReady === "function") onReady();
       if (typeof onQuality === "function") onQuality("2k");
-      if (!hqStarted && !isTouch) {
-        hqStarted = true;
-        setTimeout(() => upgradeHigh(), 400);
-      }
+      kick();
+      scheduleHigh();
     });
     const night = loader.load(cfg.night, configureNight);
     configureColor(map);
     configureNight(night);
     buildMesh(map, night, cfg);
     loadClouds();
+    scheduleHigh();
   }
 
   function upgradeHigh() {
@@ -779,6 +878,7 @@ export function createEarthGlobe(canvas, options = {}) {
         mesh.geometry = new THREE.SphereGeometry(RADIUS, cfg.segments, cfg.segments);
       }
       if (typeof onQuality === "function") onQuality("8k");
+      kick();
     };
 
     loader.load(cfg.map, (tex) => {
@@ -787,17 +887,21 @@ export function createEarthGlobe(canvas, options = {}) {
       mapDone = tex;
       tryApply();
     });
-    loader.load(cfg.night, (tex) => {
-      if (disposed) return;
-      configureNight(tex);
-      nightDone = tex;
-      tryApply();
-    });
+    // Night is only the dark side. A second 8192 image plus 8192 clouds
+    // is what made Safari reload the phone and leave the 2k map up.
+    if (!isTouch) {
+      loader.load(cfg.night, (tex) => {
+        if (disposed) return;
+        configureNight(tex);
+        nightDone = tex;
+        tryApply();
+      });
+    }
   }
 
   function loadClouds() {
     const stamp = Math.floor(Date.now() / (3 * 3600 * 1000));
-    const size = isTouch ? "2048x1024" : "4096x2048";
+    const size = isTouch ? "4096x2048" : "8192x4096";
     const url = `https://clouds.matteason.co.uk/images/${size}/clouds-alpha.png?t=${stamp}`;
     loader.load(
       url,
@@ -843,6 +947,7 @@ export function createEarthGlobe(canvas, options = {}) {
         cloudMesh.renderOrder = 2;
         cloudMesh.visible = cloudsOn;
         if (mesh) mesh.add(cloudMesh);
+        kick();
       },
       undefined,
       () => {}
@@ -894,6 +999,7 @@ export function createEarthGlobe(canvas, options = {}) {
     key.target.position.copy(target);
     sunDir.copy(sunLocal).normalize();
     updateViewLighting();
+    kick();
 
     const hours =
       when.getHours() + when.getMinutes() / 60 + when.getSeconds() / 3600;
@@ -916,6 +1022,7 @@ export function createEarthGlobe(canvas, options = {}) {
   function setClouds(on) {
     cloudsOn = !!on;
     if (cloudMesh) cloudMesh.visible = cloudsOn;
+    kick();
     return cloudsOn;
   }
 
@@ -1051,6 +1158,7 @@ export function createEarthGlobe(canvas, options = {}) {
     camera.near = Math.max(0.001, frontGap * 0.35);
     camera.far = Math.max(200, dist + 40);
     camera.updateProjectionMatrix();
+    kick();
   }
 
   function camDist() {
@@ -1060,6 +1168,7 @@ export function createEarthGlobe(canvas, options = {}) {
   function syncMoon() {
     moonGroup.position.copy(target);
     key.target.position.copy(target);
+    updateAtmosphereLight();
   }
 
   /** Extra home lift above safe-band center (CSS px for 0.375in = 1/4" + 1/8"). */
@@ -1575,6 +1684,7 @@ export function createEarthGlobe(canvas, options = {}) {
   surface.addEventListener("mousedown", onMouseDown);
   surface.addEventListener("wheel", onWheel, { passive: false });
   surface.addEventListener("contextmenu", onContextMenu);
+  document.addEventListener("visibilitychange", onVisibility);
   canvas.style.touchAction = "none";
   surface.style.touchAction = "none";
   document.documentElement.style.touchAction = "none";
@@ -1590,9 +1700,26 @@ export function createEarthGlobe(canvas, options = {}) {
     return orbiting;
   }
 
+  function kick() {
+    if (disposed || animId) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    animId = requestAnimationFrame(animate);
+  }
+
+  function onVisibility() {
+    if (document.hidden) {
+      if (animId) cancelAnimationFrame(animId);
+      animId = 0;
+      lastOrbitMs = 0;
+      return;
+    }
+    kick();
+  }
+
   function animate(now) {
     if (disposed) return;
-    animId = requestAnimationFrame(animate);
+    animId = 0;
+    if (typeof document !== "undefined" && document.hidden) return;
     if (orbiting) {
       const t = typeof now === "number" ? now : performance.now();
       if (!lastOrbitMs) lastOrbitMs = t;
@@ -1605,16 +1732,16 @@ export function createEarthGlobe(canvas, options = {}) {
       }
     }
     syncMoon();
-    updateViewLighting();
     if (missionMode !== "off") updateMissionPinFacing();
     renderer.render(scene, camera);
+    if (orbiting || oneFinger || twoFinger) kick();
   }
 
   applyEphemeris();
   loadLow();
   fitToHost();
   applyHomeFraming();
-  animate();
+  kick();
 
   return {
     resize,
@@ -1637,6 +1764,8 @@ export function createEarthGlobe(canvas, options = {}) {
       missionMode = "off";
       disposeMissionPins();
       cancelAnimationFrame(animId);
+      animId = 0;
+      document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("touchstart", onTouchStart, true);
       window.removeEventListener("touchmove", onTouchMove, true);
       window.removeEventListener("touchend", onTouchEnd, true);
@@ -1660,8 +1789,15 @@ export function createEarthGlobe(canvas, options = {}) {
       nightMat?.dispose();
       if (cloudMesh) {
         cloudMesh.geometry.dispose();
-        cloudMesh.material?.alphaMap?.dispose();
+        cloudMesh.material?.map?.dispose();
         cloudMesh.material?.dispose();
+      }
+      if (atmosphere) {
+        moonGroup.remove(atmosphere);
+        atmosphere.geometry.dispose();
+        atmosphereMat?.dispose();
+        atmosphere = null;
+        atmosphereMat = null;
       }
       if (starfield) {
         starfield.geometry?.dispose();
