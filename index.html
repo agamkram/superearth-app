@@ -338,29 +338,10 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    #sites-btn {
-      min-width: 3.8rem;
-    }
-
     /* On only — no hover “third” look */
     .vision-btn[aria-pressed="true"] {
       background: rgba(232, 244, 252, 0.18);
       color: var(--text);
-    }
-
-    #sites-btn[data-mode="famous"] {
-      color: #f0d78c;
-      background: rgba(240, 215, 140, 0.18);
-    }
-
-    #sites-btn[data-mode="landings"] {
-      color: #8bcdf0;
-      background: rgba(104, 188, 232, 0.18);
-    }
-
-    #sites-btn[data-mode="all"] {
-      color: #8fd4a8;
-      background: rgba(107, 191, 138, 0.2);
     }
 
     body.is-red-mode .vision-btn {
@@ -511,10 +492,6 @@
         padding: 0 0.45rem;
       }
 
-      #sites-btn {
-        min-width: 4.2rem;
-      }
-
       .loc-strip {
         gap: 0;
       }
@@ -629,10 +606,6 @@
         font-size: 7px;
         min-width: 2rem;
         padding: 0 0.25rem;
-      }
-
-      #sites-btn {
-        min-width: 2.8rem;
       }
 
       .loc-strip {
@@ -927,95 +900,6 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-    }
-
-    /* Mission pin detail — short sheet over the globe */
-    .mission-sheet {
-      position: fixed;
-      z-index: 12;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      top: 0;
-      display: flex;
-      align-items: flex-end;
-      justify-content: center;
-      padding:
-        0
-        max(0.75rem, env(safe-area-inset-right))
-        max(0.75rem, env(safe-area-inset-bottom))
-        max(0.75rem, env(safe-area-inset-left));
-      background: rgba(0, 0, 0, 0.45);
-      pointer-events: auto;
-      touch-action: manipulation;
-    }
-
-    .mission-sheet[hidden] {
-      display: none !important;
-    }
-
-    .mission-sheet-card {
-      width: min(420px, 100%);
-      background: rgba(12, 16, 24, 0.94);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 0.85rem 1rem 0.95rem;
-      display: grid;
-      gap: 0.35rem;
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
-    }
-
-    .mission-sheet-card h2 {
-      margin: 0;
-      font-family: var(--font);
-      font-size: 1.05rem;
-      font-weight: 600;
-      color: var(--text);
-      letter-spacing: 0.02em;
-    }
-
-    .mission-sheet-meta {
-      margin: 0;
-      font-family: var(--font);
-      font-size: 11px;
-      font-weight: 600;
-      font-variant-numeric: tabular-nums;
-      color: var(--dim);
-      letter-spacing: -0.01em;
-    }
-
-    .mission-sheet-blurb {
-      margin: 0.15rem 0 0.35rem;
-      font-family: var(--font);
-      font-size: 0.88rem;
-      line-height: 1.35;
-      color: var(--text);
-    }
-
-    .mission-sheet-card button {
-      justify-self: end;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      padding: 0.35rem 0.85rem;
-      background: rgba(255, 255, 255, 0.1);
-      color: var(--text);
-      font-family: var(--font);
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      cursor: pointer;
-      touch-action: manipulation;
-    }
-
-    body.is-red-mode .mission-sheet-card {
-      background: rgba(18, 4, 6, 0.94);
-      border-color: #3a0c0c;
-    }
-
-    body.is-red-mode .mission-sheet-card button {
-      background: rgba(40, 4, 4, 0.55);
-      border-color: #3a0c0c;
     }
 
     body.is-red-mode button.m-cell-fact:active {
@@ -1432,7 +1316,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e32</span>
+    <span class="build-mark" id="build-mark">e33</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1445,32 +1329,32 @@
           <div class="v moon" id="m-phase">—</div>
         </button>
         <button type="button" class="m-cell m-cell-fact" data-fact="illum" title="Tap for explanation">
-          <div class="k">Solar wind</div>
+          <div class="k">Wind</div>
           <div class="v" id="m-illum">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="density" title="Tap for explanation">
+          <div class="k">Density</div>
+          <div class="v sm" id="m-density">—</div>
         </button>
         <button type="button" class="m-cell m-cell-fact" data-fact="cycle" title="Tap for explanation">
           <div class="k">Bz</div>
           <div class="v sm" id="m-cycle">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="bt" title="Tap for explanation">
+          <div class="k">Bt</div>
+          <div class="v sm" id="m-bt">—</div>
         </button>
         <button type="button" class="m-cell m-cell-fact" data-fact="tofull" title="Tap for explanation">
           <div class="k">X-ray</div>
           <div class="v" id="m-tofull">—</div>
         </button>
         <button type="button" class="m-cell m-cell-fact" data-fact="dist" title="Tap for explanation">
-          <div class="k">Storm</div>
+          <div class="k">Scales</div>
           <div class="v sm" id="m-dist">—</div>
         </button>
         <button type="button" class="m-cell m-cell-fact" data-fact="ang" title="Tap for explanation">
           <div class="k">Aurora</div>
           <div class="v sm" id="m-ang">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="vsavg" title="Tap for explanation">
-          <div class="k">Quakes</div>
-          <div class="v sm" id="m-vsavg">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="vsmax" title="Tap for explanation">
-          <div class="k">Largest</div>
-          <div class="v sm" id="m-vsmax">—</div>
         </button>
       </div>
       <!-- Row order: metrics, rise/high/set + tools, local, location -->
@@ -1506,16 +1390,6 @@
           >
             Orbit
           </button>
-          <button
-            type="button"
-            class="vision-btn"
-            id="sites-btn"
-            title="Show events: Quakes, Storms, then All"
-            aria-pressed="false"
-            data-mode="off"
-          >
-            Events
-          </button>
         </div>
       </div>
       <div class="m-grid m-grid-3" aria-label="Local Earth">
@@ -1527,9 +1401,9 @@
           <div class="k">Season</div>
           <div class="v sm" id="m-htide">—</div>
         </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="mtide" title="Tap for explanation">
-          <div class="k">Open events</div>
-          <div class="v sm" id="m-mtide">—</div>
+        <button type="button" class="m-cell m-cell-fact" data-fact="tide" title="Tap for explanation">
+          <div class="k">Tide</div>
+          <div class="v sm" id="m-tide">—</div>
         </button>
         <button type="button" class="m-cell m-cell-fact" data-fact="ltide" title="Tap for explanation">
           <div class="k">Alert</div>
@@ -1587,15 +1461,6 @@
       </div>
     </div>
 
-    <div id="mission-sheet" class="mission-sheet" hidden role="dialog" aria-modal="true" aria-label="Mission details">
-      <div class="mission-sheet-card">
-        <h2 id="mission-name">—</h2>
-        <p class="mission-sheet-meta" id="mission-meta">—</p>
-        <p class="mission-sheet-blurb" id="mission-blurb">—</p>
-        <button type="button" id="mission-close">Close</button>
-      </div>
-    </div>
-
     <div class="cycle">
       <div class="cycle-date" id="cycle-date">—</div>
       <div class="cycle-controls">
@@ -1629,7 +1494,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e32";
+    import { createEarthGlobe } from "./earth.js?v=e33";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     /** Used when GPS/permission unavailable (X in-app browser, denied, etc.) */
@@ -1668,11 +1533,11 @@
       tofull: document.getElementById("m-tofull"),
       dist: document.getElementById("m-dist"),
       ang: document.getElementById("m-ang"),
-      vsavg: document.getElementById("m-vsavg"),
-      vsmax: document.getElementById("m-vsmax"),
+      density: document.getElementById("m-density"),
+      bt: document.getElementById("m-bt"),
       station: document.getElementById("m-station"),
       htide: document.getElementById("m-htide"),
-      mtide: document.getElementById("m-mtide"),
+      tide: document.getElementById("m-tide"),
       ltide: document.getElementById("m-ltide"),
       rise: document.getElementById("m-rise"),
       high: document.getElementById("m-high"),
@@ -1687,16 +1552,28 @@
           "Around 5 and above, aurora can reach mid-latitudes. The number is NOAA’s estimated Kp.",
       },
       illum: {
-        title: "Solar wind",
+        title: "Wind",
         body:
           "Speed of the solar wind at the Sun–Earth L1 point, in kilometers per second.\n\n" +
           "Typical quiet wind is near 300–450 km/s. A jump often means a coronal mass ejection or a fast stream has arrived. If the live satellite drops out, this stays on the last good sample.",
+      },
+      density: {
+        title: "Density",
+        body:
+          "Proton density of the solar wind at L1, in particles per cubic centimeter.\n\n" +
+          "Quiet wind is often a few per cm³. A dense gust with fast wind is a stronger punch on Earth’s field.",
       },
       cycle: {
         title: "Bz",
         body:
           "The north–south part of the solar-wind magnetic field, in nanotesla.\n\n" +
           "A negative (southward) Bz opens Earth’s field and drives aurora and geomagnetic storms. Positive Bz mostly glances off.",
+      },
+      bt: {
+        title: "Bt",
+        body:
+          "Total strength of the interplanetary magnetic field at L1, in nanotesla.\n\n" +
+          "Bt is how hard the field pushes. Bz is the north–south piece that opens the door. Strong Bt with southward Bz is the storm recipe.",
       },
       tofull: {
         title: "X-ray",
@@ -1705,7 +1582,7 @@
           "A and B are quiet. C is a small flare. M and X are strong flares that can black out the sunlit side of Earth on HF radio.",
       },
       dist: {
-        title: "Storm",
+        title: "Scales",
         body:
           "NOAA’s space-weather scales right now.\n\n" +
           "R is radio blackout, S is solar radiation, G is geomagnetic storm. Quiet means all three are at zero.",
@@ -1715,18 +1592,6 @@
         body:
           "Chance of visible aurora overhead at your chosen location, from NOAA’s OVATION model.\n\n" +
           "It is a forecast grid, not a photo of the sky. High latitude and a negative Bz raise the number.",
-      },
-      vsavg: {
-        title: "Quakes",
-        body:
-          "How many earthquakes of magnitude 4.5 or larger USGS has reported in the past day.\n\n" +
-          "The Events button draws them on the globe.",
-      },
-      vsmax: {
-        title: "Largest",
-        body:
-          "The biggest earthquake in that same past-day USGS list.\n\n" +
-          "Tap Events, then a pin, for the place and time.",
       },
       rise: {
         title: "Sunrise",
@@ -1758,17 +1623,17 @@
           "The astronomical season at your location: the stretch between solstice and equinox.\n\n" +
           "South of the equator, summer and winter trade places with the north.",
       },
-      mtide: {
-        title: "Open events",
+      tide: {
+        title: "Tide",
         body:
-          "Natural events NASA EONET still lists as open: fires, storms, volcanoes, ice.\n\n" +
-          "These are curated reports, not every hotspot on Earth. Surface: NASA. Clouds: EUMETSAT.",
+          "Next astronomical high or low tide at your chosen location (H or L + local time).\n\n" +
+          "Times follow the Moon’s upper and lower culminations — the equilibrium tide, not a coastal NOAA station. Real harbors lag and stretch this by coastline shape.",
       },
       ltide: {
         title: "Alert",
         body:
           "The latest NOAA space-weather alert, shortened.\n\n" +
-          "None means the alert list is empty. Storm scales can still be above zero when an alert has expired.",
+          "None means the alert list is empty. Scales can still be above zero when an alert has expired.",
       },
     };
 
@@ -1785,18 +1650,18 @@
       const shown = (document.getElementById(
         key === "phase" ? "m-phase"
         : key === "illum" ? "m-illum"
+        : key === "density" ? "m-density"
         : key === "cycle" ? "m-cycle"
+        : key === "bt" ? "m-bt"
         : key === "tofull" ? "m-tofull"
         : key === "dist" ? "m-dist"
         : key === "ang" ? "m-ang"
-        : key === "vsavg" ? "m-vsavg"
-        : key === "vsmax" ? "m-vsmax"
         : key === "rise" ? "m-rise"
         : key === "high" ? "m-high"
         : key === "set" ? "m-set"
         : key === "station" ? "m-station"
         : key === "htide" ? "m-htide"
-        : key === "mtide" ? "m-mtide"
+        : key === "tide" ? "m-tide"
         : "m-ltide"
       )?.textContent || "").trim();
       factBody.textContent =
@@ -1833,17 +1698,14 @@
     const feed = {
       kp: "—",
       wind: "—",
+      density: "—",
       bz: "—",
+      bt: "—",
       xray: "—",
       storm: "—",
-      quakes: "—",
-      largest: "—",
-      events: "—",
       alert: "—",
     };
     let auroraGrid = null;
-    let quakeSites = [];
-    let eventSites = [];
     let feedTimer = 0;
     let heavyAt = 0;
     let feedsBusy = false;
@@ -1869,25 +1731,6 @@
       const mon = date.toLocaleString(undefined, { month: "short" });
       const day = date.getDate();
       return `${mon} ${day} · ${fmtTime(date)}`;
-    }
-
-    function ymdCompact(d) {
-      const y = d.getUTCFullYear();
-      const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-      const day = String(d.getUTCDate()).padStart(2, "0");
-      return `${y}${m}${day}`;
-    }
-
-    function haversineKm(lat1, lon1, lat2, lon2) {
-      const R = 6371;
-      const p1 = (lat1 * Math.PI) / 180;
-      const p2 = (lat2 * Math.PI) / 180;
-      const dp = ((lat2 - lat1) * Math.PI) / 180;
-      const dl = ((lon2 - lon1) * Math.PI) / 180;
-      const a =
-        Math.sin(dp / 2) ** 2 +
-        Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
-      return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
     }
 
     function xrayClass(flux) {
@@ -1935,31 +1778,6 @@
       return best;
     }
 
-    function pushSites() {
-      const g = globeRef.current;
-      if (g) g.setSites(quakeSites.concat(eventSites));
-    }
-
-    function eonetPoint(ev) {
-      const g = (ev.geometry || [])[0];
-      if (!g || !g.coordinates) return null;
-      if (g.type === "Point") {
-        return { lon: Number(g.coordinates[0]), lat: Number(g.coordinates[1]) };
-      }
-      const ring = Array.isArray(g.coordinates[0]) ? g.coordinates[0] : null;
-      if (!ring || !ring.length) return null;
-      let lon = 0;
-      let lat = 0;
-      let n = 0;
-      for (const pt of ring) {
-        if (!pt || pt.length < 2) continue;
-        lon += Number(pt[0]);
-        lat += Number(pt[1]);
-        n++;
-      }
-      return n ? { lon: lon / n, lat: lat / n } : null;
-    }
-
     async function loadFeeds(forceHeavy) {
       if (feedsBusy) return;
       feedsBusy = true;
@@ -1975,13 +1793,11 @@
         ];
         if (heavy) {
           jobs.push(
-            fetch("https://services.swpc.noaa.gov/json/ovation_aurora_latest.json"),
-            fetch("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson"),
-            fetch("https://eonet.gsfc.nasa.gov/api/v3/events?status=open")
+            fetch("https://services.swpc.noaa.gov/json/ovation_aurora_latest.json")
           );
         }
         const res = await Promise.all(jobs.map((p) => p.then((r) => (r.ok ? r.json() : null)).catch(() => null)));
-        const [kp, wind, mag, xray, scales, alerts, ovation, quakes, eonet] = res;
+        const [kp, wind, mag, xray, scales, alerts, ovation] = res;
 
         if (Array.isArray(kp) && kp.length) {
           const row = kp[kp.length - 1];
@@ -1990,11 +1806,22 @@
         }
         const w = lastActive(wind, (r) => (r.proton_speed > 0 ? r.proton_speed : null));
         if (w) feed.wind = `${Math.round(w.proton_speed)} km/s`;
+        const dens = lastActive(wind, (r) =>
+          Number(r.proton_density) > 0 ? r.proton_density : null
+        );
+        if (dens) {
+          const n = Number(dens.proton_density);
+          feed.density = n >= 10 ? String(Math.round(n)) : n.toFixed(1);
+        }
         const b = lastActive(mag, (r) => (Number.isFinite(Number(r.bz_gsm)) ? r.bz_gsm : null));
         if (b) {
           const n = Number(b.bz_gsm);
           feed.bz = `${n > 0 ? "+" : ""}${n.toFixed(1)}`;
         }
+        const btRow = lastActive(mag, (r) =>
+          Number(r.bt) > 0 ? r.bt : null
+        );
+        if (btRow) feed.bt = Number(btRow.bt).toFixed(1);
         if (Array.isArray(xray)) {
           const row = [...xray].reverse().find((r) => r && r.energy === "0.1-0.8nm" && r.flux > 0);
           if (row) feed.xray = xrayClass(Number(row.flux));
@@ -2023,59 +1850,6 @@
           heavyAt = Date.now();
           const coords = ovation && (ovation.coordinates || ovation.Coordinates);
           if (Array.isArray(coords) && coords.length) auroraGrid = coords;
-          if (quakes && Array.isArray(quakes.features)) {
-            const feats = quakes.features.filter((f) => f && f.geometry && f.properties);
-            feed.quakes = String(feats.length);
-            let best = null;
-            quakeSites = feats.map((f) => {
-              const mag = Number(f.properties.mag);
-              const place = String(f.properties.place || "Earthquake");
-              if (!best || mag > best.mag) best = { mag, place };
-              const [lon, lat] = f.geometry.coordinates;
-              return {
-                name: place,
-                lat,
-                lon,
-                year: fmtTime(new Date(f.properties.time)),
-                agency: "USGS",
-                outcome: Number.isFinite(mag) ? `M${mag.toFixed(1)}` : "Quake",
-                kind: "quake",
-                tier: "quake",
-                famous: mag >= 4.5,
-                pinColor: mag >= 6 ? 0xf0d78c : 0x68bce8,
-                blurb: String(f.properties.title || place),
-              };
-            });
-            feed.largest = best && Number.isFinite(best.mag) ? `M${best.mag.toFixed(1)}` : "—";
-          }
-          if (eonet && Array.isArray(eonet.events)) {
-            feed.events = String(eonet.events.length);
-            const colors = {
-              wildfires: 0xe05838,
-              volcanoes: 0xe07040,
-              severeStorms: 0x6bbf8a,
-              seaLakeIce: 0x8ec8e8,
-            };
-            eventSites = [];
-            for (const ev of eonet.events) {
-              const pt = eonetPoint(ev);
-              if (!pt || !Number.isFinite(pt.lat) || !Number.isFinite(pt.lon)) continue;
-              const cat = (ev.categories && ev.categories[0]) || {};
-              eventSites.push({
-                name: ev.title || "Event",
-                lat: pt.lat,
-                lon: pt.lon,
-                year: cat.title || "EONET",
-                agency: "NASA",
-                outcome: cat.title || "Event",
-                kind: "event",
-                tier: "event",
-                pinColor: colors[cat.id] || 0xc8d0e0,
-                blurb: ev.description || ev.title || "",
-              });
-            }
-          }
-          pushSites();
         }
       } catch (_) {
         /* keep last good numbers */
@@ -2162,6 +1936,38 @@
       return `${h}h ${String(m).padStart(2, "0")}m`;
     }
 
+    /**
+     * Next equilibrium tide from lunar culminations.
+     * High ≈ Moon HA 0° / 180°; low ≈ HA 90° / 270°.
+     */
+    function nextAstroTide(A, lat, lon, when) {
+      if (!A || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      const obs = new A.Observer(lat, lon, 0);
+      const start = when instanceof Date ? when : new Date(when);
+      const from = new Date(start.getTime() + 30000);
+      const candidates = [];
+      for (const [ha, kind] of [
+        [0, "H"],
+        [12, "H"],
+        [6, "L"],
+        [18, "L"],
+      ]) {
+        try {
+          const ev = A.SearchHourAngle(A.Body.Moon, obs, ha, from, 1);
+          if (ev && ev.time && ev.time.date && ev.time.date > start) {
+            candidates.push({ kind, date: ev.time.date });
+          }
+        } catch (_) {}
+      }
+      candidates.sort((a, b) => a.date - b.date);
+      return candidates[0] || null;
+    }
+
+    function fmtTide(tide) {
+      if (!tide || !tide.date) return "—";
+      return `${tide.kind} ${fmtTime(tide.date)}`;
+    }
+
     function computeMetrics(info) {
       const A = globalThis.Astronomy;
       if (!A || !info) return null;
@@ -2174,6 +1980,7 @@
       let set = null;
       let dayLen = "—";
       let season = "—";
+      let tide = null;
       try {
         if (Number.isFinite(lat) && Number.isFinite(lon)) {
           const obs = new A.Observer(lat, lon, 0);
@@ -2195,6 +2002,7 @@
             dayLen = hor.altitude > 0 ? "24h" : "0h";
           }
           season = seasonName(A, when, lat);
+          tide = nextAstroTide(A, lat, lon, when);
         }
       } catch (_) {}
 
@@ -2207,6 +2015,7 @@
         set,
         dayLen,
         season,
+        tide,
         aurora: aur == null ? "—" : `${Math.round(aur)}%`,
         when,
       };
@@ -2219,18 +2028,18 @@
 
       el.phase.textContent = feed.kp;
       el.illum.textContent = feed.wind;
+      el.density.textContent = feed.density;
       el.cycle.textContent = feed.bz;
+      el.bt.textContent = feed.bt;
       el.tofull.textContent = feed.xray;
       el.dist.textContent = feed.storm;
       el.ang.textContent = m.aurora;
-      el.vsavg.textContent = feed.quakes;
-      el.vsmax.textContent = feed.largest;
       el.rise.textContent = fmtTime(m.rise);
       el.high.textContent = fmtTime(m.high);
       el.set.textContent = fmtTime(m.set);
       el.station.textContent = m.dayLen;
       el.htide.textContent = m.season;
-      el.mtide.textContent = feed.events;
+      el.tide.textContent = fmtTide(m.tide);
       el.ltide.textContent = feed.alert;
       cycleDate.textContent = fmtDateTime(m.when);
     }
@@ -2312,13 +2121,6 @@
     let redModeOn = false;
     const visionBtn = document.getElementById("vision-btn");
     const orbitBtn = document.getElementById("orbit-btn");
-    const sitesBtn = document.getElementById("sites-btn");
-    const missionSheet = document.getElementById("mission-sheet");
-    const missionName = document.getElementById("mission-name");
-    const missionMeta = document.getElementById("mission-meta");
-    const missionBlurb = document.getElementById("mission-blurb");
-    const missionClose = document.getElementById("mission-close");
-    let sitesMode = "off"; // "off" | "famous" | "landings" | "all"
 
     function setRedMode(on) {
       redModeOn = !!on;
@@ -2360,65 +2162,6 @@
       setOrbitUI(next);
     });
 
-    function closeMissionSheet() {
-      missionSheet.hidden = true;
-    }
-
-    function openMissionSheet(site) {
-      if (!site) return;
-      missionName.textContent = site.name || "—";
-      const year = site.year != null ? String(site.year) : "";
-      const agency = site.agency || "";
-      const outcome = site.outcome || "";
-      const accuracy = site.approximate ? "Approx. location" : "";
-      missionMeta.textContent =
-        [year, agency, outcome, accuracy].filter(Boolean).join(" · ") || "—";
-      missionBlurb.textContent = site.blurb || "";
-      missionSheet.hidden = false;
-    }
-
-    function setSitesUI(mode) {
-      sitesMode = mode;
-      sitesBtn.setAttribute("aria-pressed", mode === "off" ? "false" : "true");
-      sitesBtn.dataset.mode = mode;
-      if (mode === "famous") {
-        sitesBtn.textContent = "Quakes";
-        sitesBtn.title = "Magnitude 4.5 and up — tap for storms and fires";
-      } else if (mode === "landings") {
-        sitesBtn.textContent = "Storms";
-        sitesBtn.title = "Open fires, storms, and volcanoes — tap for both layers";
-      } else if (mode === "all") {
-        sitesBtn.textContent = "All";
-        sitesBtn.title = "Quakes and open events — tap to hide";
-      } else {
-        sitesBtn.textContent = "Events";
-        sitesBtn.title = "Show events: Quakes, Storms, then All";
-        closeMissionSheet();
-      }
-    }
-
-    sitesBtn.addEventListener("click", (e) => {
-      e.preventDefault();
-      const next =
-        sitesMode === "off"
-          ? "famous"
-          : sitesMode === "famous"
-            ? "landings"
-            : sitesMode === "landings"
-              ? "all"
-              : "off";
-      globe.setMissionsMode(next);
-      setSitesUI(next);
-    });
-
-    missionClose.addEventListener("click", (e) => {
-      e.preventDefault();
-      closeMissionSheet();
-    });
-    missionSheet.addEventListener("click", (e) => {
-      if (e.target === missionSheet) closeMissionSheet();
-    });
-
     // Block copy / select (showcase PWA); inputs still selectable via CSS
     for (const evt of ["copy", "cut", "selectstart"]) {
       document.addEventListener(
@@ -2438,10 +2181,6 @@
         closeFactSheet();
         return;
       }
-      if (!missionSheet.hidden) {
-        closeMissionSheet();
-        return;
-      }
       if (!locDialog.hidden) {
         closeLocationDialog();
         return;
@@ -2450,10 +2189,6 @@
       if (globe.isOrbiting()) {
         globe.setOrbiting(false);
         setOrbitUI(false);
-      }
-      if (globe.getMissionsMode() !== "off") {
-        globe.setMissionsMode("off");
-        setSitesUI("off");
       }
     });
 
@@ -2465,10 +2200,9 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e32 " + level;
+        if (mark) mark.textContent = "e33 " + level;
       },
       onPhase: showPhase,
-      onMissionTap: openMissionSheet,
     });
 
     function applyLocation(lat, lon, source) {

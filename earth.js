@@ -1691,6 +1691,7 @@ export function createEarthGlobe(canvas, options = {}) {
   function setOrbiting(on) {
     orbiting = !!on;
     if (!orbiting) lastOrbitMs = 0;
+    kick();
     return orbiting;
   }
 
