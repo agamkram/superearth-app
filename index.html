@@ -1436,7 +1436,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e8</span>
+    <span class="build-mark" id="build-mark">e9</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1633,7 +1633,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e8";
+    import { createEarthGlobe } from "./earth.js?v=e9";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     /** Used when GPS/permission unavailable (X in-app browser, denied, etc.) */
@@ -2615,6 +2615,7 @@
         (pos) => {
           geoBtn.disabled = false;
           applyLocation(pos.coords.latitude, pos.coords.longitude, "gps");
+          setCenter(false);
           if (!previewMode) goLive();
         },
         (err) => {
@@ -2623,7 +2624,7 @@
             err.code === 1 ? "Permission denied" : "Location failed";
           openLocationDialog();
         },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
     });
 
