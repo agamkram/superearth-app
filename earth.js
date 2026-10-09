@@ -745,7 +745,7 @@ export function createEarthGlobe(canvas, options = {}) {
       ready = true;
       if (typeof onReady === "function") onReady();
       if (typeof onQuality === "function") onQuality("2k");
-      if (!hqStarted) {
+      if (!hqStarted && !isTouch) {
         hqStarted = true;
         setTimeout(() => upgradeHigh(), 400);
       }
@@ -797,7 +797,8 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function loadClouds() {
     const stamp = Math.floor(Date.now() / (3 * 3600 * 1000));
-    const url = `https://clouds.matteason.co.uk/images/4096x2048/clouds-alpha.png?t=${stamp}`;
+    const size = isTouch ? "2048x1024" : "4096x2048";
+    const url = `https://clouds.matteason.co.uk/images/${size}/clouds-alpha.png?t=${stamp}`;
     loader.load(
       url,
       (tex) => {

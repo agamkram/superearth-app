@@ -169,6 +169,7 @@ def _lan_ips():
                 ["ipconfig", "getifaddr", iface],
                 text=True,
                 stderr=subprocess.DEVNULL,
+                timeout=2,
             ).strip()
             add(ip)
         except Exception:
@@ -282,6 +283,7 @@ def _free_ports(*ports):
                 ["lsof", "-nP", "-ti", "TCP:%d" % port, "-sTCP:LISTEN"],
                 text=True,
                 stderr=subprocess.DEVNULL,
+                timeout=3,
             ).split()
         except Exception:
             continue
