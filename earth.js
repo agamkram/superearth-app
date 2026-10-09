@@ -120,8 +120,8 @@ function createStarfield() {
 }
 
 const LOD = {
-  low: { map: "earth-2k.jpg?v=e9", night: "earth-night-2k.jpg?v=e9", segments: 128 },
-  high: { map: "earth-8k.jpg?v=e9", night: "earth-night-8k.jpg?v=e9", segments: 224 },
+  low: { map: "earth-2k.jpg?v=e10", night: "earth-night-2k.jpg?v=e10", segments: 128 },
+  high: { map: "earth-8k.jpg?v=e10", night: "earth-night-8k.jpg?v=e10", segments: 224 },
 };
 
 const NIGHT_VERT = `
@@ -428,6 +428,7 @@ export function createEarthGlobe(canvas, options = {}) {
   let nightMesh = null;
   let nightMat = null;
   let cloudMesh = null;
+  let cloudsOn = true;
   let frozenLat = 0;
   let frozenLon = 0;
   const raycaster = new THREE.Raycaster();
@@ -490,7 +491,6 @@ export function createEarthGlobe(canvas, options = {}) {
 
   let observerLat = 0;
   let observerLon = 0;
-  let faceSun = false;
   let when = new Date();
   let lastPhaseInfo = null;
   let orientLocked = false;
@@ -840,6 +840,7 @@ export function createEarthGlobe(canvas, options = {}) {
           mat
         );
         cloudMesh.renderOrder = 2;
+        cloudMesh.visible = cloudsOn;
         if (mesh) mesh.add(cloudMesh);
       },
       undefined,
@@ -875,8 +876,8 @@ export function createEarthGlobe(canvas, options = {}) {
 
     const placeLat = orientLocked ? frozenLat : observerLat;
     const placeLon = orientLocked ? frozenLon : observerLon;
-    const lat = faceSun ? sub.lat : placeLat;
-    const lon = faceSun ? sub.lon : placeLon;
+    const lat = placeLat;
+    const lon = placeLon;
     if (mesh) {
       mesh.rotation.order = "XYZ";
       mesh.rotation.x = THREE.MathUtils.degToRad(lat);
@@ -911,10 +912,10 @@ export function createEarthGlobe(canvas, options = {}) {
     if (typeof onPhase === "function") onPhase(lastPhaseInfo);
   }
 
-  function setFaceSun(on) {
-    faceSun = !!on;
-    applyEphemeris();
-    return faceSun;
+  function setClouds(on) {
+    cloudsOn = !!on;
+    if (cloudMesh) cloudMesh.visible = cloudsOn;
+    return cloudsOn;
   }
 
   function setObserver(lat, lon) {
@@ -1617,7 +1618,7 @@ export function createEarthGlobe(canvas, options = {}) {
     fitToHost,
     resetView,
     setObserver,
-    setFaceSun,
+    setClouds,
     setTime,
     setOrbiting,
     isOrbiting,

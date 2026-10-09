@@ -1436,7 +1436,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e9</span>
+    <span class="build-mark" id="build-mark">e10</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1564,10 +1564,10 @@
           </div>
         </div>
         <div class="loc-card hemi-card">
-          <span class="hemi-label">Center</span>
-          <div class="hemi" role="group" aria-label="Center">
-            <button type="button" id="hemi-n" class="active" title="Your place in front">Here</button>
-            <button type="button" id="hemi-s" title="The sunlit face in front">Sun</button>
+          <span class="hemi-label">Clouds</span>
+          <div class="hemi" role="group" aria-label="Clouds">
+            <button type="button" id="hemi-n" class="active" title="Show the live cloud layer">On</button>
+            <button type="button" id="hemi-s" title="Bare earth, no clouds">Clear</button>
           </div>
         </div>
       </div>
@@ -1633,7 +1633,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e9";
+    import { createEarthGlobe } from "./earth.js?v=e10";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     /** Used when GPS/permission unavailable (X in-app browser, denied, etc.) */
@@ -2267,16 +2267,11 @@
       if (source != null) setLocationTitle(source);
     }
 
-    let faceSun = false;
-
-    function setCenter(sun) {
-      faceSun = !!sun;
-      hemiN.classList.toggle("active", !faceSun);
-      hemiS.classList.toggle("active", faceSun);
-      const g = globeRef.current;
-      if (!g) return;
-      g.setFaceSun(faceSun);
-      g.resetView();
+    function setClouds(on) {
+      const show = !!on;
+      hemiN.classList.toggle("active", show);
+      hemiS.classList.toggle("active", !show);
+      if (globeRef.current) globeRef.current.setClouds(show);
     }
 
     function setLiveUI() {
@@ -2527,8 +2522,8 @@
       },
       { passive: false }
     );
-    hemiN.addEventListener("click", () => setCenter(false));
-    hemiS.addEventListener("click", () => setCenter(true));
+    hemiN.addEventListener("click", () => setClouds(true));
+    hemiS.addEventListener("click", () => setClouds(false));
 
     function updateMapCoordsDisplay() {
       locMapCoords.textContent = `${fmtCoord(pickLat, "N", "S")} · ${fmtCoord(pickLon, "E", "W")}`;
@@ -2615,7 +2610,6 @@
         (pos) => {
           geoBtn.disabled = false;
           applyLocation(pos.coords.latitude, pos.coords.longitude, "gps");
-          setCenter(false);
           if (!previewMode) goLive();
         },
         (err) => {
