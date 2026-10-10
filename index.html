@@ -299,17 +299,9 @@
       pointer-events: none;
     }
 
-    /* Row 3: slots 1–2–3 metrics, Alert spans 4–5 */
-    .m-grid-sw3 {
-      grid-template-columns: 1fr 1fr 1fr 2fr;
-    }
-
-    .m-grid-sw3 .m-cell-alert .v {
-      font-size: 10px;
-      letter-spacing: -0.02em;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+    /* Global tail — F10.7 + Proton */
+    .m-grid-sw-tail {
+      grid-template-columns: 1fr 1fr;
     }
 
     /* Local sun/tide — three equal cells */
@@ -492,8 +484,8 @@
         grid-template-columns: 1.35fr 0.9fr 1fr 0.85fr;
       }
 
-      .m-grid-sw3 {
-        grid-template-columns: 1fr 1fr 1fr 2fr;
+      .m-grid-sw-tail {
+        grid-template-columns: 1fr 1fr;
       }
 
       .m-grid-3 {
@@ -1350,7 +1342,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e39</span>
+    <span class="build-mark" id="build-mark">e40</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1468,31 +1460,23 @@
           <div class="k">X-ray</div>
           <div class="v" id="m-tofull">—</div>
         </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="dist" title="Tap for explanation">
-          <div class="k">Scales</div>
-          <div class="v sm" id="m-dist">—</div>
-        </button>
         <button type="button" class="m-cell m-cell-fact" data-fact="ang" title="Tap for explanation">
           <div class="k">Aurora</div>
           <div class="v sm" id="m-ang">—</div>
-        </button>
-      </div>
-      <div class="m-grid m-grid-sw3" aria-label="Space weather alert row">
-        <button type="button" class="m-cell m-cell-fact" data-fact="f107" title="Tap for explanation">
-          <div class="k">F10.7</div>
-          <div class="v sm" id="m-f107">—</div>
         </button>
         <button type="button" class="m-cell m-cell-fact" data-fact="dst" title="Tap for explanation">
           <div class="k">Dst</div>
           <div class="v sm" id="m-dst">—</div>
         </button>
+      </div>
+      <div class="m-grid m-grid-sw-tail" aria-label="Solar flux and protons">
+        <button type="button" class="m-cell m-cell-fact" data-fact="f107" title="Tap for explanation">
+          <div class="k">F10.7</div>
+          <div class="v sm" id="m-f107">—</div>
+        </button>
         <button type="button" class="m-cell m-cell-fact" data-fact="proton" title="Tap for explanation">
           <div class="k">Proton</div>
           <div class="v sm" id="m-proton">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact m-cell-alert" data-fact="ltide" title="Tap for explanation">
-          <div class="k">Alert</div>
-          <div class="v sm" id="m-ltide">—</div>
         </button>
       </div>
       </section>
@@ -1549,7 +1533,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e39";
+    import { createEarthGlobe } from "./earth.js?v=e40";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     /** Used when GPS/permission unavailable (X in-app browser, denied, etc.) */
@@ -1588,12 +1572,10 @@
       cycle: document.getElementById("m-cycle"),
       bt: document.getElementById("m-bt"),
       tofull: document.getElementById("m-tofull"),
-      dist: document.getElementById("m-dist"),
       ang: document.getElementById("m-ang"),
-      f107: document.getElementById("m-f107"),
       dst: document.getElementById("m-dst"),
+      f107: document.getElementById("m-f107"),
       proton: document.getElementById("m-proton"),
-      ltide: document.getElementById("m-ltide"),
       station: document.getElementById("m-station"),
       htide: document.getElementById("m-htide"),
       tide: document.getElementById("m-tide"),
@@ -1638,12 +1620,6 @@
         body:
           "GOES soft X-ray class of the Sun right now (0.1–0.8 nm).\n\n" +
           "A and B are quiet. C is a small flare. M and X are strong flares that can black out the sunlit side of Earth on HF radio.",
-      },
-      dist: {
-        title: "Scales",
-        body:
-          "NOAA’s space-weather scales right now.\n\n" +
-          "R is radio blackout, S is solar radiation, G is geomagnetic storm. Quiet means all three are at zero.",
       },
       ang: {
         title: "Aurora",
@@ -1705,12 +1681,6 @@
           "Next astronomical high or low tide at your chosen location (H or L + local time).\n\n" +
           "Times follow the Moon’s upper and lower culminations — the equilibrium tide, not a coastal NOAA station. Real harbors lag and stretch this by coastline shape.",
       },
-      ltide: {
-        title: "Alert",
-        body:
-          "The latest NOAA space-weather alert, shortened.\n\n" +
-          "None means the alert list is empty. Scales can still be above zero when an alert has expired.",
-      },
     };
 
     const FACT_IDS = {
@@ -1720,12 +1690,10 @@
       cycle: "m-cycle",
       bt: "m-bt",
       tofull: "m-tofull",
-      dist: "m-dist",
       ang: "m-ang",
-      f107: "m-f107",
       dst: "m-dst",
+      f107: "m-f107",
       proton: "m-proton",
-      ltide: "m-ltide",
       rise: "m-rise",
       high: "m-high",
       set: "m-set",
@@ -1744,7 +1712,7 @@
       const f = FACTS[key];
       if (!f || !factSheet) return;
       factTitle.textContent = f.title;
-      const shown = (document.getElementById(FACT_IDS[key] || "m-ltide")?.textContent || "").trim();
+      const shown = (document.getElementById(FACT_IDS[key] || "")?.textContent || "").trim();
       let body = f.body;
       if (key === "ang" && globeRef.current) {
         const obs = globeRef.current.getObserver();
@@ -1792,11 +1760,9 @@
       bz: "—",
       bt: "—",
       xray: "—",
-      storm: "—",
       f107: "—",
       dst: "—",
       proton: "—",
-      alert: "—",
     };
     let auroraGrid = null;
     let feedTimer = 0;
@@ -1980,8 +1946,6 @@
           fetch("https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json"),
           fetch("https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json"),
           fetch("https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json"),
-          fetch("https://services.swpc.noaa.gov/products/noaa-scales.json"),
-          fetch("https://services.swpc.noaa.gov/products/alerts.json"),
           fetch("https://services.swpc.noaa.gov/json/f107_cm_flux.json"),
           fetch("https://services.swpc.noaa.gov/products/kyoto-dst.json"),
           fetch("https://services.swpc.noaa.gov/json/goes/primary/integral-protons-1-day.json"),
@@ -1992,7 +1956,7 @@
           );
         }
         const res = await Promise.all(jobs.map((p) => p.then((r) => (r.ok ? r.json() : null)).catch(() => null)));
-        const [kp, wind, mag, xray, scales, alerts, f107, dst, protons, ovation] = res;
+        const [kp, wind, mag, xray, f107, dst, protons, ovation] = res;
 
         if (Array.isArray(kp) && kp.length) {
           const row = kp[kp.length - 1];
@@ -2017,25 +1981,6 @@
         if (Array.isArray(xray)) {
           const row = [...xray].reverse().find((r) => r && r.energy === "0.1-0.8nm" && r.flux > 0);
           if (row) feed.xray = xrayClass(Number(row.flux));
-        }
-        const cur = scales && (scales["0"] || scales[0]);
-        if (cur && cur.R && cur.S && cur.G) {
-          const parts = [];
-          if (Number(cur.R.Scale) > 0) parts.push("R" + cur.R.Scale);
-          if (Number(cur.S.Scale) > 0) parts.push("S" + cur.S.Scale);
-          if (Number(cur.G.Scale) > 0) parts.push("G" + cur.G.Scale);
-          feed.storm = parts.length ? parts.join(" ") : "Quiet";
-        }
-        if (Array.isArray(alerts) && alerts.length) {
-          const msg = String(alerts[0].message || "");
-          const line =
-            msg.split(/\r?\n/).find((l) => /^ALERT:/i.test(l.trim())) ||
-            msg.split(/\r?\n/).find((l) => l.trim()) ||
-            "";
-          const clean = line.replace(/^ALERT:\s*/i, "").trim();
-          feed.alert = clean ? clean.slice(0, 36) : "Alert";
-        } else if (alerts) {
-          feed.alert = "None";
         }
 
         if (Array.isArray(f107) && f107.length) {
@@ -2237,12 +2182,10 @@
       el.cycle.textContent = feed.bz;
       el.bt.textContent = feed.bt;
       el.tofull.textContent = feed.xray;
-      el.dist.textContent = feed.storm;
       el.ang.textContent = m.aurora;
-      el.f107.textContent = feed.f107;
       el.dst.textContent = feed.dst;
+      el.f107.textContent = feed.f107;
       el.proton.textContent = feed.proton;
-      el.ltide.textContent = feed.alert;
       el.rise.textContent = fmtTime(m.rise);
       el.high.textContent = fmtTime(m.high);
       el.set.textContent = fmtTime(m.set);
@@ -2408,7 +2351,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e39 " + level;
+        if (mark) mark.textContent = "e40 " + level;
       },
       onPhase: showPhase,
     });
