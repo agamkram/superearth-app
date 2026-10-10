@@ -360,10 +360,11 @@
       font-weight: 600;
       letter-spacing: 0.04em;
       text-transform: uppercase;
+      white-space: nowrap;
       cursor: pointer;
       touch-action: manipulation;
       line-height: 1;
-      padding: 0 0.35rem;
+      padding: 0 0.12rem;
       -webkit-tap-highlight-color: transparent;
     }
 
@@ -515,9 +516,9 @@
 
       .vision-btn {
         font-size: 10px;
-        min-width: 3.1rem;
-        width: 3.1rem;
-        padding: 0 0.4rem;
+        min-width: 3.55rem;
+        width: 3.55rem;
+        padding: 0 0.2rem;
       }
 
       .loc-strip {
@@ -630,9 +631,9 @@
 
       .vision-btn {
         font-size: 7px;
-        min-width: 2.4rem;
-        width: 2.4rem;
-        padding: 0 0.2rem;
+        min-width: 2.55rem;
+        width: 2.55rem;
+        padding: 0 0.1rem;
       }
 
       .loc-strip {
@@ -652,7 +653,7 @@
       }
     }
 
-    /* Location + Clouds/Clear · Red · Orbit */
+    /* Location + Aurora · Clouds/Clear · Red · Orbit */
     .loc-strip {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
@@ -1289,7 +1290,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e45</span>
+    <span class="build-mark" id="build-mark">e46</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1320,6 +1321,15 @@
           </div>
         </div>
         <div class="tool-strip" role="group" aria-label="Display controls">
+          <button
+            type="button"
+            class="vision-btn"
+            id="aurora-btn"
+            title="Hide the aurora ribbon"
+            aria-pressed="true"
+          >
+            Aurora
+          </button>
           <button
             type="button"
             class="vision-btn"
@@ -1478,7 +1488,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e45";
+    import { createEarthGlobe } from "./earth.js?v=e46";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     const TIDE_STATIONS_KEY = "superearth-noaa-tide-stations-v1";
@@ -1513,6 +1523,7 @@
     const phaseSlider = document.getElementById("phase-slider");
     const cycleDate = document.getElementById("cycle-date");
     const liveBtn = document.getElementById("live-btn");
+    const auroraBtn = document.getElementById("aurora-btn");
     const cloudsBtn = document.getElementById("clouds-btn");
 
     /** @type {import("leaflet").Map | null} */
@@ -2376,6 +2387,18 @@
     }
 
     let cloudsOn = true;
+    let auroraOn = true;
+
+    function setAuroraOn(on) {
+      auroraOn = !!on;
+      auroraBtn.setAttribute("aria-pressed", auroraOn ? "true" : "false");
+      auroraBtn.title = auroraOn
+        ? "Hide the aurora ribbon"
+        : "Show the aurora ribbon";
+      if (globeRef.current && typeof globeRef.current.setAuroraShown === "function") {
+        globeRef.current.setAuroraShown(auroraOn);
+      }
+    }
 
     function setClouds(on) {
       cloudsOn = !!on;
@@ -2509,7 +2532,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e45 " + level;
+        if (mark) mark.textContent = "e46 " + level;
       },
       onPhase: showPhase,
     });
@@ -2562,6 +2585,11 @@
       },
       { passive: false }
     );
+    auroraBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      setAuroraOn(!auroraOn);
+    });
+
     cloudsBtn.addEventListener("click", (e) => {
       e.preventDefault();
       setClouds(!cloudsOn);

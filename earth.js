@@ -484,6 +484,8 @@ export function createEarthGlobe(canvas, options = {}) {
   let auroraMesh = null;
   let auroraMat = null;
   let auroraTex = null;
+  let auroraShown = true;
+  let auroraHas = false;
   let frozenLat = 0;
   let frozenLon = 0;
   const raycaster = new THREE.Raycaster();
@@ -1144,9 +1146,17 @@ export function createEarthGlobe(canvas, options = {}) {
         }
       }
     }
-    auroraMesh.visible = any;
+    auroraHas = any;
+    auroraMesh.visible = auroraShown && auroraHas;
     kick();
     return any;
+  }
+
+  function setAuroraShown(on) {
+    auroraShown = !!on;
+    if (auroraMesh) auroraMesh.visible = auroraShown && auroraHas;
+    kick();
+    return auroraShown;
   }
 
   function setObserver(lat, lon) {
@@ -1874,6 +1884,7 @@ export function createEarthGlobe(canvas, options = {}) {
     setObserver,
     setClouds,
     setAurora,
+    setAuroraShown,
     setTime,
     setOrbiting,
     isOrbiting,
