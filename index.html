@@ -1291,7 +1291,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e52</span>
+    <span class="build-mark" id="build-mark">e53</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1489,7 +1489,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e52";
+    import { createEarthGlobe } from "./earth.js?v=e53";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     const TIDE_STATIONS_KEY = "superearth-noaa-tide-stations-v1";
@@ -1593,8 +1593,8 @@
       ang: {
         title: "Aurora",
         body:
-          "Peak chance of visible aurora anywhere in your hemisphere, from NOAA’s OVATION grid. 100% means the hottest cell is at the top of that scale, not that the whole sky is lit.\n\n" +
-          "The globe places that oval on the night side. NOAA does not publish separate colors. The bright part stays green. A thin crimson lip sits on the lower edge and a thin deep red on the poleward edge. Overhead at your pin is often near zero at mid-latitudes unless a strong storm is on.",
+          "Chance the aurora is visible in the sky over your pin, from NOAA’s OVATION grid. Mid-latitudes are often zero unless a storm brings the oval down to you.\n\n" +
+          "The globe still draws the whole oval on the night side. NOAA does not publish colors. The bright part stays green, with a thin crimson lip on the lower edge and a thin deep red toward the pole.",
       },
       dst: {
         title: "Dst",
@@ -1684,10 +1684,12 @@
       let body = f.body;
       if (key === "ang" && globeRef.current) {
         const obs = globeRef.current.getObserver();
-        const local = auroraAt(obs.lat, obs.lon);
-        if (local != null) {
+        const peak = auroraHemispherePeak(obs.lat);
+        if (peak != null) {
+          const hemi = Number(obs.lat) < 0 ? "southern" : "northern";
           body =
-            `Overhead at your pin right now: ${Math.round(local)}%.\n\n` + body;
+            `Hottest cell in the ${hemi} hemisphere: ${Math.round(peak)}%. That number is the oval on the globe.\n\n` +
+            body;
         }
       }
       factBody.textContent =
@@ -1836,11 +1838,7 @@
       return best;
     }
 
-    /**
-     * Metric for the Aurora box: peak in the observer’s hemisphere so the
-     * number tracks the oval you see on the globe. Mid-latitude pins are
-     * often 0 overhead while the oval is lit.
-     */
+    /** Hemisphere peak for the Aurora fact sheet. The box itself is overhead. */
     function auroraHemispherePeak(lat) {
       if (auroraIndex) {
         const southern = Number(lat) < 0;
@@ -2323,7 +2321,7 @@
         }
       } catch (_) {}
 
-      const aur = Number.isFinite(lat) ? auroraHemispherePeak(lat) : null;
+      const aur = Number.isFinite(lat) && Number.isFinite(lon) ? auroraAt(lat, lon) : null;
 
       return {
         phase01: dayPhase01(when),
@@ -2533,7 +2531,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e52 " + level;
+        if (mark) mark.textContent = "e53 " + level;
       },
       onPhase: showPhase,
     });
