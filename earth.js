@@ -1111,6 +1111,104 @@ export function createEarthGlobe(canvas, options = {}) {
     }
   }
 
+  function blurKernel(sigma) {
+    const radius = Math.max(1, Math.ceil(sigma * 2.5));
+    const k = new Float32Array(radius * 2 + 1);
+    let sum = 0;
+    const inv = 1 / (sigma * sigma);
+    for (let i = -radius; i <= radius; i++) {
+      const wgt = Math.exp(-0.5 * i * i * inv);
+      k[i + radius] = wgt;
+      sum += wgt;
+    }
+    for (let i = 0; i < k.length; i++) k[i] /= sum;
+    return { k, radius };
+  }
+
+  /**
+   * Feather the 1° NOAA steps and the red/green handoff.
+   * About one degree of latitude, and 1.3° of arc along a parallel.
+   */
+  function smoothAurora(src, w, h) {
+    const n = w * h;
+    const pr = new Float32Array(n);
+    const pg = new Float32Array(n);
+    const pb = new Float32Array(n);
+    const pa = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const a = src[i * 4 + 3] / 255;
+      pr[i] = src[i * 4] * a;
+      pg[i] = src[i * 4 + 1] * a;
+      pb[i] = src[i * 4 + 2] * a;
+      pa[i] = a;
+    }
+    const ky = blurKernel(4);
+    const vr = new Float32Array(n);
+    const vg = new Float32Array(n);
+    const vb = new Float32Array(n);
+    const va = new Float32Array(n);
+    for (let y = 0; y < h; y++) {
+      const y0 = Math.max(0, y - ky.radius);
+      const y1 = Math.min(h - 1, y + ky.radius);
+      for (let x = 0; x < w; x++) {
+        let r = 0;
+        let g = 0;
+        let b = 0;
+        let a = 0;
+        let ws = 0;
+        for (let yy = y0; yy <= y1; yy++) {
+          const wgt = ky.k[yy - y + ky.radius];
+          const i = yy * w + x;
+          r += pr[i] * wgt;
+          g += pg[i] * wgt;
+          b += pb[i] * wgt;
+          a += pa[i] * wgt;
+          ws += wgt;
+        }
+        const o = y * w + x;
+        const inv = ws > 0 ? 1 / ws : 0;
+        vr[o] = r * inv;
+        vg[o] = g * inv;
+        vb[o] = b * inv;
+        va[o] = a * inv;
+      }
+    }
+    const pyPerDeg = (h - 1) / 180;
+    for (let y = 0; y < h; y++) {
+      const lat = 90 - y / pyPerDeg;
+      const cos = Math.max(0.2, Math.cos((lat * Math.PI) / 180));
+      const kx = blurKernel(Math.max(0.8, (1.3 / cos) * (w / 360)));
+      for (let x = 0; x < w; x++) {
+        let r = 0;
+        let g = 0;
+        let b = 0;
+        let a = 0;
+        for (let t = -kx.radius; t <= kx.radius; t++) {
+          const xx = (x + t + w) % w;
+          const wgt = kx.k[t + kx.radius];
+          const i = y * w + xx;
+          r += vr[i] * wgt;
+          g += vg[i] * wgt;
+          b += vb[i] * wgt;
+          a += va[i] * wgt;
+        }
+        const o = (y * w + x) * 4;
+        if (a < 8 / 255) {
+          src[o] = 0;
+          src[o + 1] = 0;
+          src[o + 2] = 0;
+          src[o + 3] = 0;
+          continue;
+        }
+        const inv = 1 / a;
+        src[o] = Math.max(0, Math.min(255, Math.round(r * inv)));
+        src[o + 1] = Math.max(0, Math.min(255, Math.round(g * inv)));
+        src[o + 2] = Math.max(0, Math.min(255, Math.round(b * inv)));
+        src[o + 3] = Math.max(0, Math.min(255, Math.round(a * 255)));
+      }
+    }
+  }
+
   function buildAuroraTexture(coords, colorAt) {
     const w = AURORA_TEX_W;
     const h = AURORA_TEX_H;
@@ -1146,6 +1244,7 @@ export function createEarthGlobe(canvas, options = {}) {
       paintAuroraColumn(data, w, h, x, col, false, colorAt);
       paintAuroraColumn(data, w, h, x, col, true, colorAt);
     }
+    smoothAurora(data, w, h);
     const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.flipY = true;
