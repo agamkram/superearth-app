@@ -306,11 +306,9 @@
       gap: 0;
     }
 
-    /* Rise / high / set + tool strip (actions ≠ stats) */
+    /* Rise / high / set — three equal cells */
     .m-grid-rise {
-      grid-template-columns:
-        minmax(0, 0.82fr) minmax(0, 0.82fr) minmax(0, 0.82fr)
-        minmax(9.6rem, 1.4fr);
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       grid-auto-rows: var(--m-row-h);
       align-items: stretch;
       gap: 0;
@@ -320,13 +318,17 @@
       display: flex;
       align-items: stretch;
       gap: 1px;
-      min-width: 9.6rem;
-      width: 100%;
+      flex: 0 0 auto;
+      min-width: 0;
+      width: auto;
+      height: 100%;
+      max-height: 2.05rem;
       padding: 1px;
       border-radius: 5px;
       background: rgba(255, 255, 255, 0.05);
       border: none;
       pointer-events: auto;
+      box-sizing: border-box;
     }
 
     #m-station {
@@ -339,8 +341,9 @@
     }
 
     .vision-btn {
-      flex: 1 1 auto;
-      min-width: 2.7rem;
+      flex: 1 1 0;
+      min-width: 2.85rem;
+      width: 2.85rem;
       height: 100%;
       min-height: 0;
       border: none;
@@ -355,7 +358,7 @@
       cursor: pointer;
       touch-action: manipulation;
       line-height: 1;
-      padding: 0 0.45rem;
+      padding: 0 0.35rem;
       -webkit-tap-highlight-color: transparent;
     }
 
@@ -498,24 +501,27 @@
       }
 
       .m-grid-rise {
-        grid-template-columns:
-          minmax(0, 0.82fr) minmax(0, 0.82fr) minmax(0, 0.82fr)
-          minmax(11rem, 1.4fr);
+        grid-template-columns: repeat(3, minmax(0, 1fr));
       }
 
       .vision-btn {
         font-size: 10px;
-        min-width: 2.8rem;
-        padding: 0 0.45rem;
+        min-width: 3.1rem;
+        width: 3.1rem;
+        padding: 0 0.4rem;
       }
 
       .loc-strip {
-        gap: 0;
+        gap: 0.25rem;
       }
 
       .loc-card {
         max-height: 2.35rem;
         border-radius: 0;
+      }
+
+      .tool-strip {
+        max-height: 2.35rem;
       }
 
       .loc-place-row {
@@ -529,15 +535,9 @@
       }
 
       .loc-place-row button,
-      .geo-btn,
-      .hemi button {
+      .geo-btn {
         font-size: 10px;
         min-height: 1.2rem;
-      }
-
-      .hemi {
-        min-height: 1.2rem;
-        height: 1.2rem;
       }
 
       .cycle-date {
@@ -621,12 +621,13 @@
 
       .vision-btn {
         font-size: 7px;
-        min-width: 2rem;
-        padding: 0 0.25rem;
+        min-width: 2.4rem;
+        width: 2.4rem;
+        padding: 0 0.2rem;
       }
 
       .loc-strip {
-        gap: 0;
+        gap: 0.12rem;
       }
 
       .cycle {
@@ -642,17 +643,14 @@
       }
     }
 
-    /* Compact location + hemi row (desktop was ballooning under the cycle slider) */
+    /* Location + Clouds/Clear · Red · Orbit */
     .loc-strip {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.2rem;
       flex: 0 0 auto;
       align-items: stretch;
       min-height: 0;
-      margin-top: 0.06rem;
-      padding-top: 0.06rem;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
     }
 
     .loc-card {
@@ -667,8 +665,7 @@
       box-sizing: border-box;
     }
 
-    .loc-card-place,
-    .loc-card.hemi-card {
+    .loc-card-place {
       flex-direction: column;
       align-items: stretch;
       justify-content: space-between;
@@ -676,12 +673,7 @@
       padding: 0.12rem 0.35rem;
     }
 
-    .loc-card.hemi-card {
-      box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.05);
-    }
-
-    .loc-label,
-    .hemi-label {
+    .loc-label {
       font-size: var(--label-size);
       font-weight: 600;
       letter-spacing: 0.03em;
@@ -691,10 +683,6 @@
       text-align: left;
       margin: 0;
       flex: 0 0 auto;
-    }
-
-    .hemi-label {
-      text-align: center;
     }
 
     .loc-place-row {
@@ -747,27 +735,6 @@
       stroke-linejoin: round;
     }
 
-    .hemi {
-      display: flex;
-      gap: 2px;
-      flex: 0 0 auto;
-      width: 100%;
-      min-height: 1.15rem;
-      height: 1.15rem;
-      align-items: stretch;
-    }
-
-    .hemi button {
-      flex: 1 1 0;
-      min-width: 0;
-      min-height: 0;
-      height: 100%;
-      padding: 0 0.15rem;
-      font-size: 8px;
-      letter-spacing: 0.02em;
-      line-height: 1.1;
-    }
-
     .loc-card button {
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 5px;
@@ -784,25 +751,7 @@
       white-space: nowrap;
     }
 
-    .hemi button {
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 5px;
-      background: rgba(255, 255, 255, 0.06);
-      color: var(--text);
-      font-family: var(--font);
-      font-weight: 600;
-      text-transform: uppercase;
-      cursor: pointer;
-      line-height: 1.05;
-      white-space: nowrap;
-    }
-
-    .hemi button.active {
-      background: rgba(255, 255, 255, 0.14);
-      border-color: rgba(255, 255, 255, 0.28);
-    }
-
-    /* Hidden lat/lon still updated for hemi flip / storage */
+    /* Hidden lat/lon still updated for applyLocation / storage */
     .sr-only {
       position: absolute;
       width: 1px;
@@ -1223,7 +1172,6 @@
 
     body.is-red-mode .live-btn,
     body.is-red-mode .loc-card button,
-    body.is-red-mode .hemi button,
     body.is-red-mode .edit-panel button,
     body.is-red-mode .edit-panel input {
       background: rgba(40, 4, 4, 0.55);
@@ -1232,7 +1180,6 @@
       accent-color: #6a1010;
     }
 
-    body.is-red-mode .hemi button.active,
     body.is-red-mode .live-btn.is-preview {
       background: rgba(70, 10, 10, 0.55);
       border-color: #551010;
@@ -1333,7 +1280,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e41</span>
+    <span class="build-mark" id="build-mark">e42</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1342,55 +1289,6 @@
     <div class="metrics-panel">
       <section class="metrics-section" aria-labelledby="metrics-local-label">
       <h2 class="metrics-section-label" id="metrics-local-label">Local</h2>
-      <div class="m-grid m-grid-rise" aria-label="Sunrise solar noon sunset and display controls">
-        <button type="button" class="m-cell m-cell-fact" data-fact="rise" title="Tap for explanation">
-          <div class="k">Sunrise</div>
-          <div class="v sm" id="m-rise">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="high" title="Tap for explanation">
-          <div class="k">Solar noon</div>
-          <div class="v sm" id="m-high">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="set" title="Tap for explanation">
-          <div class="k">Sunset</div>
-          <div class="v sm" id="m-set">—</div>
-        </button>
-        <div class="tool-strip" role="group" aria-label="Display controls">
-          <button
-            type="button"
-            class="vision-btn"
-            id="vision-btn"
-            title="Night vision: red display for dark-adapted eyes"
-            aria-pressed="false"
-          >
-            Red
-          </button>
-          <button
-            type="button"
-            class="vision-btn"
-            id="orbit-btn"
-            title="Slow continuous Earth orbit (tap again to stop)"
-            aria-pressed="false"
-          >
-            Orbit
-          </button>
-        </div>
-      </div>
-      <div class="m-grid m-grid-3" aria-label="Local Earth">
-        <button type="button" class="m-cell m-cell-fact" data-fact="station" title="Tap for explanation">
-          <div class="k">Day length</div>
-          <div class="v sm" id="m-station">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="htide" title="Tap for explanation">
-          <div class="k">Season</div>
-          <div class="v sm" id="m-htide">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="tide" title="Tap for explanation">
-          <div class="k">Tide</div>
-          <div class="v sm" id="m-tide">—</div>
-        </button>
-      </div>
-
       <div class="loc-strip">
         <div class="loc-card loc-card-place">
           <div class="loc-label" id="loc-label">Current location</div>
@@ -1413,13 +1311,63 @@
             </button>
           </div>
         </div>
-        <div class="loc-card hemi-card">
-          <span class="hemi-label">Clouds</span>
-          <div class="hemi" role="group" aria-label="Clouds">
-            <button type="button" id="hemi-n" class="active" title="Show the live cloud layer">On</button>
-            <button type="button" id="hemi-s" title="Bare earth, no clouds">Clear</button>
-          </div>
+        <div class="tool-strip" role="group" aria-label="Display controls">
+          <button
+            type="button"
+            class="vision-btn"
+            id="clouds-btn"
+            title="Hide the live cloud layer"
+            aria-pressed="true"
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            class="vision-btn"
+            id="vision-btn"
+            title="Night vision: red display for dark-adapted eyes"
+            aria-pressed="false"
+          >
+            Red
+          </button>
+          <button
+            type="button"
+            class="vision-btn"
+            id="orbit-btn"
+            title="Slow continuous Earth orbit (tap again to stop)"
+            aria-pressed="false"
+          >
+            Orbit
+          </button>
         </div>
+      </div>
+      <div class="m-grid m-grid-rise" aria-label="Sunrise solar noon sunset">
+        <button type="button" class="m-cell m-cell-fact" data-fact="rise" title="Tap for explanation">
+          <div class="k">Sunrise</div>
+          <div class="v sm" id="m-rise">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="high" title="Tap for explanation">
+          <div class="k">Solar noon</div>
+          <div class="v sm" id="m-high">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="set" title="Tap for explanation">
+          <div class="k">Sunset</div>
+          <div class="v sm" id="m-set">—</div>
+        </button>
+      </div>
+      <div class="m-grid m-grid-3" aria-label="Local Earth">
+        <button type="button" class="m-cell m-cell-fact" data-fact="station" title="Tap for explanation">
+          <div class="k">Day length</div>
+          <div class="v sm" id="m-station">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="htide" title="Tap for explanation">
+          <div class="k">Season</div>
+          <div class="v sm" id="m-htide">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="tide" title="Tap for explanation">
+          <div class="k">Tide</div>
+          <div class="v sm" id="m-tide">—</div>
+        </button>
       </div>
       </section>
 
@@ -1514,7 +1462,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e41";
+    import { createEarthGlobe } from "./earth.js?v=e42";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     /** Used when GPS/permission unavailable (X in-app browser, denied, etc.) */
@@ -1536,8 +1484,7 @@
     const phaseSlider = document.getElementById("phase-slider");
     const cycleDate = document.getElementById("cycle-date");
     const liveBtn = document.getElementById("live-btn");
-    const hemiN = document.getElementById("hemi-n");
-    const hemiS = document.getElementById("hemi-s");
+    const cloudsBtn = document.getElementById("clouds-btn");
 
     /** @type {import("leaflet").Map | null} */
     let locationMap = null;
@@ -2157,11 +2104,17 @@
       if (source != null) setLocationTitle(source);
     }
 
+    let cloudsOn = true;
+
     function setClouds(on) {
-      const show = !!on;
-      hemiN.classList.toggle("active", show);
-      hemiS.classList.toggle("active", !show);
-      if (globeRef.current) globeRef.current.setClouds(show);
+      cloudsOn = !!on;
+      // Label = next action (same pattern as Red / White)
+      cloudsBtn.textContent = cloudsOn ? "Clear" : "Clouds";
+      cloudsBtn.setAttribute("aria-pressed", cloudsOn ? "true" : "false");
+      cloudsBtn.title = cloudsOn
+        ? "Hide the live cloud layer"
+        : "Show the live cloud layer";
+      if (globeRef.current) globeRef.current.setClouds(cloudsOn);
     }
 
     function setLiveUI() {
@@ -2285,7 +2238,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e41 " + level;
+        if (mark) mark.textContent = "e42 " + level;
       },
       onPhase: showPhase,
     });
@@ -2338,8 +2291,10 @@
       },
       { passive: false }
     );
-    hemiN.addEventListener("click", () => setClouds(true));
-    hemiS.addEventListener("click", () => setClouds(false));
+    cloudsBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      setClouds(!cloudsOn);
+    });
 
     function updateMapCoordsDisplay() {
       locMapCoords.textContent = `${fmtCoord(pickLat, "N", "S")} · ${fmtCoord(pickLon, "E", "W")}`;
