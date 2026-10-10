@@ -323,8 +323,9 @@
       align-items: stretch;
       gap: 1px;
       flex: 0 0 auto;
-      min-width: 0;
-      width: auto;
+      justify-self: end;
+      width: max-content;
+      min-width: max-content;
       height: 100%;
       max-height: 2.05rem;
       padding: 1px;
@@ -346,9 +347,9 @@
     }
 
     .vision-btn {
-      flex: 1 1 0;
-      min-width: 2.85rem;
-      width: 2.85rem;
+      flex: 0 0 auto;
+      width: auto;
+      min-width: 2rem;
       height: 100%;
       min-height: 0;
       border: none;
@@ -358,13 +359,13 @@
       font-family: var(--font);
       font-size: 8px;
       font-weight: 600;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.03em;
       text-transform: uppercase;
       white-space: nowrap;
       cursor: pointer;
       touch-action: manipulation;
       line-height: 1;
-      padding: 0 0.12rem;
+      padding: 0 0.32rem;
       -webkit-tap-highlight-color: transparent;
     }
 
@@ -516,9 +517,7 @@
 
       .vision-btn {
         font-size: 10px;
-        min-width: 3.55rem;
-        width: 3.55rem;
-        padding: 0 0.2rem;
+        padding: 0 0.38rem;
       }
 
       .loc-strip {
@@ -631,9 +630,7 @@
 
       .vision-btn {
         font-size: 7px;
-        min-width: 2.55rem;
-        width: 2.55rem;
-        padding: 0 0.1rem;
+        padding: 0 0.22rem;
       }
 
       .loc-strip {
@@ -656,7 +653,7 @@
     /* Location + Aurora · Clouds/Clear · Red · Orbit */
     .loc-strip {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-columns: minmax(0, 1fr) max-content;
       gap: 0.2rem;
       flex: 0 0 auto;
       align-items: stretch;
@@ -1290,7 +1287,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e46</span>
+    <span class="build-mark" id="build-mark">e47</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1488,7 +1485,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e46";
+    import { createEarthGlobe } from "./earth.js?v=e47";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     const TIDE_STATIONS_KEY = "superearth-noaa-tide-stations-v1";
@@ -2532,7 +2529,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e46 " + level;
+        if (mark) mark.textContent = "e47 " + level;
       },
       onPhase: showPhase,
     });
