@@ -92,7 +92,7 @@ def save_icons() -> None:
         ROOT / "icon-maskable-512.png", "PNG"
     )
     icon_512.resize((192, 192), Image.Resampling.LANCZOS).save(ROOT / "icon-192.png", "PNG")
-    apple = icon_512.resize((180, 180), Image.Resampling.LANCZOS).convert("RGBA")
+    apple = icon_512.resize((180, 180), Image.Resampling.LANCZOS).convert("RGB")
     apple.save(ROOT / "apple-touch-icon.png", "PNG")
     apple.save(ROOT / "apple-touch-icon-precomposed.png", "PNG")
     apple.save(ROOT / "apple-touch-icon-180x180.png", "PNG")
