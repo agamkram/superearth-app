@@ -25,6 +25,10 @@ const ATMO_HEIGHT = 1.05;
 const ATMO_FADE = 0.75;
 const ATMO_INTENSITY = 0.55;
 const ATMO_COLOR = new THREE.Color(0x4da6ff);
+/** OVATION ribbon — above clouds, under the air shell. */
+const AURORA_HEIGHT = 1.022;
+const AURORA_TEX_W = 360;
+const AURORA_TEX_H = 181;
 
 const ATMO_VERTEX = /* glsl */ `
 varying vec3 vWorldPos;
@@ -477,6 +481,9 @@ export function createEarthGlobe(canvas, options = {}) {
   let atmosphereMat = null;
   const _atmoCenter = new THREE.Vector3();
   const _atmoScale = new THREE.Vector3();
+  let auroraMesh = null;
+  let auroraMat = null;
+  let auroraTex = null;
   let frozenLat = 0;
   let frozenLon = 0;
   const raycaster = new THREE.Raycaster();
@@ -635,6 +642,7 @@ export function createEarthGlobe(canvas, options = {}) {
       material
     );
     if (cloudMesh) mesh.add(cloudMesh);
+    if (auroraMesh) mesh.add(auroraMesh);
     moonGroup.add(mesh);
     ensureAtmosphere();
     attachMissionPins(mesh);
@@ -1022,6 +1030,123 @@ export function createEarthGlobe(canvas, options = {}) {
     if (cloudMesh) cloudMesh.visible = cloudsOn;
     kick();
     return cloudsOn;
+  }
+
+  /**
+   * OVATION coords are [lon, lat, aurora] with lon 0…359, lat −90…90.
+   * NASA day/night maps put Greenwich at u=0.5, so lon 0 → column 180.
+   */
+  function buildAuroraTexture(coords) {
+    const w = AURORA_TEX_W;
+    const h = AURORA_TEX_H;
+    const data = new Uint8Array(w * h * 4);
+    if (!Array.isArray(coords)) {
+      const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.flipY = true;
+      tex.needsUpdate = true;
+      return tex;
+    }
+    for (let i = 0; i < coords.length; i++) {
+      const c = coords[i];
+      if (!c || c.length < 3) continue;
+      const lon = Number(c[0]);
+      const lat = Number(c[1]);
+      const a = Number(c[2]);
+      if (!Number.isFinite(lon) || !Number.isFinite(lat) || !(a > 1.5)) continue;
+      const x = (((Math.round(lon) + 180) % 360) + 360) % 360;
+      const y = Math.round(90 - lat);
+      if (x < 0 || x >= w || y < 0 || y >= h) continue;
+      // Soft scale — OVATION often tops out well under 100
+      const t = Math.min(1, Math.pow(a / 28, 0.85));
+      const r = Math.min(255, Math.floor(30 + 200 * t * t + 40 * t));
+      const g = Math.min(255, Math.floor(80 + 175 * t));
+      const b = Math.min(255, Math.floor(50 + 90 * t + 120 * t * t));
+      const alpha = Math.min(255, Math.floor(255 * Math.min(1, t * 1.35)));
+      const o = (y * w + x) * 4;
+      if (alpha > data[o + 3]) {
+        data[o] = r;
+        data[o + 1] = g;
+        data[o + 2] = b;
+        data[o + 3] = alpha;
+      }
+    }
+    const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.flipY = true;
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  function ensureAuroraMesh() {
+    if (auroraMesh) return;
+    auroraMat = new THREE.ShaderMaterial({
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        varying vec3 vWorldN;
+        void main() {
+          vUv = uv;
+          vWorldN = normalize(mat3(modelMatrix) * normalize(position));
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D uMap;
+        uniform vec3 uSunDir;
+        varying vec2 vUv;
+        varying vec3 vWorldN;
+        void main() {
+          vec4 tex = texture2D(uMap, vUv);
+          float ndl = dot(normalize(vWorldN), normalize(uSunDir));
+          float night = smoothstep(0.15, -0.38, ndl);
+          float glow = tex.a * night;
+          if (glow < 0.01) discard;
+          gl_FragColor = vec4(tex.rgb * glow * 1.65, 1.0);
+        }
+      `,
+      uniforms: {
+        uMap: { value: null },
+        uSunDir: sunDirUniform,
+      },
+      transparent: true,
+      depthWrite: false,
+      depthTest: true,
+      blending: THREE.AdditiveBlending,
+      side: THREE.FrontSide,
+      toneMapped: false,
+    });
+    auroraMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(RADIUS * AURORA_HEIGHT, 96, 64),
+      auroraMat
+    );
+    auroraMesh.renderOrder = 4;
+    auroraMesh.visible = false;
+    if (mesh) mesh.add(auroraMesh);
+  }
+
+  function setAurora(coords) {
+    ensureAuroraMesh();
+    const next = buildAuroraTexture(coords);
+    const prev = auroraTex;
+    auroraTex = next;
+    auroraMat.uniforms.uMap.value = next;
+    if (prev && prev !== next) prev.dispose();
+    let any = false;
+    if (Array.isArray(coords)) {
+      for (let i = 0; i < coords.length; i++) {
+        const a = Number(coords[i] && coords[i][2]);
+        if (a > 1.5) {
+          any = true;
+          break;
+        }
+      }
+    }
+    auroraMesh.visible = any;
+    kick();
+    return any;
   }
 
   function setObserver(lat, lon) {
@@ -1748,6 +1873,7 @@ export function createEarthGlobe(canvas, options = {}) {
     resetView,
     setObserver,
     setClouds,
+    setAurora,
     setTime,
     setOrbiting,
     isOrbiting,
@@ -1790,6 +1916,15 @@ export function createEarthGlobe(canvas, options = {}) {
         cloudMesh.geometry.dispose();
         cloudMesh.material?.map?.dispose();
         cloudMesh.material?.dispose();
+      }
+      if (auroraMesh) {
+        if (auroraMesh.parent) auroraMesh.parent.remove(auroraMesh);
+        auroraMesh.geometry.dispose();
+        auroraMat?.dispose();
+        auroraTex?.dispose();
+        auroraMesh = null;
+        auroraMat = null;
+        auroraTex = null;
       }
       if (atmosphere) {
         moonGroup.remove(atmosphere);

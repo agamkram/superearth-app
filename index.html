@@ -1316,7 +1316,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e33</span>
+    <span class="build-mark" id="build-mark">e34</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1494,7 +1494,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e33";
+    import { createEarthGlobe } from "./earth.js?v=e34";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     /** Used when GPS/permission unavailable (X in-app browser, denied, etc.) */
@@ -1591,7 +1591,7 @@
         title: "Aurora",
         body:
           "Chance of visible aurora overhead at your chosen location, from NOAA’s OVATION model.\n\n" +
-          "It is a forecast grid, not a photo of the sky. High latitude and a negative Bz raise the number.",
+          "The same grid paints the green night-side ribbon on the globe. It is a forecast, not a photo of the sky. High latitude and a negative Bz raise the number.",
       },
       rise: {
         title: "Sunrise",
@@ -1757,25 +1757,64 @@
       return null;
     }
 
+    /** OVATION cells are [lon, lat, aurora]. Prefer the 1° index when built. */
+    let auroraIndex = null;
+
+    function buildAuroraIndex(coords) {
+      const arr = new Float32Array(360 * 181);
+      arr.fill(-1);
+      if (!Array.isArray(coords)) {
+        auroraIndex = null;
+        return;
+      }
+      for (let i = 0; i < coords.length; i++) {
+        const c = coords[i];
+        if (!c || c.length < 3) continue;
+        const lon = Math.round(Number(c[0]));
+        const lat = Math.round(Number(c[1]));
+        const a = Number(c[2]);
+        if (!Number.isFinite(lon) || !Number.isFinite(lat) || !Number.isFinite(a)) continue;
+        const x = ((lon % 360) + 360) % 360;
+        const y = lat + 90;
+        if (y < 0 || y > 180) continue;
+        arr[y * 360 + x] = a;
+      }
+      auroraIndex = arr;
+    }
+
     function auroraAt(lat, lon) {
+      if (auroraIndex) {
+        const x = ((Math.round(Number(lon)) % 360) + 360) % 360;
+        const y = Math.max(0, Math.min(180, Math.round(Number(lat)) + 90));
+        const v = auroraIndex[y * 360 + x];
+        return v < 0 ? null : v;
+      }
       const coords = auroraGrid;
       if (!coords || !coords.length) return null;
       let best = null;
       let bestD = 1e9;
-      const step = coords.length > 8000 ? 4 : 1;
-      for (let i = 0; i < coords.length; i += step) {
+      const lo0 = ((Number(lon) % 360) + 360) % 360;
+      for (let i = 0; i < coords.length; i++) {
         const c = coords[i];
-        const dlat = c[0] - lat;
-        let dlon = c[1] - lon;
+        if (!c || c.length < 3) continue;
+        const dlat = Number(c[1]) - lat;
+        let dlon = Number(c[0]) - lo0;
         if (dlon > 180) dlon -= 360;
         if (dlon < -180) dlon += 360;
         const d = dlat * dlat + dlon * dlon;
         if (d < bestD) {
           bestD = d;
-          best = c[2];
+          best = Number(c[2]);
         }
       }
       return best;
+    }
+
+    function pushAurora(coords) {
+      auroraGrid = Array.isArray(coords) ? coords : null;
+      buildAuroraIndex(auroraGrid);
+      const g = globeRef.current;
+      if (g && typeof g.setAurora === "function") g.setAurora(auroraGrid);
     }
 
     async function loadFeeds(forceHeavy) {
@@ -1849,7 +1888,7 @@
         if (heavy) {
           heavyAt = Date.now();
           const coords = ovation && (ovation.coordinates || ovation.Coordinates);
-          if (Array.isArray(coords) && coords.length) auroraGrid = coords;
+          if (Array.isArray(coords) && coords.length) pushAurora(coords);
         }
       } catch (_) {
         /* keep last good numbers */
@@ -2200,7 +2239,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e33 " + level;
+        if (mark) mark.textContent = "e34 " + level;
       },
       onPhase: showPhase,
     });
