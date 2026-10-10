@@ -1289,7 +1289,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e44</span>
+    <span class="build-mark" id="build-mark">e45</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1387,8 +1387,8 @@
       </div>
       </section>
 
-      <section class="metrics-section" aria-labelledby="metrics-global-label">
-      <h2 class="metrics-section-label" id="metrics-global-label">Global</h2>
+      <section class="metrics-section" aria-labelledby="metrics-space-label">
+      <h2 class="metrics-section-label" id="metrics-space-label">Space weather</h2>
       <!-- Space weather rows. Last row: slots 1–2–3 + Alert spanning 4–5. -->
       <div class="m-grid" aria-label="Space weather">
         <button type="button" class="m-cell m-cell-fact" data-fact="phase" title="Tap for explanation">
@@ -1478,7 +1478,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e44";
+    import { createEarthGlobe } from "./earth.js?v=e45";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     const TIDE_STATIONS_KEY = "superearth-noaa-tide-stations-v1";
@@ -2509,7 +2509,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e44 " + level;
+        if (mark) mark.textContent = "e45 " + level;
       },
       onPhase: showPhase,
     });
