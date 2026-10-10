@@ -1280,15 +1280,14 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e42</span>
+    <span class="build-mark" id="build-mark">e43</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
 
   <div class="loc-bar" id="loc-bar">
     <div class="metrics-panel">
-      <section class="metrics-section" aria-labelledby="metrics-local-label">
-      <h2 class="metrics-section-label" id="metrics-local-label">Local</h2>
+      <section class="metrics-section" aria-label="Local">
       <div class="loc-strip">
         <div class="loc-card loc-card-place">
           <div class="loc-label" id="loc-label">Current location</div>
@@ -1462,7 +1461,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e42";
+    import { createEarthGlobe } from "./earth.js?v=e43";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     /** Used when GPS/permission unavailable (X in-app browser, denied, etc.) */
@@ -2238,7 +2237,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e42 " + level;
+        if (mark) mark.textContent = "e43 " + level;
       },
       onPhase: showPhase,
     });
