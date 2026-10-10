@@ -797,7 +797,8 @@
       bottom: 0;
       transform: translateX(-50%);
       width: min(430px, 100%);
-      max-height: min(78vh, 560px);
+      max-height: calc(100vh - env(safe-area-inset-top, 0px));
+      max-height: calc(100dvh - env(safe-area-inset-top, 0px));
       display: flex;
       flex-direction: column;
       gap: 0;
@@ -848,7 +849,10 @@
     }
 
     .loc-map {
-      height: min(48vh, 340px);
+      flex: 1 1 auto;
+      height: 75vh;
+      height: 75dvh;
+      min-height: 0;
       width: 100%;
       background: #12161e;
       z-index: 0;
@@ -1287,7 +1291,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e47</span>
+    <span class="build-mark" id="build-mark">e48</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1438,20 +1442,6 @@
     <input id="lat-input" class="sr-only" type="number" step="0.0001" min="-90" max="90" value="0" tabindex="-1" aria-hidden="true" />
     <input id="lon-input" class="sr-only" type="number" step="0.0001" min="-180" max="180" value="0" tabindex="-1" aria-hidden="true" />
 
-    <div id="loc-dialog" class="loc-dialog" hidden role="dialog" aria-modal="true" aria-label="Choose location on map">
-      <div class="loc-dialog-sheet">
-        <div class="loc-dialog-head">
-          <span>Tap map to set location</span>
-          <button type="button" id="loc-dialog-cancel">Cancel</button>
-        </div>
-        <div id="loc-map" class="loc-map" role="application" aria-label="Location map"></div>
-        <div class="loc-dialog-foot">
-          <span class="loc-map-coords" id="loc-map-coords">—</span>
-          <button type="button" class="primary" id="loc-dialog-use">Use this place</button>
-        </div>
-      </div>
-    </div>
-
     <div class="cycle">
       <div class="cycle-date" id="cycle-date">—</div>
       <div class="cycle-controls">
@@ -1471,7 +1461,21 @@
     </div>
   </div>
 
-  <!-- Outside .loc-bar: parent pointer-events:none blocks full-screen overlay taps -->
+  <!-- Outside .loc-bar: parent pointer-events:none and landscape zoom must not affect overlays -->
+  <div id="loc-dialog" class="loc-dialog" hidden role="dialog" aria-modal="true" aria-label="Choose location on map">
+    <div class="loc-dialog-sheet">
+      <div class="loc-dialog-head">
+        <span>Tap map to set location</span>
+        <button type="button" id="loc-dialog-cancel">Cancel</button>
+      </div>
+      <div id="loc-map" class="loc-map" role="application" aria-label="Location map"></div>
+      <div class="loc-dialog-foot">
+        <span class="loc-map-coords" id="loc-map-coords">—</span>
+        <button type="button" class="primary" id="loc-dialog-use">Use this place</button>
+      </div>
+    </div>
+  </div>
+
   <div id="fact-sheet" class="fact-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="fact-title">
     <button type="button" class="fact-sheet-scrim" id="fact-scrim" aria-label="Dismiss explanation"></button>
     <div class="fact-sheet-inner">
@@ -1485,7 +1489,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e47";
+    import { createEarthGlobe } from "./earth.js?v=e48";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     const TIDE_STATIONS_KEY = "superearth-noaa-tide-stations-v1";
@@ -2529,7 +2533,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e47 " + level;
+        if (mark) mark.textContent = "e48 " + level;
       },
       onPhase: showPhase,
     });
