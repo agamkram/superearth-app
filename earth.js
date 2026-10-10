@@ -28,7 +28,7 @@ const ATMO_COLOR = new THREE.Color(0x4da6ff);
 /** OVATION ribbon — above clouds, under the air shell. */
 const AURORA_HEIGHT = 1.022;
 const AURORA_TEX_W = 360;
-const AURORA_TEX_H = 181;
+const AURORA_TEX_H = 721;
 
 const ATMO_VERTEX = /* glsl */ `
 varying vec3 vWorldPos;
@@ -1034,14 +1034,8 @@ export function createEarthGlobe(canvas, options = {}) {
     return cloudsOn;
   }
 
-  /**
-   * Curtain on one longitude. NOAA sends only the chance the aurora is
-   * visible, not a red channel. Core stays green. The equatorward edge
-   * (bottom of the curtain) is crimson. The poleward edge is deep red.
-   * Walk out from the peak and stop at the equator so a stray low-latitude
-   * cell cannot paint the whole oval red.
-   */
-  function paintAuroraColumn(data, w, x, col, southern) {
+  /** Contiguous oval on one longitude. Stops at a gap or the equator. */
+  function auroraBand(col, southern) {
     let peakLat = 0;
     let peakA = -1;
     for (const [lat, cell] of col) {
@@ -1051,38 +1045,108 @@ export function createEarthGlobe(canvas, options = {}) {
         peakLat = lat;
       }
     }
-    if (peakA < 10) return;
+    if (peakA < 10) return null;
     const latMin = southern ? -90 : 0;
     const latMax = southern ? -1 : 90;
     let lo = peakLat;
     let hi = peakLat;
     while (lo > latMin && col.has(lo - 1)) lo--;
     while (hi < latMax && col.has(hi + 1)) hi++;
-    const span = hi - lo;
-    const eq = southern ? hi : lo;
-    for (let lat = lo; lat <= hi; lat++) {
-      const cell = col.get(lat);
-      if (!cell) continue;
-      const frac = span > 0 ? (southern ? (eq - lat) / span : (lat - eq) / span) : 0;
-      let r;
-      let g;
-      let b;
-      if (frac <= 0.22) {
-        r = 214;
-        g = 26;
-        b = 64;
-      } else if (frac >= 0.78) {
-        r = 208;
-        g = 16;
-        b = 26;
-      } else {
-        r = 20;
-        g = 198;
-        b = 34;
+    return { lo, hi };
+  }
+
+  /** Average oval edges across neighboring longitudes so the lip does not stair-step. */
+  function smoothAuroraBands(bands) {
+    const n = bands.length;
+    const out = new Array(n);
+    for (let x = 0; x < n; x++) {
+      if (!bands[x]) continue;
+      let lo = 0;
+      let hi = 0;
+      let count = 0;
+      for (let d = -6; d <= 6; d++) {
+        const band = bands[(x + d + n) % n];
+        if (!band) continue;
+        lo += band.lo;
+        hi += band.hi;
+        count++;
       }
-      const t = Math.min(1, Math.max(0, (cell.a - 10) / 90));
-      const alpha = Math.min(255, Math.floor(255 * (0.42 + 0.58 * Math.pow(t, 0.8))));
-      const o = (cell.y * w + x) * 4;
+      out[x] = { lo: lo / count, hi: hi / count };
+    }
+    return out;
+  }
+
+  function tent(dist, center, width) {
+    return Math.max(0, 1 - Math.abs(dist - center) / width);
+  }
+
+  /** Chance at a fractional latitude, blended between the two NOAA samples. */
+  function chanceAt(col, lo, hi, lat) {
+    if (lat < lo || lat > hi) return null;
+    const a0 = Math.floor(lat);
+    const a1 = Math.ceil(lat);
+    if (a0 === a1) return col.has(a0) ? col.get(a0).a : null;
+    const c0 = col.get(a0);
+    const c1 = col.get(a1);
+    if (!c0 && !c1) return null;
+    if (!c0) return Math.abs(lat - a1) <= 0.5 ? c1.a : null;
+    if (!c1) return Math.abs(lat - a0) <= 0.5 ? c0.a : null;
+    const f = lat - a0;
+    return c0.a * (1 - f) + c1.a * f;
+  }
+
+  /**
+   * Green glow from the live chance. A soft crimson lip on the lower
+   * shoulder, a soft deep red on the poleward shoulder. Green drops out
+   * before the red arrives, so the blend stays red.
+   */
+  function paintAuroraColumn(data, w, h, x, col, southern, edge) {
+    const raw = auroraBand(col, southern);
+    if (!raw || !edge) return;
+    const eq = southern ? edge.hi : edge.lo;
+    const pole = southern ? edge.lo : edge.hi;
+    const span = Math.abs(pole - eq);
+    const room = Math.max(2, span / 2);
+    const center = Math.min(3.8, Math.max(1.4, room * 0.42));
+    const width = Math.min(2.4, Math.max(0.9, room * 0.32));
+    const sub = (h - 1) / 180;
+    const steps = Math.round((raw.hi - raw.lo) * sub);
+    for (let i = 0; i <= steps; i++) {
+      const lat = raw.lo + i / sub;
+      const a = chanceAt(col, raw.lo, raw.hi, lat);
+      if (!(a >= 10)) continue;
+      const fromEq = southern ? eq - lat : lat - eq;
+      const fromPole = southern ? lat - pole : pole - lat;
+      const t = Math.min(1, Math.max(0, (a - 10) / 90));
+      let r = Math.min(160, Math.floor(8 + 28 * t));
+      let g = Math.min(200, Math.floor(60 + 140 * Math.pow(t, 0.72)));
+      let b = Math.min(70, Math.floor(12 + 22 * t));
+      const kBot = tent(fromEq, center, width);
+      const kTop = tent(fromPole, center, width);
+      let k = 0;
+      let tr = 0;
+      let tg = 0;
+      let tb = 0;
+      if (kBot >= kTop && kBot > 0) {
+        k = kBot;
+        tr = 224;
+        tg = 22;
+        tb = 48;
+      } else if (kTop > 0) {
+        k = kTop;
+        tr = 208;
+        tg = 8;
+        tb = 14;
+      }
+      const kk = Math.min(1, k);
+      const kg = Math.min(1, k * 1.75);
+      r = Math.max(0, Math.min(255, Math.floor(r * (1 - kk) + tr * kk)));
+      g = Math.max(0, Math.min(255, Math.floor(g * (1 - kg) + tg * kg)));
+      b = Math.max(0, Math.min(255, Math.floor(b * (1 - kk) + tb * kk)));
+      const alpha = Math.min(255, Math.floor(255 * Math.pow(t, 0.85)));
+      const y = Math.round((90 - lat) * sub);
+      if (y < 0 || y >= h) continue;
+      const o = (y * w + x) * 4;
       if (alpha >= data[o + 3]) {
         data[o] = r;
         data[o + 1] = g;
@@ -1121,11 +1185,21 @@ export function createEarthGlobe(canvas, options = {}) {
       const prev = cols[x].get(latR);
       if (!prev || a > prev.a) cols[x].set(latR, { a, y });
     }
+    const northBands = new Array(w);
+    const southBands = new Array(w);
     for (let x = 0; x < w; x++) {
       const col = cols[x];
       if (!col.size) continue;
-      paintAuroraColumn(data, w, x, col, false);
-      paintAuroraColumn(data, w, x, col, true);
+      northBands[x] = auroraBand(col, false);
+      southBands[x] = auroraBand(col, true);
+    }
+    const northEdge = smoothAuroraBands(northBands);
+    const southEdge = smoothAuroraBands(southBands);
+    for (let x = 0; x < w; x++) {
+      const col = cols[x];
+      if (!col.size) continue;
+      paintAuroraColumn(data, w, h, x, col, false, northEdge[x]);
+      paintAuroraColumn(data, w, h, x, col, true, southEdge[x]);
     }
     const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
     tex.colorSpace = THREE.SRGBColorSpace;
