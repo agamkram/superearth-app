@@ -299,16 +299,20 @@
       pointer-events: none;
     }
 
-    /* Local sun/tide — three equal cells */
+    /* NOAA tide line — station wide, high/mid/low compact */
     .m-grid-3 {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns:
+        minmax(0, 1.7fr)
+        minmax(3.6rem, 0.38fr)
+        minmax(3.6rem, 0.38fr)
+        minmax(3.6rem, 0.38fr);
       grid-auto-rows: var(--m-row-h);
       gap: 0;
     }
 
-    /* Rise / high / set — three equal cells */
+    /* Sunrise, solar noon, sunset, day length */
     .m-grid-rise {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       grid-auto-rows: var(--m-row-h);
       align-items: stretch;
       gap: 0;
@@ -331,7 +335,8 @@
       box-sizing: border-box;
     }
 
-    #m-station {
+    #m-station,
+    #m-daylen {
       font-size: 11px;
       line-height: 1.1;
       letter-spacing: -0.02em;
@@ -483,7 +488,15 @@
       }
 
       .m-grid-3 {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns:
+          minmax(0, 1.7fr)
+          minmax(4.1rem, 0.38fr)
+          minmax(4.1rem, 0.38fr)
+          minmax(4.1rem, 0.38fr);
+      }
+
+      .m-grid-rise {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
       }
 
       .m-cell .k {
@@ -498,10 +511,6 @@
 
       #m-station {
         font-size: 12px;
-      }
-
-      .m-grid-rise {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
       }
 
       .vision-btn {
@@ -1280,7 +1289,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e43</span>
+    <span class="build-mark" id="build-mark">e44</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1353,19 +1362,27 @@
           <div class="k">Sunset</div>
           <div class="v sm" id="m-set">—</div>
         </button>
-      </div>
-      <div class="m-grid m-grid-3" aria-label="Local Earth">
-        <button type="button" class="m-cell m-cell-fact" data-fact="station" title="Tap for explanation">
+        <button type="button" class="m-cell m-cell-fact" data-fact="daylen" title="Tap for explanation">
           <div class="k">Day length</div>
+          <div class="v sm" id="m-daylen">—</div>
+        </button>
+      </div>
+      <div class="m-grid m-grid-3" aria-label="Tides">
+        <button type="button" class="m-cell m-cell-fact" data-fact="station" title="Tap for explanation">
+          <div class="k">Nearest tide station</div>
           <div class="v sm" id="m-station">—</div>
         </button>
         <button type="button" class="m-cell m-cell-fact" data-fact="htide" title="Tap for explanation">
-          <div class="k">Season</div>
+          <div class="k">High tide</div>
           <div class="v sm" id="m-htide">—</div>
         </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="tide" title="Tap for explanation">
-          <div class="k">Tide</div>
-          <div class="v sm" id="m-tide">—</div>
+        <button type="button" class="m-cell m-cell-fact" data-fact="mtide" title="Tap for explanation">
+          <div class="k">Mid tide</div>
+          <div class="v sm" id="m-mtide">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="ltide" title="Tap for explanation">
+          <div class="k">Low tide</div>
+          <div class="v sm" id="m-ltide">—</div>
         </button>
       </div>
       </section>
@@ -1461,9 +1478,22 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e43";
+    import { createEarthGlobe } from "./earth.js?v=e44";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
+    const TIDE_STATIONS_KEY = "superearth-noaa-tide-stations-v1";
+    const INLAND_STATION_RE =
+      /\b(creek|bayou|slough|plantation|drawbridge|highway bridge|railroad bridge|mi\.?\s*above|miles?\s+above|above\s+(entrance|mouth)|ferry landing)\b/i;
+    const NOAA_STATIONS_PROXY = "/api/noaa-stations";
+    const NOAA_STATIONS_DIRECT =
+      "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json?type=tidepredictions";
+    const NOAA_HILO_PROXY = "/api/noaa-hilo";
+    const NOAA_HILO_DIRECT =
+      "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter";
+    let stationsPromise = null;
+    let tideSeq = 0;
+    let tideTimer = 0;
+    let lastTideStationLabel = "";
     /** Used when GPS/permission unavailable (X in-app browser, denied, etc.) */
     const DEFAULT_LOC = { lat: 35.5956, lon: -82.5519, name: "Asheville, NC" };
 
@@ -1501,9 +1531,11 @@
       tofull: document.getElementById("m-tofull"),
       ang: document.getElementById("m-ang"),
       dst: document.getElementById("m-dst"),
+      daylen: document.getElementById("m-daylen"),
       station: document.getElementById("m-station"),
       htide: document.getElementById("m-htide"),
-      tide: document.getElementById("m-tide"),
+      mtide: document.getElementById("m-mtide"),
+      ltide: document.getElementById("m-ltide"),
       rise: document.getElementById("m-rise"),
       high: document.getElementById("m-high"),
       set: document.getElementById("m-set"),
@@ -1576,23 +1608,34 @@
           "Local time the Sun sets at your chosen location on the day shown by the slider.\n\n" +
           "A dash means the Sun stays up or stays down.",
       },
-      station: {
+      daylen: {
         title: "Day length",
         body:
           "Hours and minutes of daylight at your location on the day shown.\n\n" +
-          "It stretches toward the summer solstice and shrinks toward the winter one. Hemisphere flips the seasons.",
+          "It stretches toward the summer solstice and shrinks toward the winter one.",
+      },
+      station: {
+        title: "Nearest tide station",
+        body:
+          "The closest NOAA tide-prediction station to your chosen location.\n\n" +
+          "High, mid, and low times are that station’s predictions. Real shoreline timing can still differ, especially in bays and inlets.",
       },
       htide: {
-        title: "Season",
+        title: "High tide",
         body:
-          "The astronomical season at your location: the stretch between solstice and equinox.\n\n" +
-          "South of the equator, summer and winter trade places with the north.",
+          "The next predicted high tide at the nearest NOAA station (local time).\n\n" +
+          "The slider’s day is used when you scrub; Live uses now.",
       },
-      tide: {
-        title: "Tide",
+      mtide: {
+        title: "Mid tide",
         body:
-          "Next astronomical high or low tide at your chosen location (H or L + local time).\n\n" +
-          "Times follow the Moon’s upper and lower culminations — the equilibrium tide, not a coastal NOAA station. Real harbors lag and stretch this by coastline shape.",
+          "Halfway in time between the next high and the next low at that station.\n\n" +
+          "It is not a separate NOAA product — a mark between the two extremes.",
+      },
+      ltide: {
+        title: "Low tide",
+        body:
+          "The next predicted low tide at the nearest NOAA station (local time).",
       },
     };
 
@@ -1608,9 +1651,11 @@
       rise: "m-rise",
       high: "m-high",
       set: "m-set",
+      daylen: "m-daylen",
       station: "m-station",
       htide: "m-htide",
-      tide: "m-tide",
+      mtide: "m-mtide",
+      ltide: "m-ltide",
     };
 
     const factSheet = document.getElementById("fact-sheet");
@@ -1939,27 +1984,6 @@
       return null;
     }
 
-    function seasonName(A, when, lat) {
-      const y = when.getFullYear();
-      const prev = A.Seasons(y - 1);
-      const cur = A.Seasons(y);
-      const marks = [
-        [prev.dec_solstice.date, "Winter"],
-        [cur.mar_equinox.date, "Spring"],
-        [cur.jun_solstice.date, "Summer"],
-        [cur.sep_equinox.date, "Fall"],
-        [cur.dec_solstice.date, "Winter"],
-      ];
-      let name = "Winter";
-      for (const [d, n] of marks) {
-        if (when >= d) name = n;
-      }
-      if (lat < 0) {
-        name = { Winter: "Summer", Spring: "Fall", Summer: "Winter", Fall: "Spring" }[name] || name;
-      }
-      return name;
-    }
-
     function fmtSpan(ms) {
       if (!(ms > 0)) return "—";
       const min = Math.round(ms / 60000);
@@ -1968,36 +1992,289 @@
       return `${h}h ${String(m).padStart(2, "0")}m`;
     }
 
-    /**
-     * Next equilibrium tide from lunar culminations.
-     * High ≈ Moon HA 0° / 180°; low ≈ HA 90° / 270°.
-     */
-    function nextAstroTide(A, lat, lon, when) {
-      if (!A || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-      const obs = new A.Observer(lat, lon, 0);
-      const start = when instanceof Date ? when : new Date(when);
-      const from = new Date(start.getTime() + 30000);
-      const candidates = [];
-      for (const [ha, kind] of [
-        [0, "H"],
-        [12, "H"],
-        [6, "L"],
-        [18, "L"],
-      ]) {
-        try {
-          const ev = A.SearchHourAngle(A.Body.Moon, obs, ha, from, 1);
-          if (ev && ev.time && ev.time.date && ev.time.date > start) {
-            candidates.push({ kind, date: ev.time.date });
-          }
-        } catch (_) {}
-      }
-      candidates.sort((a, b) => a.date - b.date);
-      return candidates[0] || null;
+    function ymdCompact(d) {
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(d.getUTCDate()).padStart(2, "0");
+      return `${y}${m}${day}`;
     }
 
-    function fmtTide(tide) {
-      if (!tide || !tide.date) return "—";
-      return `${tide.kind} ${fmtTime(tide.date)}`;
+    function haversineKm(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const p1 = (lat1 * Math.PI) / 180;
+      const p2 = (lat2 * Math.PI) / 180;
+      const dp = ((lat2 - lat1) * Math.PI) / 180;
+      const dl = ((lon2 - lon1) * Math.PI) / 180;
+      const a =
+        Math.sin(dp / 2) ** 2 +
+        Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+      return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+    }
+
+    function normalizeStationList(rawList, { requireTypeR = false } = {}) {
+      return (rawList || [])
+        .filter(
+          (s) =>
+            s &&
+            s.id &&
+            Number.isFinite(Number(s.lat)) &&
+            Number.isFinite(Number(s.lng)) &&
+            (!requireTypeR || s.type === "R" || s.type == null)
+        )
+        .map((s) => ({
+          id: String(s.id),
+          lat: Number(s.lat),
+          lng: Number(s.lng),
+          name: String(s.name || s.id)
+            .trim()
+            .replace(/\s+/g, " ")
+            .replace(/\s*,\s*/g, ", "),
+          state: s.state ? String(s.state).trim() : "",
+        }))
+        .filter((s) => !INLAND_STATION_RE.test(s.name));
+    }
+
+    async function fetchStationsFromNetwork() {
+      try {
+        const res = await fetch(NOAA_STATIONS_PROXY);
+        if (res.ok) {
+          const data = await res.json();
+          const list = normalizeStationList(data.stations || data.list || []);
+          if (list.length >= 10) return list;
+        }
+      } catch (_) {}
+      const res = await fetch(NOAA_STATIONS_DIRECT);
+      if (!res.ok) throw new Error("stations fetch failed");
+      const data = await res.json();
+      const list = normalizeStationList(data.stations || [], { requireTypeR: true });
+      if (list.length < 10) throw new Error("stations list empty");
+      return list;
+    }
+
+    function loadTideStations() {
+      if (stationsPromise) return stationsPromise;
+      stationsPromise = (async () => {
+        try {
+          const raw = localStorage.getItem(TIDE_STATIONS_KEY);
+          if (raw) {
+            const o = JSON.parse(raw);
+            if (
+              o?.ts &&
+              Date.now() - o.ts < 7 * 86400000 &&
+              Array.isArray(o.list) &&
+              o.list.length > 50
+            ) {
+              return o.list;
+            }
+          }
+        } catch (_) {}
+        const list = await fetchStationsFromNetwork();
+        try {
+          localStorage.setItem(
+            TIDE_STATIONS_KEY,
+            JSON.stringify({ ts: Date.now(), list })
+          );
+        } catch (_) {}
+        return list;
+      })().catch((err) => {
+        stationsPromise = null;
+        throw err;
+      });
+      return stationsPromise;
+    }
+
+    function nearestTideStation(list, lat, lon) {
+      let best = null;
+      let bestD = Infinity;
+      for (let i = 0; i < list.length; i++) {
+        const s = list[i];
+        const d = haversineKm(lat, lon, s.lat, s.lng);
+        if (d < bestD) {
+          bestD = d;
+          best = s;
+        }
+      }
+      return best ? { station: best, km: bestD } : null;
+    }
+
+    function parseNoaaGmt(t) {
+      if (!t || typeof t !== "string") return null;
+      const d = new Date(t.replace(" ", "T") + "Z");
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+
+    async function fetchHiloPredictions(stationId, when) {
+      const now = Date.now();
+      let t = when instanceof Date ? when.getTime() : now;
+      if (!Number.isFinite(t)) t = now;
+      t = Math.min(now + 40 * 86400000, Math.max(now - 20 * 86400000, t));
+      const start = new Date(t - 6 * 3600000);
+      const end = new Date(t + 48 * 3600000);
+      const begin = ymdCompact(start);
+      const endStr = ymdCompact(end);
+
+      async function parsePredictions(res) {
+        if (!res.ok) throw new Error("predictions failed");
+        const data = await res.json();
+        if (data?.error?.message) throw new Error(data.error.message);
+        if (data?.message === "Forbidden") throw new Error("predictions forbidden");
+        if (!Array.isArray(data.predictions)) throw new Error("no predictions");
+        return data.predictions;
+      }
+
+      try {
+        const res = await fetch(
+          `${NOAA_HILO_PROXY}?` +
+            new URLSearchParams({ station: stationId, begin, end: endStr }).toString()
+        );
+        return await parsePredictions(res);
+      } catch (_) {}
+
+      const res = await fetch(
+        `${NOAA_HILO_DIRECT}?` +
+          new URLSearchParams({
+            product: "predictions",
+            application: "superearth-app",
+            begin_date: begin,
+            end_date: endStr,
+            datum: "MLLW",
+            station: stationId,
+            time_zone: "gmt",
+            units: "english",
+            interval: "hilo",
+            format: "json",
+          }).toString()
+      );
+      return parsePredictions(res);
+    }
+
+    function nextExtremes(predictions, when) {
+      let nextH = null;
+      let nextL = null;
+      const t0 = when.getTime();
+      for (const p of predictions) {
+        const dt = parseNoaaGmt(p.t);
+        if (!dt || dt.getTime() < t0 - 60000) continue;
+        if (p.type === "H" && !nextH) nextH = dt;
+        if (p.type === "L" && !nextL) nextL = dt;
+        if (nextH && nextL) break;
+      }
+      if (!nextH || !nextL) {
+        for (const p of predictions) {
+          const dt = parseNoaaGmt(p.t);
+          if (!dt) continue;
+          if (p.type === "H" && !nextH) nextH = dt;
+          if (p.type === "L" && !nextL) nextL = dt;
+        }
+      }
+      return { nextH, nextL };
+    }
+
+    function midTideBetween(nextH, nextL) {
+      if (!(nextH instanceof Date) || !(nextL instanceof Date)) return null;
+      const a = nextH.getTime();
+      const b = nextL.getTime();
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+      return new Date((a + b) / 2);
+    }
+
+    function formatTideStationLabel(st) {
+      if (!st) return "—";
+      let name = (st.name || st.id || "").trim().replace(/\s+/g, " ");
+      name = name.replace(/\s*,\s*/g, ", ");
+      const state = (st.state || "").trim().toUpperCase();
+      let label = name;
+      if (name && state) {
+        const re = new RegExp(`,\\s*${state}$`, "i");
+        label = re.test(name) ? name : `${name}, ${state}`;
+      } else {
+        label = name || st.id || "—";
+      }
+      const parts = label.split(", ").filter(Boolean);
+      if (parts.length >= 3 && label.length > 22) {
+        label = `${parts[0]}, ${parts[parts.length - 1]}`;
+      }
+      return label;
+    }
+
+    function paintTideFields({ station, title, high, mid, low }, seq) {
+      if (seq !== tideSeq) return;
+      if (station != null) {
+        el.station.textContent = station;
+        if (title != null) el.station.title = title;
+      }
+      if (high != null) el.htide.textContent = high;
+      if (mid != null) el.mtide.textContent = mid;
+      if (low != null) el.ltide.textContent = low;
+    }
+
+    async function updateTidesNow(lat, lon, when) {
+      const seq = ++tideSeq;
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || !(when instanceof Date)) {
+        paintTideFields({ station: "—", high: "—", mid: "—", low: "—" }, seq);
+        return;
+      }
+      if (!lastTideStationLabel) {
+        paintTideFields({ station: "…", high: "…", mid: "…", low: "…" }, seq);
+      } else {
+        paintTideFields({ high: "…", mid: "…", low: "…" }, seq);
+      }
+      try {
+        const list = await loadTideStations();
+        if (seq !== tideSeq) return;
+        const near = nearestTideStation(list, lat, lon);
+        if (!near?.station) {
+          paintTideFields(
+            lastTideStationLabel
+              ? { high: "—", mid: "—", low: "—" }
+              : { station: "—", high: "—", mid: "—", low: "—" },
+            seq
+          );
+          return;
+        }
+        const place = formatTideStationLabel(near.station);
+        let fullName = (near.station.name || "").trim().replace(/\s+/g, " ").replace(/\s*,\s*/g, ", ");
+        const st = (near.station.state || "").trim().toUpperCase();
+        if (fullName && st && !new RegExp(`,\\s*${st}$`, "i").test(fullName)) {
+          fullName = `${fullName}, ${st}`;
+        }
+        lastTideStationLabel = place;
+        paintTideFields(
+          { station: place, title: `${fullName || place} · ${Math.round(near.km)} km away` },
+          seq
+        );
+        try {
+          const preds = await fetchHiloPredictions(near.station.id, when);
+          if (seq !== tideSeq) return;
+          const { nextH, nextL } = nextExtremes(preds, when);
+          paintTideFields(
+            {
+              high: fmtTime(nextH),
+              mid: fmtTime(midTideBetween(nextH, nextL)),
+              low: fmtTime(nextL),
+            },
+            seq
+          );
+        } catch (_) {
+          paintTideFields({ high: "—", mid: "—", low: "—" }, seq);
+        }
+      } catch (_) {
+        if (seq !== tideSeq) return;
+        paintTideFields(
+          lastTideStationLabel
+            ? { station: lastTideStationLabel, high: "—", mid: "—", low: "—" }
+            : { station: "—", high: "—", mid: "—", low: "—" },
+          seq
+        );
+      }
+    }
+
+    function updateTides(lat, lon, when) {
+      if (tideTimer) clearTimeout(tideTimer);
+      tideTimer = setTimeout(() => {
+        tideTimer = 0;
+        updateTidesNow(lat, lon, when);
+      }, 80);
     }
 
     function computeMetrics(info) {
@@ -2011,8 +2288,6 @@
       let high = null;
       let set = null;
       let dayLen = "—";
-      let season = "—";
-      let tide = null;
       try {
         if (Number.isFinite(lat) && Number.isFinite(lon)) {
           const obs = new A.Observer(lat, lon, 0);
@@ -2033,8 +2308,6 @@
             const hor = A.Horizon(time, obs, sun.ra, sun.dec, "normal");
             dayLen = hor.altitude > 0 ? "24h" : "0h";
           }
-          season = seasonName(A, when, lat);
-          tide = nextAstroTide(A, lat, lon, when);
         }
       } catch (_) {}
 
@@ -2046,8 +2319,8 @@
         high,
         set,
         dayLen,
-        season,
-        tide,
+        lat,
+        lon,
         aurora: aur == null ? "—" : `${Math.round(aur)}%`,
         when,
       };
@@ -2069,10 +2342,9 @@
       el.rise.textContent = fmtTime(m.rise);
       el.high.textContent = fmtTime(m.high);
       el.set.textContent = fmtTime(m.set);
-      el.station.textContent = m.dayLen;
-      el.htide.textContent = m.season;
-      el.tide.textContent = fmtTide(m.tide);
+      el.daylen.textContent = m.dayLen;
       cycleDate.textContent = fmtDateTime(m.when);
+      updateTides(m.lat, m.lon, m.when);
     }
 
     function showPhase(info) {
@@ -2237,7 +2509,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e43 " + level;
+        if (mark) mark.textContent = "e44 " + level;
       },
       onPhase: showPhase,
     });
