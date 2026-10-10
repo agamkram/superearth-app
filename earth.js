@@ -1055,16 +1055,18 @@ export function createEarthGlobe(canvas, options = {}) {
       const lon = Number(c[0]);
       const lat = Number(c[1]);
       const a = Number(c[2]);
-      if (!Number.isFinite(lon) || !Number.isFinite(lat) || !(a > 1.5)) continue;
+      // Under ~10% NOAA calls it invisible. Above that, stay green:
+      // the old ramp hit white by ~28%, then the shader brightened it again.
+      if (!Number.isFinite(lon) || !Number.isFinite(lat) || !(a >= 10)) continue;
       const x = (((Math.round(lon) + 180) % 360) + 360) % 360;
       const y = Math.round(90 - lat);
       if (x < 0 || x >= w || y < 0 || y >= h) continue;
-      // Soft scale — OVATION often tops out well under 100
-      const t = Math.min(1, Math.pow(a / 28, 0.85));
-      const r = Math.min(255, Math.floor(30 + 200 * t * t + 40 * t));
-      const g = Math.min(255, Math.floor(80 + 175 * t));
-      const b = Math.min(255, Math.floor(50 + 90 * t + 120 * t * t));
-      const alpha = Math.min(255, Math.floor(255 * Math.min(1, t * 1.35)));
+      const t = Math.min(1, (a - 10) / 90);
+      const pole = Math.min(1, Math.max(0, (Math.abs(lat) - 50) / 35));
+      const r = Math.min(160, Math.floor(6 + 100 * pole * t));
+      const g = Math.min(200, Math.floor(60 + 140 * Math.pow(t, 0.72)));
+      const b = Math.min(70, Math.floor(10 + 24 * t));
+      const alpha = Math.min(255, Math.floor(255 * Math.pow(t, 0.85)));
       const o = (y * w + x) * 4;
       if (alpha > data[o + 3]) {
         data[o] = r;
@@ -1103,10 +1105,10 @@ export function createEarthGlobe(canvas, options = {}) {
         void main() {
           vec4 tex = texture2D(uMap, vUv);
           float ndl = dot(normalize(vWorldN), normalize(uSunDir));
-          float night = smoothstep(0.15, -0.38, ndl);
+          float night = smoothstep(0.04, -0.2, ndl);
           float glow = tex.a * night;
-          if (glow < 0.01) discard;
-          gl_FragColor = vec4(tex.rgb * glow * 1.65, 1.0);
+          if (glow < 0.03) discard;
+          gl_FragColor = vec4(tex.rgb * glow, 1.0);
         }
       `,
       uniforms: {
@@ -1140,7 +1142,7 @@ export function createEarthGlobe(canvas, options = {}) {
     if (Array.isArray(coords)) {
       for (let i = 0; i < coords.length; i++) {
         const a = Number(coords[i] && coords[i][2]);
-        if (a > 1.5) {
+        if (a >= 10) {
           any = true;
           break;
         }
