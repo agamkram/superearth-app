@@ -1042,6 +1042,15 @@ export function createEarthGlobe(canvas, options = {}) {
     const w = AURORA_TEX_W;
     const h = AURORA_TEX_H;
     const data = new Uint8Array(w * h * 4);
+    const northLo = new Float32Array(w);
+    const northHi = new Float32Array(w);
+    const southLo = new Float32Array(w);
+    const southHi = new Float32Array(w);
+    northLo.fill(91);
+    northHi.fill(-91);
+    southLo.fill(91);
+    southHi.fill(-91);
+    const pts = [];
     if (!Array.isArray(coords)) {
       const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
       tex.colorSpace = THREE.SRGBColorSpace;
@@ -1055,18 +1064,40 @@ export function createEarthGlobe(canvas, options = {}) {
       const lon = Number(c[0]);
       const lat = Number(c[1]);
       const a = Number(c[2]);
-      // Under ~10% NOAA calls it invisible. Above that, stay green:
-      // the old ramp hit white by ~28%, then the shader brightened it again.
+      // Under ~10% NOAA calls it invisible. Equatorward edge stays green;
+      // the poleward edge goes red (high oxygen), and blue stays low so it
+      // cannot add up to white.
       if (!Number.isFinite(lon) || !Number.isFinite(lat) || !(a >= 10)) continue;
       const x = (((Math.round(lon) + 180) % 360) + 360) % 360;
       const y = Math.round(90 - lat);
       if (x < 0 || x >= w || y < 0 || y >= h) continue;
+      if (lat >= 0) {
+        if (lat < northLo[x]) northLo[x] = lat;
+        if (lat > northHi[x]) northHi[x] = lat;
+      } else {
+        if (lat < southLo[x]) southLo[x] = lat;
+        if (lat > southHi[x]) southHi[x] = lat;
+      }
+      pts.push(x, y, lat, a);
+    }
+    for (let i = 0; i < pts.length; i += 4) {
+      const x = pts[i];
+      const y = pts[i + 1];
+      const lat = pts[i + 2];
+      const a = pts[i + 3];
+      const north = lat >= 0;
+      const eq = north ? northLo[x] : southHi[x];
+      const pole = north ? northHi[x] : southLo[x];
+      const span = pole - eq;
+      const frac = span > 0.5 ? (lat - eq) / span : 0;
+      // 0 on the equator side of the oval, 1 on the pole side.
+      const u = Math.min(1, Math.max(0, (frac - 0.28) / 0.55));
       const t = Math.min(1, (a - 10) / 90);
-      const pole = Math.min(1, Math.max(0, (Math.abs(lat) - 50) / 35));
-      const r = Math.min(160, Math.floor(6 + 100 * pole * t));
-      const g = Math.min(200, Math.floor(60 + 140 * Math.pow(t, 0.72)));
-      const b = Math.min(70, Math.floor(10 + 24 * t));
-      const alpha = Math.min(255, Math.floor(255 * Math.pow(t, 0.85)));
+      const bright = 0.45 + 0.55 * t;
+      const r = Math.min(230, Math.floor((14 + 200 * Math.pow(u, 0.75)) * bright));
+      const g = Math.min(210, Math.floor((16 + 185 * (1 - Math.pow(u, 1.35))) * bright));
+      const b = Math.min(48, Math.floor(8 + 36 * u * t));
+      const alpha = Math.min(255, Math.floor(255 * Math.pow(Math.max(t, 0.001), 0.85)));
       const o = (y * w + x) * 4;
       if (alpha > data[o + 3]) {
         data[o] = r;
