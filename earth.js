@@ -1274,11 +1274,11 @@ export function createEarthGlobe(canvas, options = {}) {
         varying vec3 vWorldN;
         void main() {
           vec4 tex = texture2D(uMap, vUv);
+          if (tex.a < 0.03) discard;
           float ndl = dot(normalize(vWorldN), normalize(uSunDir));
-          float night = smoothstep(0.04, -0.2, ndl);
-          float glow = tex.a * night;
-          if (glow < 0.03) discard;
-          gl_FragColor = vec4(tex.rgb * glow, 1.0);
+          // Full ring in the dark. High sun washes it down; it does not cut the oval off.
+          float wash = mix(0.16, 1.0, smoothstep(0.75, -0.55, ndl));
+          gl_FragColor = vec4(tex.rgb * tex.a * wash, 1.0);
         }
       `,
       uniforms: {

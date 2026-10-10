@@ -1292,7 +1292,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e55</span>
+    <span class="build-mark" id="build-mark">e56</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1490,7 +1490,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e55";
+    import { createEarthGlobe } from "./earth.js?v=e56";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     const TIDE_STATIONS_KEY = "superearth-noaa-tide-stations-v1";
@@ -1595,7 +1595,7 @@
         title: "Aurora",
         body:
           "Chance the aurora is visible in the sky over your pin, from NOAA’s OVATION grid. Mid-latitudes are often zero unless a storm brings the oval down to you.\n\n" +
-          "The globe draws that oval on the night side. Color comes from the model’s electron energy, using the solar wind on this row. Soft electrons are red. A few keV stays green.",
+          "The globe draws the whole oval. Daylight washes out the sunlit side. Color comes from the model’s electron energy, using the solar wind on this row. Soft electrons are red. A few keV stays green.",
       },
       dst: {
         title: "Dst",
@@ -2606,7 +2606,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e55 " + level;
+        if (mark) mark.textContent = "e56 " + level;
       },
       onPhase: showPhase,
     });
