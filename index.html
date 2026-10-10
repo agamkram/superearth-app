@@ -265,6 +265,31 @@
       pointer-events: none;
     }
 
+    .metrics-section {
+      display: flex;
+      flex-direction: column;
+      gap: 0.06rem;
+    }
+
+    .metrics-section + .metrics-section {
+      margin-top: 0.1rem;
+      padding-top: 0.22rem;
+      border-top: 1px solid var(--line);
+    }
+
+    .metrics-section-label {
+      margin: 0 0 0.02rem;
+      padding: 0 0.28rem;
+      font-family: var(--font);
+      font-size: var(--label-size);
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--dim);
+      line-height: 1.1;
+      pointer-events: none;
+    }
+
     .m-grid {
       display: grid;
       /* 4 across → rows 1–2 of space weather wrap naturally */
@@ -1325,14 +1350,15 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e38</span>
+    <span class="build-mark" id="build-mark">e39</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
 
   <div class="loc-bar" id="loc-bar">
     <div class="metrics-panel">
-      <!-- Rows 1–3 were 4–6: local sun, day/season/tide, location. Space weather follows as 4–6. -->
+      <section class="metrics-section" aria-labelledby="metrics-local-label">
+      <h2 class="metrics-section-label" id="metrics-local-label">Local</h2>
       <div class="m-grid m-grid-rise" aria-label="Sunrise solar noon sunset and display controls">
         <button type="button" class="m-cell m-cell-fact" data-fact="rise" title="Tap for explanation">
           <div class="k">Sunrise</div>
@@ -1412,8 +1438,11 @@
           </div>
         </div>
       </div>
+      </section>
 
-      <!-- Space weather now rows 4–6. Row 6: slots 1–2–3 + Alert spanning 4–5. -->
+      <section class="metrics-section" aria-labelledby="metrics-global-label">
+      <h2 class="metrics-section-label" id="metrics-global-label">Global</h2>
+      <!-- Space weather rows. Last row: slots 1–2–3 + Alert spanning 4–5. -->
       <div class="m-grid" aria-label="Space weather">
         <button type="button" class="m-cell m-cell-fact" data-fact="phase" title="Tap for explanation">
           <div class="k">Kp</div>
@@ -1466,6 +1495,7 @@
           <div class="v sm" id="m-ltide">—</div>
         </button>
       </div>
+      </section>
     </div>
 
     <!-- Kept for hemi flip / applyLocation; not shown -->
@@ -1519,7 +1549,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e38";
+    import { createEarthGlobe } from "./earth.js?v=e39";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     /** Used when GPS/permission unavailable (X in-app browser, denied, etc.) */
@@ -2378,7 +2408,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e38 " + level;
+        if (mark) mark.textContent = "e39 " + level;
       },
       onPhase: showPhase,
     });
