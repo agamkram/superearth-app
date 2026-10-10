@@ -267,20 +267,31 @@
 
     .m-grid {
       display: grid;
-      /* Modest Phase bias — keep Illum / Cycle / To full readable */
-      grid-template-columns: 1.35fr 0.9fr 1fr 0.85fr;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
       grid-auto-rows: var(--m-row-h);
       gap: 0;
       pointer-events: none;
     }
 
-    /* Station bias — tide times stay compact (clock strings) */
+    .m-grid + .m-grid {
+      margin-top: 0;
+    }
+
+    .m-cell-span2 {
+      grid-column: span 2;
+    }
+
+    .m-cell-span2 .v {
+      font-size: 10px;
+      letter-spacing: -0.02em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Local sun/tide — three equal cells */
     .m-grid-3 {
-      grid-template-columns:
-        minmax(0, 1.7fr)
-        minmax(3.6rem, 0.38fr)
-        minmax(3.6rem, 0.38fr)
-        minmax(3.6rem, 0.38fr);
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       grid-auto-rows: var(--m-row-h);
       gap: 0;
     }
@@ -455,15 +466,11 @@
       }
 
       .m-grid {
-        grid-template-columns: 1.35fr 0.9fr 1fr 0.85fr;
+        grid-template-columns: repeat(8, minmax(0, 1fr));
       }
 
       .m-grid-3 {
-        grid-template-columns:
-          minmax(0, 1.7fr)
-          minmax(4.1rem, 0.38fr)
-          minmax(4.1rem, 0.38fr)
-          minmax(4.1rem, 0.38fr);
+        grid-template-columns: repeat(3, minmax(0, 1fr));
       }
 
       .m-cell .k {
@@ -1316,14 +1323,15 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e35</span>
+    <span class="build-mark" id="build-mark">e36</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
 
   <div class="loc-bar" id="loc-bar">
     <div class="metrics-panel">
-      <div class="m-grid" aria-label="Earth metrics">
+      <!-- Space weather: 3 × 8. Alert spans slots 4–5 on row 3. -->
+      <div class="m-grid" aria-label="Space weather drivers">
         <button type="button" class="m-cell m-cell-fact" data-fact="phase" title="Tap for explanation">
           <div class="k">Kp</div>
           <div class="v moon" id="m-phase">—</div>
@@ -1357,7 +1365,71 @@
           <div class="v sm" id="m-ang">—</div>
         </button>
       </div>
-      <!-- Row order: metrics, rise/high/set + tools, local, location -->
+      <div class="m-grid" aria-label="Space weather context">
+        <button type="button" class="m-cell m-cell-fact" data-fact="f107" title="Tap for explanation">
+          <div class="k">F10.7</div>
+          <div class="v sm" id="m-f107">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="dst" title="Tap for explanation">
+          <div class="k">Dst</div>
+          <div class="v sm" id="m-dst">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="proton" title="Tap for explanation">
+          <div class="k">Proton</div>
+          <div class="v sm" id="m-proton">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="temp" title="Tap for explanation">
+          <div class="k">Temp</div>
+          <div class="v sm" id="m-temp">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="elec" title="Tap for explanation">
+          <div class="k">Elec</div>
+          <div class="v sm" id="m-elec">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="spots" title="Tap for explanation">
+          <div class="k">Spots</div>
+          <div class="v sm" id="m-spots">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="bx" title="Tap for explanation">
+          <div class="k">Bx</div>
+          <div class="v sm" id="m-bx">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="by" title="Tap for explanation">
+          <div class="k">By</div>
+          <div class="v sm" id="m-by">—</div>
+        </button>
+      </div>
+      <div class="m-grid" aria-label="Space weather scales and alert">
+        <button type="button" class="m-cell m-cell-fact" data-fact="rscale" title="Tap for explanation">
+          <div class="k">R</div>
+          <div class="v sm" id="m-rscale">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="sscale" title="Tap for explanation">
+          <div class="k">S</div>
+          <div class="v sm" id="m-sscale">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="gscale" title="Tap for explanation">
+          <div class="k">G</div>
+          <div class="v sm" id="m-gscale">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact m-cell-span2" data-fact="ltide" title="Tap for explanation">
+          <div class="k">Alert</div>
+          <div class="v sm" id="m-ltide">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="clock" title="Tap for explanation">
+          <div class="k">Clock</div>
+          <div class="v sm" id="m-clock">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="bk" title="Tap for explanation">
+          <div class="k">Bk</div>
+          <div class="v sm" id="m-bk">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="age" title="Tap for explanation">
+          <div class="k">Age</div>
+          <div class="v sm" id="m-age">—</div>
+        </button>
+      </div>
+      <!-- Local sun + tools, then day length / season / tide -->
       <div class="m-grid m-grid-rise" aria-label="Sunrise solar noon sunset and display controls">
         <button type="button" class="m-cell m-cell-fact" data-fact="rise" title="Tap for explanation">
           <div class="k">Sunrise</div>
@@ -1404,10 +1476,6 @@
         <button type="button" class="m-cell m-cell-fact" data-fact="tide" title="Tap for explanation">
           <div class="k">Tide</div>
           <div class="v sm" id="m-tide">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="ltide" title="Tap for explanation">
-          <div class="k">Alert</div>
-          <div class="v sm" id="m-ltide">—</div>
         </button>
       </div>
 
@@ -1494,7 +1562,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e35";
+    import { createEarthGlobe } from "./earth.js?v=e36";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     /** Used when GPS/permission unavailable (X in-app browser, denied, etc.) */
@@ -1529,16 +1597,30 @@
     const el = {
       phase: document.getElementById("m-phase"),
       illum: document.getElementById("m-illum"),
+      density: document.getElementById("m-density"),
       cycle: document.getElementById("m-cycle"),
+      bt: document.getElementById("m-bt"),
       tofull: document.getElementById("m-tofull"),
       dist: document.getElementById("m-dist"),
       ang: document.getElementById("m-ang"),
-      density: document.getElementById("m-density"),
-      bt: document.getElementById("m-bt"),
+      f107: document.getElementById("m-f107"),
+      dst: document.getElementById("m-dst"),
+      proton: document.getElementById("m-proton"),
+      temp: document.getElementById("m-temp"),
+      elec: document.getElementById("m-elec"),
+      spots: document.getElementById("m-spots"),
+      bx: document.getElementById("m-bx"),
+      by: document.getElementById("m-by"),
+      rscale: document.getElementById("m-rscale"),
+      sscale: document.getElementById("m-sscale"),
+      gscale: document.getElementById("m-gscale"),
+      ltide: document.getElementById("m-ltide"),
+      clock: document.getElementById("m-clock"),
+      bk: document.getElementById("m-bk"),
+      age: document.getElementById("m-age"),
       station: document.getElementById("m-station"),
       htide: document.getElementById("m-htide"),
       tide: document.getElementById("m-tide"),
-      ltide: document.getElementById("m-ltide"),
       rise: document.getElementById("m-rise"),
       high: document.getElementById("m-high"),
       set: document.getElementById("m-set"),
@@ -1584,14 +1666,98 @@
       dist: {
         title: "Scales",
         body:
-          "NOAA’s space-weather scales right now.\n\n" +
-          "R is radio blackout, S is solar radiation, G is geomagnetic storm. Quiet means all three are at zero.",
+          "NOAA’s space-weather scales right now, summarized.\n\n" +
+          "R is radio blackout, S is solar radiation, G is geomagnetic storm. Quiet means all three are at zero. Row 3 shows R, S, and G alone.",
       },
       ang: {
         title: "Aurora",
         body:
           "Peak OVATION intensity in your hemisphere (north or south of the equator), from NOAA’s forecast grid.\n\n" +
           "The globe ribbon is that full grid on the night side. Overhead at your exact pin is often near zero at mid-latitudes unless a strong storm is on — the number here tracks the oval on your side of the world.",
+      },
+      f107: {
+        title: "F10.7",
+        body:
+          "Solar radio flux at 10.7 cm (2800 MHz), in solar flux units.\n\n" +
+          "A quiet Sun is near 70. Active-cycle peaks often sit above 150. It tracks the overall solar cycle better than a single flare.",
+      },
+      dst: {
+        title: "Dst",
+        body:
+          "Disturbance storm-time index in nanotesla (Kyoto).\n\n" +
+          "Near zero is quiet. Around −50 is a moderate ring-current storm. Past −100 is strong. Negative means Earth’s field is depressed.",
+      },
+      proton: {
+        title: "Proton",
+        body:
+          "GOES integral proton flux at ≥10 MeV, in particles per cm² per second per steradian.\n\n" +
+          "A jump here is what drives the S (solar radiation) scale and polar HF blackouts.",
+      },
+      temp: {
+        title: "Temp",
+        body:
+          "Proton temperature of the solar wind at L1, in kelvin.\n\n" +
+          "Fast streams and shocks often run hotter than the quiet wind.",
+      },
+      elec: {
+        title: "Elec",
+        body:
+          "GOES integral electron flux at ≥2 MeV.\n\n" +
+          "High fluxes stress satellites in geostationary orbit and can seed radiation-belt enhancements.",
+      },
+      spots: {
+        title: "Spots",
+        body:
+          "Sunspot count from the latest SWPC sunspot report (sum of Numspot on the newest day).\n\n" +
+          "More spots usually means a more active Sun and a higher chance of flares.",
+      },
+      bx: {
+        title: "Bx",
+        body:
+          "Sun–Earth (X) component of the interplanetary magnetic field at L1, in nanotesla.\n\n" +
+          "With By and Bz it makes up Bt. Bx alone rarely drives storms.",
+      },
+      by: {
+        title: "By",
+        body:
+          "Dusk–dawn (Y) component of the interplanetary magnetic field at L1, in nanotesla.\n\n" +
+          "It sets the IMF clock angle with Bz and shapes how the field drapes around Earth.",
+      },
+      rscale: {
+        title: "R",
+        body:
+          "NOAA radio-blackout scale (0–5) from solar X-ray flares.\n\n" +
+          "R1–R2 can fade HF on the dayside. R3 and up is a serious radio blackout.",
+      },
+      sscale: {
+        title: "S",
+        body:
+          "NOAA solar-radiation storm scale (0–5) from energetic protons.\n\n" +
+          "S1 and up means elevated radiation for polar flights and satellites.",
+      },
+      gscale: {
+        title: "G",
+        body:
+          "NOAA geomagnetic storm scale (0–5).\n\n" +
+          "G1 is minor; G3 and up can push aurora to mid-latitudes and stress power systems.",
+      },
+      clock: {
+        title: "Clock",
+        body:
+          "IMF clock angle at L1, in degrees (from the RTSW magnetometer).\n\n" +
+          "Near 180° means a southward field (storm-friendly). Near 0° is northward.",
+      },
+      bk: {
+        title: "Bk",
+        body:
+          "Boulder estimated K-index (local mid-latitude K), 0–9.\n\n" +
+          "It is a ground magnetometer cousin of planetary Kp — useful as a second opinion.",
+      },
+      age: {
+        title: "Age",
+        body:
+          "How old the latest active solar-wind sample is.\n\n" +
+          "L1 data can drop out; if Age climbs, Wind, Density, Bz, and Bt may be stale.",
       },
       rise: {
         title: "Sunrise",
@@ -1637,6 +1803,38 @@
       },
     };
 
+    const FACT_IDS = {
+      phase: "m-phase",
+      illum: "m-illum",
+      density: "m-density",
+      cycle: "m-cycle",
+      bt: "m-bt",
+      tofull: "m-tofull",
+      dist: "m-dist",
+      ang: "m-ang",
+      f107: "m-f107",
+      dst: "m-dst",
+      proton: "m-proton",
+      temp: "m-temp",
+      elec: "m-elec",
+      spots: "m-spots",
+      bx: "m-bx",
+      by: "m-by",
+      rscale: "m-rscale",
+      sscale: "m-sscale",
+      gscale: "m-gscale",
+      ltide: "m-ltide",
+      clock: "m-clock",
+      bk: "m-bk",
+      age: "m-age",
+      rise: "m-rise",
+      high: "m-high",
+      set: "m-set",
+      station: "m-station",
+      htide: "m-htide",
+      tide: "m-tide",
+    };
+
     const factSheet = document.getElementById("fact-sheet");
     const factTitle = document.getElementById("fact-title");
     const factBody = document.getElementById("fact-body");
@@ -1647,23 +1845,7 @@
       const f = FACTS[key];
       if (!f || !factSheet) return;
       factTitle.textContent = f.title;
-      const shown = (document.getElementById(
-        key === "phase" ? "m-phase"
-        : key === "illum" ? "m-illum"
-        : key === "density" ? "m-density"
-        : key === "cycle" ? "m-cycle"
-        : key === "bt" ? "m-bt"
-        : key === "tofull" ? "m-tofull"
-        : key === "dist" ? "m-dist"
-        : key === "ang" ? "m-ang"
-        : key === "rise" ? "m-rise"
-        : key === "high" ? "m-high"
-        : key === "set" ? "m-set"
-        : key === "station" ? "m-station"
-        : key === "htide" ? "m-htide"
-        : key === "tide" ? "m-tide"
-        : "m-ltide"
-      )?.textContent || "").trim();
+      const shown = (document.getElementById(FACT_IDS[key] || "m-ltide")?.textContent || "").trim();
       let body = f.body;
       if (key === "ang" && globeRef.current) {
         const obs = globeRef.current.getObserver();
@@ -1712,8 +1894,23 @@
       bt: "—",
       xray: "—",
       storm: "—",
+      f107: "—",
+      dst: "—",
+      proton: "—",
+      temp: "—",
+      elec: "—",
+      spots: "—",
+      bx: "—",
+      by: "—",
+      rscale: "—",
+      sscale: "—",
+      gscale: "—",
       alert: "—",
+      clock: "—",
+      bk: "—",
+      age: "—",
     };
+    let windSampleAt = 0;
     let auroraGrid = null;
     let feedTimer = 0;
     let heavyAt = 0;
@@ -1863,6 +2060,68 @@
       if (g && typeof g.setAurora === "function") g.setAurora(auroraGrid);
     }
 
+    function fmtSigned(n, digits = 1) {
+      if (!Number.isFinite(n)) return "—";
+      return `${n > 0 ? "+" : ""}${n.toFixed(digits)}`;
+    }
+
+    function fmtFlux(n) {
+      if (!Number.isFinite(n) || n < 0) return "—";
+      if (n >= 100) return String(Math.round(n));
+      if (n >= 10) return n.toFixed(1);
+      if (n >= 1) return n.toFixed(2);
+      if (n >= 0.1) return n.toFixed(2);
+      return n.toFixed(3);
+    }
+
+    function fmtTempK(n) {
+      if (!Number.isFinite(n) || n <= 0) return "—";
+      if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+      if (n >= 1000) return `${Math.round(n / 1000)}k`;
+      return String(Math.round(n));
+    }
+
+    function fmtAge(ms) {
+      if (!Number.isFinite(ms) || ms < 0) return "—";
+      const min = Math.round(ms / 60000);
+      if (min < 1) return "<1m";
+      if (min < 60) return `${min}m`;
+      const h = Math.floor(min / 60);
+      const m = min % 60;
+      return m ? `${h}h${m}m` : `${h}h`;
+    }
+
+    function latestGoesEnergy(rows, energy) {
+      if (!Array.isArray(rows)) return null;
+      for (let i = rows.length - 1; i >= 0; i--) {
+        const r = rows[i];
+        if (r && r.energy === energy && Number(r.flux) >= 0) return r;
+      }
+      return null;
+    }
+
+    function sunspotCount(rows) {
+      if (!Array.isArray(rows) || !rows.length) return null;
+      let bestDay = "";
+      for (const r of rows) {
+        const d = String(r.Obsdate || r.time_tag || "").slice(0, 10);
+        if (d > bestDay) bestDay = d;
+      }
+      if (!bestDay) return null;
+      let sum = 0;
+      let n = 0;
+      for (const r of rows) {
+        const d = String(r.Obsdate || r.time_tag || "").slice(0, 10);
+        if (d !== bestDay) continue;
+        const ns = Number(r.Numspot);
+        if (Number.isFinite(ns)) {
+          sum += ns;
+          n++;
+        }
+      }
+      return n ? sum : null;
+    }
+
     async function loadFeeds(forceHeavy) {
       if (feedsBusy) return;
       feedsBusy = true;
@@ -1875,14 +2134,24 @@
           fetch("https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json"),
           fetch("https://services.swpc.noaa.gov/products/noaa-scales.json"),
           fetch("https://services.swpc.noaa.gov/products/alerts.json"),
+          fetch("https://services.swpc.noaa.gov/json/f107_cm_flux.json"),
+          fetch("https://services.swpc.noaa.gov/products/kyoto-dst.json"),
+          fetch("https://services.swpc.noaa.gov/json/goes/primary/integral-protons-1-day.json"),
+          fetch("https://services.swpc.noaa.gov/json/goes/primary/integral-electrons-1-day.json"),
+          fetch("https://services.swpc.noaa.gov/json/boulder_k_index_1m.json"),
         ];
         if (heavy) {
           jobs.push(
-            fetch("https://services.swpc.noaa.gov/json/ovation_aurora_latest.json")
+            fetch("https://services.swpc.noaa.gov/json/ovation_aurora_latest.json"),
+            fetch("https://services.swpc.noaa.gov/json/sunspot_report.json")
           );
         }
         const res = await Promise.all(jobs.map((p) => p.then((r) => (r.ok ? r.json() : null)).catch(() => null)));
-        const [kp, wind, mag, xray, scales, alerts, ovation] = res;
+        const [
+          kp, wind, mag, xray, scales, alerts,
+          f107, dst, protons, electrons, boulder,
+          ovation, sunspots,
+        ] = res;
 
         if (Array.isArray(kp) && kp.length) {
           const row = kp[kp.length - 1];
@@ -1890,7 +2159,13 @@
           if (Number.isFinite(n)) feed.kp = n.toFixed(1);
         }
         const w = lastActive(wind, (r) => (r.proton_speed > 0 ? r.proton_speed : null));
-        if (w) feed.wind = `${Math.round(w.proton_speed)} km/s`;
+        if (w) {
+          feed.wind = `${Math.round(w.proton_speed)} km/s`;
+          const t = Date.parse(w.time_tag);
+          if (Number.isFinite(t)) windSampleAt = t;
+          const temp = Number(w.proton_temperature);
+          if (temp > 0) feed.temp = fmtTempK(temp);
+        }
         const dens = lastActive(wind, (r) =>
           Number(r.proton_density) > 0 ? r.proton_density : null
         );
@@ -1900,8 +2175,14 @@
         }
         const b = lastActive(mag, (r) => (Number.isFinite(Number(r.bz_gsm)) ? r.bz_gsm : null));
         if (b) {
-          const n = Number(b.bz_gsm);
-          feed.bz = `${n > 0 ? "+" : ""}${n.toFixed(1)}`;
+          feed.bz = fmtSigned(Number(b.bz_gsm));
+          if (Number.isFinite(Number(b.bx_gsm))) feed.bx = fmtSigned(Number(b.bx_gsm));
+          if (Number.isFinite(Number(b.by_gsm))) feed.by = fmtSigned(Number(b.by_gsm));
+          if (Number.isFinite(Number(b.phi_gsm))) feed.clock = `${Math.round(Number(b.phi_gsm))}°`;
+          if (!(windSampleAt > 0)) {
+            const t = Date.parse(b.time_tag);
+            if (Number.isFinite(t)) windSampleAt = t;
+          }
         }
         const btRow = lastActive(mag, (r) =>
           Number(r.bt) > 0 ? r.bt : null
@@ -1914,10 +2195,16 @@
         const cur = scales && (scales["0"] || scales[0]);
         if (cur && cur.R && cur.S && cur.G) {
           const parts = [];
-          if (Number(cur.R.Scale) > 0) parts.push("R" + cur.R.Scale);
-          if (Number(cur.S.Scale) > 0) parts.push("S" + cur.S.Scale);
-          if (Number(cur.G.Scale) > 0) parts.push("G" + cur.G.Scale);
+          const rN = Number(cur.R.Scale);
+          const sN = Number(cur.S.Scale);
+          const gN = Number(cur.G.Scale);
+          if (rN > 0) parts.push("R" + cur.R.Scale);
+          if (sN > 0) parts.push("S" + cur.S.Scale);
+          if (gN > 0) parts.push("G" + cur.G.Scale);
           feed.storm = parts.length ? parts.join(" ") : "Quiet";
+          feed.rscale = Number.isFinite(rN) ? String(rN) : "—";
+          feed.sscale = Number.isFinite(sN) ? String(sN) : "—";
+          feed.gscale = Number.isFinite(gN) ? String(gN) : "—";
         }
         if (Array.isArray(alerts) && alerts.length) {
           const msg = String(alerts[0].message || "");
@@ -1926,15 +2213,38 @@
             msg.split(/\r?\n/).find((l) => l.trim()) ||
             "";
           const clean = line.replace(/^ALERT:\s*/i, "").trim();
-          feed.alert = clean ? clean.slice(0, 22) : "Alert";
+          feed.alert = clean ? clean.slice(0, 36) : "Alert";
         } else if (alerts) {
           feed.alert = "None";
         }
+
+        if (Array.isArray(f107) && f107.length) {
+          const row = f107[f107.length - 1];
+          const n = Number(row.flux);
+          if (Number.isFinite(n)) feed.f107 = String(Math.round(n));
+        }
+        if (Array.isArray(dst) && dst.length) {
+          const row = dst[dst.length - 1];
+          const n = Number(row.dst != null ? row.dst : row[1]);
+          if (Number.isFinite(n)) feed.dst = fmtSigned(n, 0);
+        }
+        const p10 = latestGoesEnergy(protons, ">=10 MeV");
+        if (p10) feed.proton = fmtFlux(Number(p10.flux));
+        const e2 = latestGoesEnergy(electrons, ">=2 MeV");
+        if (e2) feed.elec = fmtFlux(Number(e2.flux));
+        if (Array.isArray(boulder) && boulder.length) {
+          const row = boulder[boulder.length - 1];
+          const n = Number(row.k_index);
+          if (Number.isFinite(n)) feed.bk = n.toFixed(1);
+        }
+        if (windSampleAt > 0) feed.age = fmtAge(Date.now() - windSampleAt);
 
         if (heavy) {
           heavyAt = Date.now();
           const coords = ovation && (ovation.coordinates || ovation.Coordinates);
           if (Array.isArray(coords) && coords.length) pushAurora(coords);
+          const spots = sunspotCount(sunspots);
+          if (spots != null) feed.spots = String(spots);
         }
       } catch (_) {
         /* keep last good numbers */
@@ -2119,13 +2429,27 @@
       el.tofull.textContent = feed.xray;
       el.dist.textContent = feed.storm;
       el.ang.textContent = m.aurora;
+      el.f107.textContent = feed.f107;
+      el.dst.textContent = feed.dst;
+      el.proton.textContent = feed.proton;
+      el.temp.textContent = feed.temp;
+      el.elec.textContent = feed.elec;
+      el.spots.textContent = feed.spots;
+      el.bx.textContent = feed.bx;
+      el.by.textContent = feed.by;
+      el.rscale.textContent = feed.rscale;
+      el.sscale.textContent = feed.sscale;
+      el.gscale.textContent = feed.gscale;
+      el.ltide.textContent = feed.alert;
+      el.clock.textContent = feed.clock;
+      el.bk.textContent = feed.bk;
+      el.age.textContent = feed.age;
       el.rise.textContent = fmtTime(m.rise);
       el.high.textContent = fmtTime(m.high);
       el.set.textContent = fmtTime(m.set);
       el.station.textContent = m.dayLen;
       el.htide.textContent = m.season;
       el.tide.textContent = fmtTide(m.tide);
-      el.ltide.textContent = feed.alert;
       cycleDate.textContent = fmtDateTime(m.when);
     }
 
@@ -2285,7 +2609,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e35 " + level;
+        if (mark) mark.textContent = "e36 " + level;
       },
       onPhase: showPhase,
     });
