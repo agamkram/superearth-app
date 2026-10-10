@@ -1291,7 +1291,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e53</span>
+    <span class="build-mark" id="build-mark">e54</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1489,7 +1489,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e53";
+    import { createEarthGlobe } from "./earth.js?v=e54";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     const TIDE_STATIONS_KEY = "superearth-noaa-tide-stations-v1";
@@ -1594,7 +1594,7 @@
         title: "Aurora",
         body:
           "Chance the aurora is visible in the sky over your pin, from NOAA’s OVATION grid. Mid-latitudes are often zero unless a storm brings the oval down to you.\n\n" +
-          "The globe still draws the whole oval on the night side. NOAA does not publish colors. The bright part stays green, with a thin crimson lip on the lower edge and a thin deep red toward the pole.",
+          "The globe draws that oval on the night side. Color comes from the model’s electron energy, using the solar wind on this row. Soft electrons are red. A few keV stays green.",
       },
       dst: {
         title: "Dst",
@@ -1870,11 +1870,82 @@
       return peak < 0 ? null : peak;
     }
 
-    function pushAurora(coords) {
+    function pushAurora(coords, drive) {
       auroraGrid = Array.isArray(coords) ? coords : null;
       buildAuroraIndex(auroraGrid);
       const g = globeRef.current;
-      if (g && typeof g.setAurora === "function") g.setAurora(auroraGrid);
+      if (g && typeof g.setAurora === "function") g.setAurora(auroraGrid, drive);
+    }
+
+    /** Four-hour weighted Newell coupling from the active solar-wind spacecraft. */
+    function newellDrive(mag, wind) {
+      if (!Array.isArray(mag) || !Array.isArray(wind)) return null;
+      const speeds = [];
+      for (let i = 0; i < wind.length; i++) {
+        const row = wind[i];
+        if (!row || row.active === false) continue;
+        const v = Number(row.proton_speed);
+        const t = Date.parse(row.time_tag);
+        if (v > 50 && Number.isFinite(t)) speeds.push([t, v]);
+      }
+      speeds.sort((a, b) => a[0] - b[0]);
+      function speedAt(t) {
+        let best = null;
+        let bestd = 1e18;
+        for (let i = 0; i < speeds.length; i++) {
+          const d = Math.abs(speeds[i][0] - t);
+          if (d < bestd) {
+            bestd = d;
+            best = speeds[i][1];
+          }
+        }
+        return bestd < 180000 ? best : null;
+      }
+      function coupling(by, bz, v) {
+        const bt = Math.hypot(by, bz);
+        const bztemp = bz === 0 ? 0.001 : bz;
+        let tc = Math.atan2(by, bztemp);
+        if (bt * Math.cos(tc) * bz < 0) tc += Math.PI;
+        return (v ** 1.33333) * (Math.abs(Math.sin(tc / 2)) ** 2.66667) * (bt ** 0.66667);
+      }
+      const pts = [];
+      for (let i = 0; i < mag.length; i++) {
+        const row = mag[i];
+        if (!row || row.active === false) continue;
+        const by = Number(row.by_gsm);
+        const bz = Number(row.bz_gsm);
+        const t = Date.parse(row.time_tag);
+        if (!Number.isFinite(by) || !Number.isFinite(bz) || !Number.isFinite(t)) continue;
+        const v = speedAt(t);
+        if (!v) continue;
+        pts.push([t, coupling(by, bz, v)]);
+      }
+      if (!pts.length) return null;
+      pts.sort((a, b) => a[0] - b[0]);
+      const now = pts[pts.length - 1][0];
+      const hours = [];
+      for (let h = 3; h >= 0; h--) {
+        let sum = 0;
+        let n = 0;
+        for (let i = 0; i < pts.length; i++) {
+          const age = now - pts[i][0];
+          if (age >= h * 3600000 && age < (h + 1) * 3600000) {
+            sum += pts[i][1];
+            n++;
+          }
+        }
+        hours.push(n ? sum / n : null);
+      }
+      const wts = [0.65 ** 3, 0.65 ** 2, 0.65, 1];
+      let num = 0;
+      let den = 0;
+      for (let i = 0; i < hours.length; i++) {
+        if (hours[i] == null) continue;
+        num += hours[i] * wts[i];
+        den += wts[i];
+      }
+      if (!den) return null;
+      return { dF: num / den, when: new Date(now) };
     }
 
     function fmtSigned(n, digits = 1) {
@@ -1933,10 +2004,13 @@
           if (Number.isFinite(n)) feed.dst = fmtSigned(n, 0);
         }
 
+        const drive = newellDrive(mag, wind);
         if (heavy) {
           heavyAt = Date.now();
           const coords = ovation && (ovation.coordinates || ovation.Coordinates);
-          if (Array.isArray(coords) && coords.length) pushAurora(coords);
+          if (Array.isArray(coords) && coords.length) pushAurora(coords, drive);
+        } else if (drive && auroraGrid && globeRef.current && typeof globeRef.current.setAurora === "function") {
+          globeRef.current.setAurora(auroraGrid, drive);
         }
       } catch (_) {
         /* keep last good numbers */
@@ -2531,7 +2605,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e53 " + level;
+        if (mark) mark.textContent = "e54 " + level;
       },
       onPhase: showPhase,
     });

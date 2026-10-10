@@ -3,6 +3,7 @@
  * 1-finger orbit · 2fs (two-finger slide) pan · pinch zoom · Live/home reset
  */
 import * as THREE from "three";
+import { loadOvationPrime, makeAuroraColor } from "./ovation.js?v=e54";
 
 /** Quake / storm pins. Replaced at runtime. */
 let SURFACE_SITES = [];
@@ -482,6 +483,16 @@ export function createEarthGlobe(canvas, options = {}) {
   const _atmoCenter = new THREE.Vector3();
   const _atmoScale = new THREE.Vector3();
   let auroraMesh = null;
+  let auroraCoords = null;
+  let auroraDrive = null;
+  let ovationTables = null;
+  const ovationReady = loadOvationPrime(new URL("./ovation-prime.bin?v=e54", import.meta.url))
+    .then((tables) => {
+      ovationTables = tables;
+      if (auroraCoords) setAurora(auroraCoords, auroraDrive);
+      return tables;
+    })
+    .catch(() => null);
   let auroraMat = null;
   let auroraTex = null;
   let auroraShown = true;
@@ -1055,31 +1066,6 @@ export function createEarthGlobe(canvas, options = {}) {
     return { lo, hi };
   }
 
-  /** Average oval edges across neighboring longitudes so the lip does not stair-step. */
-  function smoothAuroraBands(bands) {
-    const n = bands.length;
-    const out = new Array(n);
-    for (let x = 0; x < n; x++) {
-      if (!bands[x]) continue;
-      let lo = 0;
-      let hi = 0;
-      let count = 0;
-      for (let d = -6; d <= 6; d++) {
-        const band = bands[(x + d + n) % n];
-        if (!band) continue;
-        lo += band.lo;
-        hi += band.hi;
-        count++;
-      }
-      out[x] = { lo: lo / count, hi: hi / count };
-    }
-    return out;
-  }
-
-  function tent(dist, center, width) {
-    return Math.max(0, 1 - Math.abs(dist - center) / width);
-  }
-
   /** Chance at a fractional latitude, blended between the two NOAA samples. */
   function chanceAt(col, lo, hi, lat) {
     if (lat < lo || lat > hi) return null;
@@ -1096,67 +1082,36 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   /**
-   * Green glow from the live chance. A soft crimson lip on the lower
-   * shoulder, a soft deep red on the poleward shoulder. Green drops out
-   * before the red arrives, so the blend stays red.
+   * NOAA chance sets where the oval is and how bright. Color, when the
+   * tables have loaded, is the electron energy at that geographic point.
+   * Until then the oval stays the green that reads cleanly.
    */
-  function paintAuroraColumn(data, w, h, x, col, southern, edge) {
+  function paintAuroraColumn(data, w, h, x, col, southern, colorAt) {
     const raw = auroraBand(col, southern);
-    if (!raw || !edge) return;
-    const eq = southern ? edge.hi : edge.lo;
-    const pole = southern ? edge.lo : edge.hi;
-    const span = Math.abs(pole - eq);
-    const room = Math.max(2, span / 2);
-    const center = Math.min(3.8, Math.max(1.4, room * 0.42));
-    const width = Math.min(2.4, Math.max(0.9, room * 0.32));
+    if (!raw) return;
     const sub = (h - 1) / 180;
     const steps = Math.round((raw.hi - raw.lo) * sub);
+    const lon = (((x - 180) % 360) + 360) % 360;
     for (let i = 0; i <= steps; i++) {
       const lat = raw.lo + i / sub;
       const a = chanceAt(col, raw.lo, raw.hi, lat);
       if (!(a >= 10)) continue;
-      const fromEq = southern ? eq - lat : lat - eq;
-      const fromPole = southern ? lat - pole : pole - lat;
       const t = Math.min(1, Math.max(0, (a - 10) / 90));
-      let r = Math.min(160, Math.floor(8 + 28 * t));
-      let g = Math.min(200, Math.floor(60 + 140 * Math.pow(t, 0.72)));
-      let b = Math.min(70, Math.floor(12 + 22 * t));
-      const kBot = tent(fromEq, center, width);
-      const kTop = tent(fromPole, center, width);
-      let k = 0;
-      let tr = 0;
-      let tg = 0;
-      let tb = 0;
-      if (kBot >= kTop && kBot > 0) {
-        k = kBot;
-        tr = 224;
-        tg = 22;
-        tb = 48;
-      } else if (kTop > 0) {
-        k = kTop;
-        tr = 208;
-        tg = 8;
-        tb = 14;
-      }
-      const kk = Math.min(1, k);
-      const kg = Math.min(1, k * 1.75);
-      r = Math.max(0, Math.min(255, Math.floor(r * (1 - kk) + tr * kk)));
-      g = Math.max(0, Math.min(255, Math.floor(g * (1 - kg) + tg * kg)));
-      b = Math.max(0, Math.min(255, Math.floor(b * (1 - kk) + tb * kk)));
+      const rgb = colorAt ? colorAt(lat, lon) : [36, 200, 34];
       const alpha = Math.min(255, Math.floor(255 * Math.pow(t, 0.85)));
       const y = Math.round((90 - lat) * sub);
       if (y < 0 || y >= h) continue;
       const o = (y * w + x) * 4;
       if (alpha >= data[o + 3]) {
-        data[o] = r;
-        data[o + 1] = g;
-        data[o + 2] = b;
+        data[o] = rgb[0];
+        data[o + 1] = rgb[1];
+        data[o + 2] = rgb[2];
         data[o + 3] = alpha;
       }
     }
   }
 
-  function buildAuroraTexture(coords) {
+  function buildAuroraTexture(coords, colorAt) {
     const w = AURORA_TEX_W;
     const h = AURORA_TEX_H;
     const data = new Uint8Array(w * h * 4);
@@ -1185,21 +1140,11 @@ export function createEarthGlobe(canvas, options = {}) {
       const prev = cols[x].get(latR);
       if (!prev || a > prev.a) cols[x].set(latR, { a, y });
     }
-    const northBands = new Array(w);
-    const southBands = new Array(w);
     for (let x = 0; x < w; x++) {
       const col = cols[x];
       if (!col.size) continue;
-      northBands[x] = auroraBand(col, false);
-      southBands[x] = auroraBand(col, true);
-    }
-    const northEdge = smoothAuroraBands(northBands);
-    const southEdge = smoothAuroraBands(southBands);
-    for (let x = 0; x < w; x++) {
-      const col = cols[x];
-      if (!col.size) continue;
-      paintAuroraColumn(data, w, h, x, col, false, northEdge[x]);
-      paintAuroraColumn(data, w, h, x, col, true, southEdge[x]);
+      paintAuroraColumn(data, w, h, x, col, false, colorAt);
+      paintAuroraColumn(data, w, h, x, col, true, colorAt);
     }
     const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -1257,9 +1202,19 @@ export function createEarthGlobe(canvas, options = {}) {
     if (mesh) mesh.add(auroraMesh);
   }
 
-  function setAurora(coords) {
+  function setAurora(coords, drive) {
     ensureAuroraMesh();
-    const next = buildAuroraTexture(coords);
+    auroraCoords = coords;
+    if (drive && Number.isFinite(drive.dF)) auroraDrive = drive;
+    let colorAt = null;
+    if (ovationTables && auroraDrive && Number.isFinite(auroraDrive.dF)) {
+      try {
+        colorAt = makeAuroraColor(ovationTables, auroraDrive.dF, auroraDrive.when || new Date());
+      } catch (_) {
+        colorAt = null;
+      }
+    }
+    const next = buildAuroraTexture(coords, colorAt);
     const prev = auroraTex;
     auroraTex = next;
     auroraMat.uniforms.uMap.value = next;
