@@ -299,11 +299,6 @@
       pointer-events: none;
     }
 
-    /* Global tail — F10.7 + Proton */
-    .m-grid-sw-tail {
-      grid-template-columns: 1fr 1fr;
-    }
-
     /* Local sun/tide — three equal cells */
     .m-grid-3 {
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -482,10 +477,6 @@
 
       .m-grid {
         grid-template-columns: 1.35fr 0.9fr 1fr 0.85fr;
-      }
-
-      .m-grid-sw-tail {
-        grid-template-columns: 1fr 1fr;
       }
 
       .m-grid-3 {
@@ -1342,7 +1333,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e40</span>
+    <span class="build-mark" id="build-mark">e41</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1469,16 +1460,6 @@
           <div class="v sm" id="m-dst">—</div>
         </button>
       </div>
-      <div class="m-grid m-grid-sw-tail" aria-label="Solar flux and protons">
-        <button type="button" class="m-cell m-cell-fact" data-fact="f107" title="Tap for explanation">
-          <div class="k">F10.7</div>
-          <div class="v sm" id="m-f107">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="proton" title="Tap for explanation">
-          <div class="k">Proton</div>
-          <div class="v sm" id="m-proton">—</div>
-        </button>
-      </div>
       </section>
     </div>
 
@@ -1533,7 +1514,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e40";
+    import { createEarthGlobe } from "./earth.js?v=e41";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     /** Used when GPS/permission unavailable (X in-app browser, denied, etc.) */
@@ -1574,8 +1555,6 @@
       tofull: document.getElementById("m-tofull"),
       ang: document.getElementById("m-ang"),
       dst: document.getElementById("m-dst"),
-      f107: document.getElementById("m-f107"),
-      proton: document.getElementById("m-proton"),
       station: document.getElementById("m-station"),
       htide: document.getElementById("m-htide"),
       tide: document.getElementById("m-tide"),
@@ -1627,23 +1606,11 @@
           "Peak OVATION intensity in your hemisphere (north or south of the equator), from NOAA’s forecast grid.\n\n" +
           "The globe ribbon is that full grid on the night side. Overhead at your exact pin is often near zero at mid-latitudes unless a strong storm is on — the number here tracks the oval on your side of the world.",
       },
-      f107: {
-        title: "F10.7",
-        body:
-          "Solar radio flux at 10.7 cm (2800 MHz), in solar flux units.\n\n" +
-          "A quiet Sun is near 70. Active-cycle peaks often sit above 150. It tracks the overall solar cycle better than a single flare.",
-      },
       dst: {
         title: "Dst",
         body:
           "Disturbance storm-time index in nanotesla (Kyoto).\n\n" +
           "Near zero is quiet. Around −50 is a moderate ring-current storm. Past −100 is strong. Negative means Earth’s field is depressed.",
-      },
-      proton: {
-        title: "Proton",
-        body:
-          "GOES integral proton flux at ≥10 MeV, in particles per cm² per second per steradian.\n\n" +
-          "A jump here is what drives the S (solar radiation) scale and polar HF blackouts.",
       },
       rise: {
         title: "Sunrise",
@@ -1692,8 +1659,6 @@
       tofull: "m-tofull",
       ang: "m-ang",
       dst: "m-dst",
-      f107: "m-f107",
-      proton: "m-proton",
       rise: "m-rise",
       high: "m-high",
       set: "m-set",
@@ -1760,9 +1725,7 @@
       bz: "—",
       bt: "—",
       xray: "—",
-      f107: "—",
       dst: "—",
-      proton: "—",
     };
     let auroraGrid = null;
     let feedTimer = 0;
@@ -1918,24 +1881,6 @@
       return `${n > 0 ? "+" : ""}${n.toFixed(digits)}`;
     }
 
-    function fmtFlux(n) {
-      if (!Number.isFinite(n) || n < 0) return "—";
-      if (n >= 100) return String(Math.round(n));
-      if (n >= 10) return n.toFixed(1);
-      if (n >= 1) return n.toFixed(2);
-      if (n >= 0.1) return n.toFixed(2);
-      return n.toFixed(3);
-    }
-
-    function latestGoesEnergy(rows, energy) {
-      if (!Array.isArray(rows)) return null;
-      for (let i = rows.length - 1; i >= 0; i--) {
-        const r = rows[i];
-        if (r && r.energy === energy && Number(r.flux) >= 0) return r;
-      }
-      return null;
-    }
-
     async function loadFeeds(forceHeavy) {
       if (feedsBusy) return;
       feedsBusy = true;
@@ -1946,9 +1891,7 @@
           fetch("https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json"),
           fetch("https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json"),
           fetch("https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json"),
-          fetch("https://services.swpc.noaa.gov/json/f107_cm_flux.json"),
           fetch("https://services.swpc.noaa.gov/products/kyoto-dst.json"),
-          fetch("https://services.swpc.noaa.gov/json/goes/primary/integral-protons-1-day.json"),
         ];
         if (heavy) {
           jobs.push(
@@ -1956,7 +1899,7 @@
           );
         }
         const res = await Promise.all(jobs.map((p) => p.then((r) => (r.ok ? r.json() : null)).catch(() => null)));
-        const [kp, wind, mag, xray, f107, dst, protons, ovation] = res;
+        const [kp, wind, mag, xray, dst, ovation] = res;
 
         if (Array.isArray(kp) && kp.length) {
           const row = kp[kp.length - 1];
@@ -1983,18 +1926,11 @@
           if (row) feed.xray = xrayClass(Number(row.flux));
         }
 
-        if (Array.isArray(f107) && f107.length) {
-          const row = f107[f107.length - 1];
-          const n = Number(row.flux);
-          if (Number.isFinite(n)) feed.f107 = String(Math.round(n));
-        }
         if (Array.isArray(dst) && dst.length) {
           const row = dst[dst.length - 1];
           const n = Number(row.dst != null ? row.dst : row[1]);
           if (Number.isFinite(n)) feed.dst = fmtSigned(n, 0);
         }
-        const p10 = latestGoesEnergy(protons, ">=10 MeV");
-        if (p10) feed.proton = fmtFlux(Number(p10.flux));
 
         if (heavy) {
           heavyAt = Date.now();
@@ -2184,8 +2120,6 @@
       el.tofull.textContent = feed.xray;
       el.ang.textContent = m.aurora;
       el.dst.textContent = feed.dst;
-      el.f107.textContent = feed.f107;
-      el.proton.textContent = feed.proton;
       el.rise.textContent = fmtTime(m.rise);
       el.high.textContent = fmtTime(m.high);
       el.set.textContent = fmtTime(m.set);
@@ -2351,7 +2285,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e40 " + level;
+        if (mark) mark.textContent = "e41 " + level;
       },
       onPhase: showPhase,
     });
