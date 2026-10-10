@@ -61,9 +61,8 @@ void main() {
   float h = clamp((dist - uPlanetRadius) / span, 0.0, 1.0);
   float radial = pow(1.0 - h, uFadePower);
   vec3 nWorld = normalize(vWorldNormal);
-  float day = smoothstep(-0.15, 0.5, dot(nWorld, normalize(uLightDir)));
-  day = mix(1.0, day, uSunOn);
-  float glow = radial * mix(0.35, 1.0, day) * uIntensity * mix(0.45, 1.0, uSunOn);
+  float day = uSunOn * smoothstep(-0.15, 0.5, dot(nWorld, normalize(uLightDir)));
+  float glow = radial * mix(0.35, 1.0, day) * uIntensity;
   gl_FragColor = vec4(uColor * glow, 1.0);
 }
 `;
@@ -622,7 +621,7 @@ export function createEarthGlobe(canvas, options = {}) {
         "#include <color_fragment>",
         `#include <color_fragment>
         float ndl = dot(normalize(vWorldN), normalize(uSunDir));
-        float day = mix(1.0, smoothstep(-0.04, 0.20, ndl), uSunOn);
+        float day = uSunOn * smoothstep(-0.04, 0.20, ndl);
         vec3 dayCol = diffuseColor.rgb;
         float lum = dot(dayCol, vec3(0.2126, 0.7152, 0.0722));
         float blue = dayCol.b - max(dayCol.r, dayCol.g);
@@ -961,7 +960,7 @@ export function createEarthGlobe(canvas, options = {}) {
             "#include <alphamap_fragment>",
             `#include <alphamap_fragment>
             float ndl = dot(normalize(vWorldN), normalize(uSunDir));
-            float lit = mix(1.0, smoothstep(-0.2, 0.35, ndl), uSunOn);
+            float lit = uSunOn * smoothstep(-0.2, 0.35, ndl);
             diffuseColor.a *= mix(0.22, 1.0, lit);`
           );
         };
