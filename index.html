@@ -1325,67 +1325,14 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e37</span>
+    <span class="build-mark" id="build-mark">e38</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
 
   <div class="loc-bar" id="loc-bar">
     <div class="metrics-panel">
-      <!-- Space weather rows 1–2–3. Row 3: slots 1–2–3 + Alert spanning 4–5. -->
-      <div class="m-grid" aria-label="Space weather">
-        <button type="button" class="m-cell m-cell-fact" data-fact="phase" title="Tap for explanation">
-          <div class="k">Kp</div>
-          <div class="v moon" id="m-phase">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="illum" title="Tap for explanation">
-          <div class="k">Wind</div>
-          <div class="v" id="m-illum">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="density" title="Tap for explanation">
-          <div class="k">Density</div>
-          <div class="v sm" id="m-density">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="cycle" title="Tap for explanation">
-          <div class="k">Bz</div>
-          <div class="v sm" id="m-cycle">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="bt" title="Tap for explanation">
-          <div class="k">Bt</div>
-          <div class="v sm" id="m-bt">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="tofull" title="Tap for explanation">
-          <div class="k">X-ray</div>
-          <div class="v" id="m-tofull">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="dist" title="Tap for explanation">
-          <div class="k">Scales</div>
-          <div class="v sm" id="m-dist">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="ang" title="Tap for explanation">
-          <div class="k">Aurora</div>
-          <div class="v sm" id="m-ang">—</div>
-        </button>
-      </div>
-      <div class="m-grid m-grid-sw3" aria-label="Space weather alert row">
-        <button type="button" class="m-cell m-cell-fact" data-fact="f107" title="Tap for explanation">
-          <div class="k">F10.7</div>
-          <div class="v sm" id="m-f107">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="dst" title="Tap for explanation">
-          <div class="k">Dst</div>
-          <div class="v sm" id="m-dst">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="proton" title="Tap for explanation">
-          <div class="k">Proton</div>
-          <div class="v sm" id="m-proton">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact m-cell-alert" data-fact="ltide" title="Tap for explanation">
-          <div class="k">Alert</div>
-          <div class="v sm" id="m-ltide">—</div>
-        </button>
-      </div>
-      <!-- Local sun + tools, then day length / season / tide -->
+      <!-- Rows 1–3 were 4–6: local sun, day/season/tide, location. Space weather follows as 4–6. -->
       <div class="m-grid m-grid-rise" aria-label="Sunrise solar noon sunset and display controls">
         <button type="button" class="m-cell m-cell-fact" data-fact="rise" title="Tap for explanation">
           <div class="k">Sunrise</div>
@@ -1465,6 +1412,60 @@
           </div>
         </div>
       </div>
+
+      <!-- Space weather now rows 4–6. Row 6: slots 1–2–3 + Alert spanning 4–5. -->
+      <div class="m-grid" aria-label="Space weather">
+        <button type="button" class="m-cell m-cell-fact" data-fact="phase" title="Tap for explanation">
+          <div class="k">Kp</div>
+          <div class="v moon" id="m-phase">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="illum" title="Tap for explanation">
+          <div class="k">Wind</div>
+          <div class="v" id="m-illum">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="density" title="Tap for explanation">
+          <div class="k">Density</div>
+          <div class="v sm" id="m-density">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="cycle" title="Tap for explanation">
+          <div class="k">Bz</div>
+          <div class="v sm" id="m-cycle">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="bt" title="Tap for explanation">
+          <div class="k">Bt</div>
+          <div class="v sm" id="m-bt">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="tofull" title="Tap for explanation">
+          <div class="k">X-ray</div>
+          <div class="v" id="m-tofull">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="dist" title="Tap for explanation">
+          <div class="k">Scales</div>
+          <div class="v sm" id="m-dist">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="ang" title="Tap for explanation">
+          <div class="k">Aurora</div>
+          <div class="v sm" id="m-ang">—</div>
+        </button>
+      </div>
+      <div class="m-grid m-grid-sw3" aria-label="Space weather alert row">
+        <button type="button" class="m-cell m-cell-fact" data-fact="f107" title="Tap for explanation">
+          <div class="k">F10.7</div>
+          <div class="v sm" id="m-f107">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="dst" title="Tap for explanation">
+          <div class="k">Dst</div>
+          <div class="v sm" id="m-dst">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="proton" title="Tap for explanation">
+          <div class="k">Proton</div>
+          <div class="v sm" id="m-proton">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact m-cell-alert" data-fact="ltide" title="Tap for explanation">
+          <div class="k">Alert</div>
+          <div class="v sm" id="m-ltide">—</div>
+        </button>
+      </div>
     </div>
 
     <!-- Kept for hemi flip / applyLocation; not shown -->
@@ -1518,7 +1519,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e37";
+    import { createEarthGlobe } from "./earth.js?v=e38";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     /** Used when GPS/permission unavailable (X in-app browser, denied, etc.) */
@@ -2377,7 +2378,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e37 " + level;
+        if (mark) mark.textContent = "e38 " + level;
       },
       onPhase: showPhase,
     });
