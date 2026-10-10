@@ -554,7 +554,8 @@
         font-size: 13px;
       }
 
-      .live-btn {
+      .live-btn,
+      .sun-btn {
         font-size: 11px;
         min-height: 1.4rem;
         padding: 0 0.55rem;
@@ -1101,7 +1102,8 @@
       box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
     }
 
-    .live-btn {
+    .live-btn,
+    .sun-btn {
       flex: 0 0 auto;
       border: 1px solid var(--line);
       border-radius: 999px;
@@ -1121,7 +1123,8 @@
       z-index: 2;
     }
 
-    .live-btn.is-preview {
+    .live-btn.is-preview,
+    .sun-btn[aria-pressed="true"] {
       background: rgba(255, 255, 255, 0.16);
       border-color: rgba(255, 255, 255, 0.28);
     }
@@ -1183,6 +1186,7 @@
     }
 
     body.is-red-mode .live-btn,
+    body.is-red-mode .sun-btn,
     body.is-red-mode .loc-card button,
     body.is-red-mode .edit-panel button,
     body.is-red-mode .edit-panel input {
@@ -1192,7 +1196,8 @@
       accent-color: #6a1010;
     }
 
-    body.is-red-mode .live-btn.is-preview {
+    body.is-red-mode .live-btn.is-preview,
+    body.is-red-mode .sun-btn[aria-pressed="true"] {
       background: rgba(70, 10, 10, 0.55);
       border-color: #551010;
     }
@@ -1292,7 +1297,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e56</span>
+    <span class="build-mark" id="build-mark">e57</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1458,6 +1463,7 @@
           />
         </div>
         <button type="button" class="live-btn is-live" id="live-btn" title="Reset to live Earth for now">Live</button>
+        <button type="button" class="sun-btn" id="sun-btn" title="Turn the sun off" aria-pressed="true">Sun</button>
       </div>
     </div>
   </div>
@@ -1490,7 +1496,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e56";
+    import { createEarthGlobe } from "./earth.js?v=e57";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     const TIDE_STATIONS_KEY = "superearth-noaa-tide-stations-v1";
@@ -1525,6 +1531,7 @@
     const phaseSlider = document.getElementById("phase-slider");
     const cycleDate = document.getElementById("cycle-date");
     const liveBtn = document.getElementById("live-btn");
+    const sunBtn = document.getElementById("sun-btn");
     const auroraBtn = document.getElementById("aurora-btn");
     const cloudsBtn = document.getElementById("clouds-btn");
 
@@ -1595,7 +1602,7 @@
         title: "Aurora",
         body:
           "Chance the aurora is visible in the sky over your pin, from NOAA’s OVATION grid. Mid-latitudes are often zero unless a storm brings the oval down to you.\n\n" +
-          "The globe draws the whole oval. Daylight washes out the sunlit side. Color comes from the model’s electron energy, using the solar wind on this row. Soft electrons are red. A few keV stays green.",
+          "The globe draws the whole oval at the strength NOAA gives. The bright day surface makes that side quieter. Color comes from the model’s electron energy, using the solar wind on this row. Soft electrons are red. A few keV stays green.",
       },
       dst: {
         title: "Dst",
@@ -2489,7 +2496,6 @@
       if (!liveBtn) return;
       liveBtn.classList.toggle("is-preview", previewMode);
       liveBtn.classList.toggle("is-live", !previewMode);
-      liveBtn.textContent = previewMode ? "Use live" : "Live";
     }
 
     /** Put slider thumb at phase 0…1 (new→new). Matches cycle-day metric. */
@@ -2606,7 +2612,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e56 " + level;
+        if (mark) mark.textContent = "e57 " + level;
       },
       onPhase: showPhase,
     });
@@ -2650,6 +2656,20 @@
     }
 
     // click + pointerup: iOS sometimes eats click after touch-action wars
+    let sunOn = true;
+    function setSun(on) {
+      sunOn = !!on;
+      sunBtn.setAttribute("aria-pressed", sunOn ? "true" : "false");
+      sunBtn.title = sunOn ? "Turn the sun off" : "Turn the sun on";
+      if (globeRef.current && typeof globeRef.current.setSun === "function") {
+        globeRef.current.setSun(sunOn);
+      }
+    }
+    sunBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      setSun(!sunOn);
+    });
+
     liveBtn.addEventListener("click", onLiveActivate);
     liveBtn.addEventListener(
       "pointerup",

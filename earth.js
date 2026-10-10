@@ -47,6 +47,7 @@ uniform vec3 uColor;
 uniform float uIntensity;
 uniform float uFadePower;
 uniform vec3 uLightDir;
+uniform float uSunOn;
 uniform vec3 uPlanetCenter;
 uniform float uPlanetRadius;
 uniform float uAtmoRadius;
@@ -61,7 +62,8 @@ void main() {
   float radial = pow(1.0 - h, uFadePower);
   vec3 nWorld = normalize(vWorldNormal);
   float day = smoothstep(-0.15, 0.5, dot(nWorld, normalize(uLightDir)));
-  float glow = radial * mix(0.35, 1.0, day) * uIntensity;
+  day = mix(1.0, day, uSunOn);
+  float glow = radial * mix(0.35, 1.0, day) * uIntensity * mix(0.45, 1.0, uSunOn);
   gl_FragColor = vec4(uColor * glow, 1.0);
 }
 `;
@@ -474,6 +476,7 @@ export function createEarthGlobe(canvas, options = {}) {
   const missionPins = [];
   const sunDir = new THREE.Vector3(1, 0, 0);
   const sunDirUniform = { value: sunDir };
+  const sunOnUniform = { value: 1 };
   let nightMesh = null;
   let nightMat = null;
   let cloudMesh = null;
@@ -602,6 +605,7 @@ export function createEarthGlobe(canvas, options = {}) {
     material.onBeforeCompile = (shader) => {
       shader.uniforms.uNight = nightUniform;
       shader.uniforms.uSunDir = sunDirUniform;
+      shader.uniforms.uSunOn = sunOnUniform;
       shader.vertexShader = shader.vertexShader.replace(
         "#include <common>",
         "#include <common>\nvarying vec3 vWorldN;"
@@ -612,13 +616,13 @@ export function createEarthGlobe(canvas, options = {}) {
       );
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <common>",
-        "#include <common>\nuniform sampler2D uNight;\nuniform vec3 uSunDir;\nvarying vec3 vWorldN;"
+        "#include <common>\nuniform sampler2D uNight;\nuniform vec3 uSunDir;\nuniform float uSunOn;\nvarying vec3 vWorldN;"
       );
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <color_fragment>",
         `#include <color_fragment>
         float ndl = dot(normalize(vWorldN), normalize(uSunDir));
-        float day = smoothstep(-0.04, 0.20, ndl);
+        float day = mix(1.0, smoothstep(-0.04, 0.20, ndl), uSunOn);
         vec3 dayCol = diffuseColor.rgb;
         float lum = dot(dayCol, vec3(0.2126, 0.7152, 0.0722));
         float blue = dayCol.b - max(dayCol.r, dayCol.g);
@@ -669,6 +673,7 @@ export function createEarthGlobe(canvas, options = {}) {
       fragmentShader: ATMO_FRAGMENT,
       uniforms: {
         uLightDir: { value: sunDir.clone() },
+        uSunOn: sunOnUniform,
         uColor: { value: ATMO_COLOR.clone() },
         uIntensity: { value: ATMO_INTENSITY },
         uFadePower: { value: ATMO_FADE },
@@ -939,6 +944,7 @@ export function createEarthGlobe(canvas, options = {}) {
         });
         mat.onBeforeCompile = (shader) => {
           shader.uniforms.uSunDir = sunDirUniform;
+          shader.uniforms.uSunOn = sunOnUniform;
           shader.vertexShader = shader.vertexShader.replace(
             "#include <common>",
             "#include <common>\nvarying vec3 vWorldN;"
@@ -949,13 +955,13 @@ export function createEarthGlobe(canvas, options = {}) {
           );
           shader.fragmentShader = shader.fragmentShader.replace(
             "#include <common>",
-            "#include <common>\nuniform vec3 uSunDir;\nvarying vec3 vWorldN;"
+            "#include <common>\nuniform vec3 uSunDir;\nuniform float uSunOn;\nvarying vec3 vWorldN;"
           );
           shader.fragmentShader = shader.fragmentShader.replace(
             "#include <alphamap_fragment>",
             `#include <alphamap_fragment>
             float ndl = dot(normalize(vWorldN), normalize(uSunDir));
-            float lit = smoothstep(-0.2, 0.35, ndl);
+            float lit = mix(1.0, smoothstep(-0.2, 0.35, ndl), uSunOn);
             diffuseColor.a *= mix(0.22, 1.0, lit);`
           );
         };
@@ -1260,30 +1266,22 @@ export function createEarthGlobe(canvas, options = {}) {
     auroraMat = new THREE.ShaderMaterial({
       vertexShader: /* glsl */ `
         varying vec2 vUv;
-        varying vec3 vWorldN;
         void main() {
           vUv = uv;
-          vWorldN = normalize(mat3(modelMatrix) * normalize(position));
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
       fragmentShader: /* glsl */ `
         uniform sampler2D uMap;
-        uniform vec3 uSunDir;
         varying vec2 vUv;
-        varying vec3 vWorldN;
         void main() {
           vec4 tex = texture2D(uMap, vUv);
           if (tex.a < 0.03) discard;
-          float ndl = dot(normalize(vWorldN), normalize(uSunDir));
-          // Full ring in the dark. High sun washes it down; it does not cut the oval off.
-          float wash = mix(0.16, 1.0, smoothstep(0.75, -0.55, ndl));
-          gl_FragColor = vec4(tex.rgb * tex.a * wash, 1.0);
+          gl_FragColor = vec4(tex.rgb * tex.a, 1.0);
         }
       `,
       uniforms: {
         uMap: { value: null },
-        uSunDir: sunDirUniform,
       },
       transparent: true,
       depthWrite: false,
@@ -1332,6 +1330,12 @@ export function createEarthGlobe(canvas, options = {}) {
     auroraMesh.visible = auroraShown && auroraHas;
     kick();
     return any;
+  }
+
+  function setSun(on) {
+    sunOnUniform.value = on ? 1 : 0;
+    kick();
+    return sunOnUniform.value > 0.5;
   }
 
   function setAuroraShown(on) {
@@ -2067,6 +2071,7 @@ export function createEarthGlobe(canvas, options = {}) {
     setClouds,
     setAurora,
     setAuroraShown,
+    setSun,
     setTime,
     setOrbiting,
     isOrbiting,
