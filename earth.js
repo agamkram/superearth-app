@@ -1035,22 +1035,67 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   /**
-   * OVATION coords are [lon, lat, aurora] with lon 0…359, lat −90…90.
-   * NASA day/night maps put Greenwich at u=0.5, so lon 0 → column 180.
+   * Curtain on one longitude. NOAA sends only the chance the aurora is
+   * visible, not a red channel. Core stays green. The equatorward edge
+   * (bottom of the curtain) is crimson. The poleward edge is deep red.
+   * Walk out from the peak and stop at the equator so a stray low-latitude
+   * cell cannot paint the whole oval red.
    */
+  function paintAuroraColumn(data, w, x, col, southern) {
+    let peakLat = 0;
+    let peakA = -1;
+    for (const [lat, cell] of col) {
+      if ((lat < 0) !== southern) continue;
+      if (cell.a > peakA) {
+        peakA = cell.a;
+        peakLat = lat;
+      }
+    }
+    if (peakA < 10) return;
+    const latMin = southern ? -90 : 0;
+    const latMax = southern ? -1 : 90;
+    let lo = peakLat;
+    let hi = peakLat;
+    while (lo > latMin && col.has(lo - 1)) lo--;
+    while (hi < latMax && col.has(hi + 1)) hi++;
+    const span = hi - lo;
+    const eq = southern ? hi : lo;
+    for (let lat = lo; lat <= hi; lat++) {
+      const cell = col.get(lat);
+      if (!cell) continue;
+      const frac = span > 0 ? (southern ? (eq - lat) / span : (lat - eq) / span) : 0;
+      let r;
+      let g;
+      let b;
+      if (frac <= 0.22) {
+        r = 214;
+        g = 26;
+        b = 64;
+      } else if (frac >= 0.78) {
+        r = 208;
+        g = 16;
+        b = 26;
+      } else {
+        r = 20;
+        g = 198;
+        b = 34;
+      }
+      const t = Math.min(1, Math.max(0, (cell.a - 10) / 90));
+      const alpha = Math.min(255, Math.floor(255 * (0.42 + 0.58 * Math.pow(t, 0.8))));
+      const o = (cell.y * w + x) * 4;
+      if (alpha >= data[o + 3]) {
+        data[o] = r;
+        data[o + 1] = g;
+        data[o + 2] = b;
+        data[o + 3] = alpha;
+      }
+    }
+  }
+
   function buildAuroraTexture(coords) {
     const w = AURORA_TEX_W;
     const h = AURORA_TEX_H;
     const data = new Uint8Array(w * h * 4);
-    const northLo = new Float32Array(w);
-    const northHi = new Float32Array(w);
-    const southLo = new Float32Array(w);
-    const southHi = new Float32Array(w);
-    northLo.fill(91);
-    northHi.fill(-91);
-    southLo.fill(91);
-    southHi.fill(-91);
-    const pts = [];
     if (!Array.isArray(coords)) {
       const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
       tex.colorSpace = THREE.SRGBColorSpace;
@@ -1058,53 +1103,29 @@ export function createEarthGlobe(canvas, options = {}) {
       tex.needsUpdate = true;
       return tex;
     }
+    // One column per longitude. Each entry is the brightest cell at that latitude.
+    const cols = new Array(w);
+    for (let x = 0; x < w; x++) cols[x] = new Map();
     for (let i = 0; i < coords.length; i++) {
       const c = coords[i];
       if (!c || c.length < 3) continue;
       const lon = Number(c[0]);
       const lat = Number(c[1]);
       const a = Number(c[2]);
-      // Under ~10% NOAA calls it invisible. Equatorward edge stays green;
-      // the poleward edge goes red (high oxygen), and blue stays low so it
-      // cannot add up to white.
       if (!Number.isFinite(lon) || !Number.isFinite(lat) || !(a >= 10)) continue;
+      // Greenwich sits at texture u=0.5, so lon 0 → column 180.
       const x = (((Math.round(lon) + 180) % 360) + 360) % 360;
+      const latR = Math.round(lat);
       const y = Math.round(90 - lat);
-      if (x < 0 || x >= w || y < 0 || y >= h) continue;
-      if (lat >= 0) {
-        if (lat < northLo[x]) northLo[x] = lat;
-        if (lat > northHi[x]) northHi[x] = lat;
-      } else {
-        if (lat < southLo[x]) southLo[x] = lat;
-        if (lat > southHi[x]) southHi[x] = lat;
-      }
-      pts.push(x, y, lat, a);
+      if (x < 0 || x >= w || y < 0 || y >= h || latR < -90 || latR > 90) continue;
+      const prev = cols[x].get(latR);
+      if (!prev || a > prev.a) cols[x].set(latR, { a, y });
     }
-    for (let i = 0; i < pts.length; i += 4) {
-      const x = pts[i];
-      const y = pts[i + 1];
-      const lat = pts[i + 2];
-      const a = pts[i + 3];
-      const north = lat >= 0;
-      const eq = north ? northLo[x] : southHi[x];
-      const pole = north ? northHi[x] : southLo[x];
-      const span = pole - eq;
-      const frac = span > 0.5 ? (lat - eq) / span : 0;
-      // 0 on the equator side of the oval, 1 on the pole side.
-      const u = Math.min(1, Math.max(0, (frac - 0.28) / 0.55));
-      const t = Math.min(1, (a - 10) / 90);
-      const bright = 0.45 + 0.55 * t;
-      const r = Math.min(230, Math.floor((14 + 200 * Math.pow(u, 0.75)) * bright));
-      const g = Math.min(210, Math.floor((16 + 185 * (1 - Math.pow(u, 1.35))) * bright));
-      const b = Math.min(48, Math.floor(8 + 36 * u * t));
-      const alpha = Math.min(255, Math.floor(255 * Math.pow(Math.max(t, 0.001), 0.85)));
-      const o = (y * w + x) * 4;
-      if (alpha > data[o + 3]) {
-        data[o] = r;
-        data[o + 1] = g;
-        data[o + 2] = b;
-        data[o + 3] = alpha;
-      }
+    for (let x = 0; x < w; x++) {
+      const col = cols[x];
+      if (!col.size) continue;
+      paintAuroraColumn(data, w, x, col, false);
+      paintAuroraColumn(data, w, x, col, true);
     }
     const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
     tex.colorSpace = THREE.SRGBColorSpace;
