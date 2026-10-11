@@ -1704,19 +1704,10 @@ export function createEarthGlobe(canvas, options = {}) {
     // User pan is added on top; clamp so we stay inside the buffer.
     const lift = homeLiftY * homeLiftFade();
     const x = THREE.MathUtils.clamp(screenPanX, -panMarginPx, panMarginPx);
-    const yPan = THREE.MathUtils.clamp(screenPanY, -panMarginPx, panMarginPx);
-    const y = THREE.MathUtils.clamp(yPan + lift, -panMarginPx, panMarginPx);
+    const y = THREE.MathUtils.clamp(screenPanY + lift, -panMarginPx, panMarginPx);
     screenPanX = x;
-    screenPanY = yPan;
-    // Phone draws only the screen. The home lift is a window into a slightly
-    // taller view, so the share sheet never copies the offscreen pan buffer.
-    if (isTouch && width > 0 && bufferW > 0) {
-      const pad = Math.max(panMarginPx, 1);
-      // The camera already followed the finger. This window is only the home lift.
-      camera.setViewOffset(bufferW, bufferH, pad, pad - lift, width, height);
-      canvas.style.transform = "none";
-      return;
-    }
+    // Keep user pan separate from home lift in stored screenPanY
+    screenPanY = THREE.MathUtils.clamp(screenPanY, -panMarginPx, panMarginPx);
     canvas.style.transform = `translate(${x}px, ${y}px)`;
   }
 
@@ -1749,8 +1740,6 @@ export function createEarthGlobe(canvas, options = {}) {
     }
     syncMoon();
     readSpherical();
-    // Phone has no spare canvas to slide, so the moved camera has to be drawn.
-    if (isTouch) kick();
   }
 
   function clearScreenPan() {
@@ -1811,13 +1800,16 @@ export function createEarthGlobe(canvas, options = {}) {
     height = h;
     // Base pan buffer for 2fs. Also must cover home CSS lift (moon sits high so
     // bottom of host stays filled — otherwise a black strip clips the moon).
-    // On a phone the extra margin stays virtual. The pixels drawn are the
-    // screen only, because iOS copies the whole canvas when Share opens.
     const homeLift = Math.abs(homeScreenOffsetY());
     const liftRoom = Math.ceil(homeLift + 48);
-    panMarginPx = isTouch
-      ? liftRoom
-      : Math.max(Math.ceil(Math.max(w, h) * PAN_MARGIN), liftRoom);
+    panMarginPx = Math.max(Math.ceil(Math.max(w, h) * PAN_MARGIN), liftRoom);
+    // Trim only the spare pan margin so a phone can stay at full device pixels
+    // and still keep the share-sheet copy at or under 4096 on a side.
+    if (isTouch) {
+      const ratioCap = Math.min(window.devicePixelRatio || 1, maxPixelRatio);
+      const room = Math.floor((Math.floor(4096 / ratioCap) - Math.max(w, h)) / 2);
+      if (room >= liftRoom) panMarginPx = Math.min(panMarginPx, room);
+    }
     bufferW = w + 2 * panMarginPx;
     bufferH = h + 2 * panMarginPx;
 
@@ -1831,19 +1823,18 @@ export function createEarthGlobe(canvas, options = {}) {
     camera.aspect = bufferW / bufferH;
     camera.updateProjectionMatrix();
 
-    const drawW = isTouch ? w : bufferW;
-    const drawH = isTouch ? h : bufferH;
-    renderer.setPixelRatio(drawingRatio(drawW, drawH));
-    renderer.setSize(drawW, drawH, false);
+    renderer.setPixelRatio(drawingRatio(bufferW, bufferH));
+    renderer.setSize(bufferW, bufferH, false);
     if (starfield?.material) {
       starfield.material.size = starPointSize();
     }
 
     canvas.style.position = "absolute";
-    canvas.style.width = `${drawW}px`;
-    canvas.style.height = `${drawH}px`;
-    canvas.style.left = isTouch ? "0px" : `${-panMarginPx}px`;
-    canvas.style.top = isTouch ? "0px" : `${-panMarginPx}px`;
+    canvas.style.width = `${bufferW}px`;
+    canvas.style.height = `${bufferH}px`;
+    canvas.style.left = `${-panMarginPx}px`;
+    canvas.style.top = `${-panMarginPx}px`;
+    if (camera.view && camera.view.enabled) camera.clearViewOffset();
     applyCanvasPanTransform();
 
     homeDist = computeHomeDistance(w, h);
@@ -2171,7 +2162,6 @@ export function createEarthGlobe(canvas, options = {}) {
         writeCamera();
       }
     }
-    if (isTouch) applyCanvasPanTransform();
     syncMoon();
     if (missionMode !== "off") updateMissionPinFacing();
     renderer.render(scene, camera);
