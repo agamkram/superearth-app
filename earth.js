@@ -1767,7 +1767,23 @@ export function createEarthGlobe(canvas, options = {}) {
       w = Math.max(w, vv.width || 0);
       h = Math.max(h, vv.height || 0, (vv.offsetTop || 0) + (vv.height || 0));
     }
-    resize(Math.max(1, Math.round(w)), Math.max(1, Math.round(h)));
+    w = Math.max(1, Math.round(w));
+    h = Math.max(1, Math.round(h));
+    // Share sheet and the keyboard cover the page while iOS snapshots it.
+    // Rebuilding the GL buffer then keeps two copies and kills the tab.
+    const covered =
+      vv && (vv.height || 0) > 0 && (vv.height || 0) < (window.innerHeight || h) - 48;
+    if (width > 0 && Math.abs(w - width) < 80 && (h < height - 48 || covered)) return;
+    resize(w, h);
+  }
+
+  function drawingRatio(bufW, bufH) {
+    let ratio = Math.min(window.devicePixelRatio || 1, maxPixelRatio);
+    // iOS copies this whole buffer for the share preview. Past 4096 on a side,
+    // that copy is what shows "A problem repeatedly occurred."
+    const longSide = Math.max(bufW, bufH);
+    if (isTouch && longSide * ratio > 4096) ratio = 4096 / longSide;
+    return ratio;
   }
 
   function resize(cssW, cssH) {
@@ -1785,10 +1801,15 @@ export function createEarthGlobe(canvas, options = {}) {
     // Base pan buffer for 2fs. Also must cover home CSS lift (moon sits high so
     // bottom of host stays filled — otherwise a black strip clips the moon).
     const homeLift = Math.abs(homeScreenOffsetY());
-    panMarginPx = Math.max(
-      Math.ceil(Math.max(w, h) * PAN_MARGIN),
-      Math.ceil(homeLift + 48)
-    );
+    const liftRoom = Math.ceil(homeLift + 48);
+    panMarginPx = Math.max(Math.ceil(Math.max(w, h) * PAN_MARGIN), liftRoom);
+    // Trim only the spare pan margin so a phone can stay at full device pixels
+    // and still keep the share-sheet copy at or under 4096 on a side.
+    if (isTouch) {
+      const ratioCap = Math.min(window.devicePixelRatio || 1, maxPixelRatio);
+      const room = Math.floor((Math.floor(4096 / ratioCap) - Math.max(w, h)) / 2);
+      if (room >= liftRoom) panMarginPx = Math.min(panMarginPx, room);
+    }
     bufferW = w + 2 * panMarginPx;
     bufferH = h + 2 * panMarginPx;
 
@@ -1802,7 +1823,7 @@ export function createEarthGlobe(canvas, options = {}) {
     camera.aspect = bufferW / bufferH;
     camera.updateProjectionMatrix();
 
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxPixelRatio));
+    renderer.setPixelRatio(drawingRatio(bufferW, bufferH));
     renderer.setSize(bufferW, bufferH, false);
     if (starfield?.material) {
       starfield.material.size = starPointSize();
