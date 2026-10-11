@@ -442,9 +442,13 @@ export function createEarthGlobe(canvas, options = {}) {
   const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 200);
   camera.position.set(0, 0, 3.2);
 
+  // Phone DPR is already ~3. Multisampling that framebuffer is another
+  // full-screen buffer, and with the 8k maps it is enough to make Safari
+  // kill the tab ("A problem repeatedly occurred"). iPad (~2×) and Mac keep it.
+  const deviceRatio = window.devicePixelRatio || 1;
   const renderer = new THREE.WebGLRenderer({
     canvas,
-    antialias: true,
+    antialias: !(isTouch && deviceRatio >= 2.5),
     alpha: false,
     powerPreference: "high-performance",
   });
@@ -863,65 +867,150 @@ export function createEarthGlobe(canvas, options = {}) {
     setTimeout(() => upgradeHigh(), 400);
   }
 
+  // Upload now, then drop the decoded bitmap. One 8192×4096 image is ~128 MB
+  // in CPU memory and ~170 MB on the GPU with mipmaps. Safari kills the tab
+  // when day, night, and clouds are decoded together.
+  function releaseDecodedImage(tex) {
+    const img = tex && tex.image;
+    if (!img || !img.width || !img.height) return;
+    const w = img.width;
+    const h = img.height;
+    try {
+      renderer.initTexture(tex);
+    } catch (_) {
+      return;
+    }
+    tex.needsUpdate = false;
+    // Version stays put, so the GPU copy is what gets drawn.
+    tex.image = { width: w, height: h };
+    if (typeof img.src === "string") {
+      img.onload = null;
+      img.onerror = null;
+      img.src = "";
+    }
+  }
+
+  function disposeMap(tex) {
+    if (!tex) return;
+    const img = tex.image;
+    tex.dispose();
+    if (img && typeof img.src === "string") {
+      img.onload = null;
+      img.onerror = null;
+      img.src = "";
+    }
+  }
+
   function loadLow() {
     const cfg = LOD.low;
-    const map = loader.load(cfg.map, (tex) => {
-      configureColor(tex);
-      ready = true;
-      if (typeof onReady === "function") onReady();
-      if (typeof onQuality === "function") onQuality("2k");
-      kick();
-      scheduleHigh();
-    });
-    const night = loader.load(cfg.night, configureNight);
+    let lowMapReady = false;
+    let lowNightReady = false;
+    const maybeSchedule = () => {
+      if (lowMapReady && lowNightReady) scheduleHigh();
+    };
+    const map = loader.load(
+      cfg.map,
+      (tex) => {
+        configureColor(tex);
+        ready = true;
+        if (typeof onReady === "function") onReady();
+        if (typeof onQuality === "function") onQuality("2k");
+        kick();
+        lowMapReady = true;
+        maybeSchedule();
+      },
+      undefined,
+      () => {
+        lowMapReady = true;
+        maybeSchedule();
+      }
+    );
+    const night = loader.load(
+      cfg.night,
+      (tex) => {
+        if (
+          !disposed &&
+          material &&
+          material.userData.nightUniform &&
+          material.userData.nightUniform.value === tex
+        ) {
+          configureNight(tex);
+        }
+        lowNightReady = true;
+        maybeSchedule();
+      },
+      undefined,
+      () => {
+        lowNightReady = true;
+        maybeSchedule();
+      }
+    );
     configureColor(map);
     configureNight(night);
     buildMesh(map, night, cfg);
-    loadClouds();
-    scheduleHigh();
   }
 
   function upgradeHigh() {
     if (disposed) return;
     const cfg = LOD.high;
-    let mapDone = null;
-    let nightDone = null;
+    let dayApplied = false;
+    // Let Safari reclaim the previous decode before the next 8k image starts.
+    const next = (fn) => setTimeout(fn, 150);
 
-    const tryApply = () => {
-      if (disposed || !material || !mapDone) return;
-      const oldMap = material.map;
-      material.map = mapDone;
-      material.needsUpdate = true;
-      if (oldMap && oldMap !== mapDone) oldMap.dispose();
-      if (nightDone && material.userData.nightUniform) {
-        const old = material.userData.nightUniform.value;
-        material.userData.nightUniform.value = nightDone;
-        if (old && old !== nightDone) old.dispose();
-      }
-      if (mesh && mesh.geometry.parameters.widthSegments < cfg.segments) {
-        mesh.geometry.dispose();
-        mesh.geometry = new THREE.SphereGeometry(RADIUS, cfg.segments, cfg.segments);
-      }
-      kick();
-      // Mark 8k only once day and night maps are both in.
-      if (nightDone && typeof onQuality === "function") onQuality("8k");
+    const loadNight = () => {
+      if (disposed) return;
+      loader.load(
+        cfg.night,
+        (tex) => {
+          if (disposed) return;
+          configureNight(tex);
+          releaseDecodedImage(tex);
+          if (material && material.userData.nightUniform) {
+            const old = material.userData.nightUniform.value;
+            material.userData.nightUniform.value = tex;
+            if (old && old !== tex) disposeMap(old);
+          }
+          kick();
+          if (dayApplied && typeof onQuality === "function") onQuality("8k");
+          next(loadClouds);
+        },
+        undefined,
+        () => next(loadClouds)
+      );
     };
 
-    loader.load(cfg.map, (tex) => {
-      if (disposed) return;
-      configureColor(tex);
-      mapDone = tex;
-      tryApply();
-    });
-    loader.load(cfg.night, (tex) => {
-      if (disposed) return;
-      configureNight(tex);
-      nightDone = tex;
-      tryApply();
-    });
+    loader.load(
+      cfg.map,
+      (tex) => {
+        if (disposed) return;
+        if (!material) {
+          next(loadNight);
+          return;
+        }
+        configureColor(tex);
+        releaseDecodedImage(tex);
+        const oldMap = material.map;
+        material.map = tex;
+        material.needsUpdate = true;
+        if (oldMap && oldMap !== tex) disposeMap(oldMap);
+        dayApplied = true;
+        if (mesh && mesh.geometry.parameters.widthSegments < cfg.segments) {
+          mesh.geometry.dispose();
+          mesh.geometry = new THREE.SphereGeometry(RADIUS, cfg.segments, cfg.segments);
+        }
+        kick();
+        next(loadNight);
+      },
+      undefined,
+      () => next(loadNight)
+    );
   }
 
+  let cloudsStarted = false;
+
   function loadClouds() {
+    if (cloudsStarted || disposed) return;
+    cloudsStarted = true;
     const stamp = Math.floor(Date.now() / (3 * 3600 * 1000));
     // CDN max is 8192×4096 (~23 MB). 16384 returns HTML, not an image.
     const size = "8192x4096";
@@ -934,6 +1023,7 @@ export function createEarthGlobe(canvas, options = {}) {
         tex.flipY = true;
         tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
         tex.needsUpdate = true;
+        releaseDecodedImage(tex);
         const mat = new THREE.MeshBasicMaterial({
           map: tex,
           transparent: true,
