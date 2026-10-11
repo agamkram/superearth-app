@@ -9,8 +9,8 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 MAP = ROOT / "earth-8k.jpg"
-# Geographic longitude at the center of the disk. Africa sits near 20°E.
-LON0 = 18.0
+# Geographic longitude at the center of the disk. The contiguous US sits near 97°W.
+LON0 = -97.0
 # #4da6ff, the globe's atmosphere shell.
 AIR = np.array([77.0, 166.0, 255.0], dtype=np.float32)
 
