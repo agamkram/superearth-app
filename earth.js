@@ -508,7 +508,6 @@ export function createEarthGlobe(canvas, options = {}) {
     .catch(() => null);
   let auroraMat = null;
   let auroraTex = null;
-  let auroraShown = true;
   let auroraHas = false;
   let frozenLat = 0;
   let frozenLon = 0;
@@ -1143,8 +1142,6 @@ export function createEarthGlobe(canvas, options = {}) {
   function setClouds(on) {
     cloudsOn = !!on;
     if (cloudMesh) cloudMesh.visible = cloudsOn;
-    // Aurora is a sibling mesh — keep its visibility independent of Clear/Clouds.
-    if (auroraMesh) auroraMesh.visible = auroraShown && auroraHas;
     kick();
     return cloudsOn;
   }
@@ -1438,8 +1435,7 @@ export function createEarthGlobe(canvas, options = {}) {
       }
     }
     auroraHas = any;
-    // Visibility is only the Aurora toggle — Clear/Clouds never touch this mesh.
-    auroraMesh.visible = auroraShown && auroraHas;
+    auroraMesh.visible = auroraHas;
     kick();
     return any;
   }
@@ -1448,17 +1444,6 @@ export function createEarthGlobe(canvas, options = {}) {
     sunOnUniform.value = on ? 1 : 0;
     kick();
     return sunOnUniform.value > 0.5;
-  }
-
-  function setAuroraShown(on) {
-    auroraShown = !!on;
-    if (auroraMesh) auroraMesh.visible = auroraShown && auroraHas;
-    // Re-bind the map in case a prior dispose left the uniform empty.
-    if (auroraShown && auroraHas && auroraMat && auroraTex) {
-      auroraMat.uniforms.uMap.value = auroraTex;
-    }
-    kick();
-    return auroraShown;
   }
 
   function setObserver(lat, lon) {
@@ -2208,7 +2193,6 @@ export function createEarthGlobe(canvas, options = {}) {
     setObserver,
     setClouds,
     setAurora,
-    setAuroraShown,
     setSun,
     setTime,
     setOrbiting,

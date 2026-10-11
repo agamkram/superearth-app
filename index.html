@@ -293,8 +293,8 @@
 
     .m-grid {
       display: grid;
-      /* 4 across → rows 1–2 of space weather wrap naturally */
-      grid-template-columns: 1.35fr 0.9fr 1fr 0.85fr;
+      /* Space weather: two rows of three */
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       grid-auto-rows: var(--m-row-h);
       gap: 0;
       pointer-events: none;
@@ -487,7 +487,7 @@
       }
 
       .m-grid {
-        grid-template-columns: 1.35fr 0.9fr 1fr 0.85fr;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
       }
 
       .m-grid-3 {
@@ -652,7 +652,7 @@
       }
     }
 
-    /* Location + Aurora · Clouds/Clear · Red · Orbit */
+    /* Location + Clouds/Clear · Red · Orbit */
     .loc-strip {
       display: grid;
       grid-template-columns: minmax(0, 1fr) max-content;
@@ -1297,7 +1297,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e63</span>
+    <span class="build-mark" id="build-mark">e64</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1328,15 +1328,6 @@
           </div>
         </div>
         <div class="tool-strip" role="group" aria-label="Display controls">
-          <button
-            type="button"
-            class="vision-btn"
-            id="aurora-btn"
-            title="Hide the aurora ribbon"
-            aria-pressed="true"
-          >
-            Aurora
-          </button>
           <button
             type="button"
             class="vision-btn"
@@ -1406,7 +1397,6 @@
 
       <section class="metrics-section" aria-labelledby="metrics-space-label">
       <h2 class="metrics-section-label" id="metrics-space-label">Space weather</h2>
-      <!-- Space weather rows. Last row: slots 1–2–3 + Alert spanning 4–5. -->
       <div class="m-grid" aria-label="Space weather">
         <button type="button" class="m-cell m-cell-fact" data-fact="phase" title="Tap for explanation">
           <div class="k">Kp</div>
@@ -1431,14 +1421,6 @@
         <button type="button" class="m-cell m-cell-fact" data-fact="tofull" title="Tap for explanation">
           <div class="k">X-ray</div>
           <div class="v" id="m-tofull">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="ang" title="Tap for explanation">
-          <div class="k">Aurora</div>
-          <div class="v sm" id="m-ang">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="dst" title="Tap for explanation">
-          <div class="k">Dst</div>
-          <div class="v sm" id="m-dst">—</div>
         </button>
       </div>
       </section>
@@ -1496,7 +1478,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e63";
+    import { createEarthGlobe } from "./earth.js?v=e64";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     const TIDE_STATIONS_KEY = "superearth-noaa-tide-stations-v1";
@@ -1532,7 +1514,6 @@
     const cycleDate = document.getElementById("cycle-date");
     const liveBtn = document.getElementById("live-btn");
     const sunBtn = document.getElementById("sun-btn");
-    const auroraBtn = document.getElementById("aurora-btn");
     const cloudsBtn = document.getElementById("clouds-btn");
 
     /** @type {import("leaflet").Map | null} */
@@ -1549,8 +1530,6 @@
       cycle: document.getElementById("m-cycle"),
       bt: document.getElementById("m-bt"),
       tofull: document.getElementById("m-tofull"),
-      ang: document.getElementById("m-ang"),
-      dst: document.getElementById("m-dst"),
       daylen: document.getElementById("m-daylen"),
       station: document.getElementById("m-station"),
       htide: document.getElementById("m-htide"),
@@ -1597,18 +1576,6 @@
         body:
           "GOES soft X-ray class of the Sun right now (0.1–0.8 nm).\n\n" +
           "A and B are quiet. C is a small flare. M and X are strong flares that can black out the sunlit side of Earth on HF radio.",
-      },
-      ang: {
-        title: "Aurora",
-        body:
-          "Chance the aurora is visible in the sky over your pin, from NOAA’s OVATION grid. Mid-latitudes are often zero unless a storm brings the oval down to you.\n\n" +
-          "The globe draws the whole oval at the strength NOAA gives. The bright day surface makes that side quieter. Color comes from the model’s electron energy, using the solar wind on this row. Soft electrons are red. A few keV stays green.",
-      },
-      dst: {
-        title: "Dst",
-        body:
-          "Disturbance storm-time index in nanotesla (Kyoto).\n\n" +
-          "Near zero is quiet. Around −50 is a moderate ring-current storm. Past −100 is strong. Negative means Earth’s field is depressed.",
       },
       rise: {
         title: "Sunrise",
@@ -1666,8 +1633,6 @@
       cycle: "m-cycle",
       bt: "m-bt",
       tofull: "m-tofull",
-      ang: "m-ang",
-      dst: "m-dst",
       rise: "m-rise",
       high: "m-high",
       set: "m-set",
@@ -1689,17 +1654,7 @@
       if (!f || !factSheet) return;
       factTitle.textContent = f.title;
       const shown = (document.getElementById(FACT_IDS[key] || "")?.textContent || "").trim();
-      let body = f.body;
-      if (key === "ang" && globeRef.current) {
-        const obs = globeRef.current.getObserver();
-        const peak = auroraHemispherePeak(obs.lat);
-        if (peak != null) {
-          const hemi = Number(obs.lat) < 0 ? "southern" : "northern";
-          body =
-            `Hottest cell in the ${hemi} hemisphere: ${Math.round(peak)}%. That number is the oval on the globe.\n\n` +
-            body;
-        }
-      }
+      const body = f.body;
       factBody.textContent =
         shown && shown !== "—"
           ? `Right now this box shows “${shown}”.\n\n${body}`
@@ -1738,7 +1693,6 @@
       bz: "—",
       bt: "—",
       xray: "—",
-      dst: "—",
     };
     let auroraGrid = null;
     let feedTimer = 0;
@@ -1792,95 +1746,8 @@
       return null;
     }
 
-    /** OVATION cells are [lon, lat, aurora]. Prefer the 1° index when built. */
-    let auroraIndex = null;
-
-    function buildAuroraIndex(coords) {
-      const arr = new Float32Array(360 * 181);
-      arr.fill(-1);
-      if (!Array.isArray(coords)) {
-        auroraIndex = null;
-        return;
-      }
-      for (let i = 0; i < coords.length; i++) {
-        const c = coords[i];
-        if (!c || c.length < 3) continue;
-        const lon = Math.round(Number(c[0]));
-        const lat = Math.round(Number(c[1]));
-        const a = Number(c[2]);
-        if (!Number.isFinite(lon) || !Number.isFinite(lat) || !Number.isFinite(a)) continue;
-        const x = ((lon % 360) + 360) % 360;
-        const y = lat + 90;
-        if (y < 0 || y > 180) continue;
-        arr[y * 360 + x] = a;
-      }
-      auroraIndex = arr;
-    }
-
-    /** Overhead at the pin. OVATION cells are [lon, lat, aurora]. */
-    function auroraAt(lat, lon) {
-      if (auroraIndex) {
-        const x = ((Math.round(Number(lon)) % 360) + 360) % 360;
-        const y = Math.max(0, Math.min(180, Math.round(Number(lat)) + 90));
-        const v = auroraIndex[y * 360 + x];
-        return v < 0 ? null : v;
-      }
-      const coords = auroraGrid;
-      if (!coords || !coords.length) return null;
-      let best = null;
-      let bestD = 1e9;
-      const lo0 = ((Number(lon) % 360) + 360) % 360;
-      for (let i = 0; i < coords.length; i++) {
-        const c = coords[i];
-        if (!c || c.length < 3) continue;
-        const dlat = Number(c[1]) - lat;
-        let dlon = Number(c[0]) - lo0;
-        if (dlon > 180) dlon -= 360;
-        if (dlon < -180) dlon += 360;
-        const d = dlat * dlat + dlon * dlon;
-        if (d < bestD) {
-          bestD = d;
-          best = Number(c[2]);
-        }
-      }
-      return best;
-    }
-
-    /** Hemisphere peak for the Aurora fact sheet. The box itself is overhead. */
-    function auroraHemispherePeak(lat) {
-      if (auroraIndex) {
-        const southern = Number(lat) < 0;
-        const y0 = southern ? 0 : 90;
-        const y1 = southern ? 89 : 180;
-        let peak = -1;
-        for (let y = y0; y <= y1; y++) {
-          const row = y * 360;
-          for (let x = 0; x < 360; x++) {
-            const v = auroraIndex[row + x];
-            if (v > peak) peak = v;
-          }
-        }
-        return peak < 0 ? null : peak;
-      }
-      const coords = auroraGrid;
-      if (!coords || !coords.length) return null;
-      const southern = Number(lat) < 0;
-      let peak = -1;
-      for (let i = 0; i < coords.length; i++) {
-        const c = coords[i];
-        if (!c || c.length < 3) continue;
-        const la = Number(c[1]);
-        if (southern ? la < 0 : la >= 0) {
-          const a = Number(c[2]);
-          if (a > peak) peak = a;
-        }
-      }
-      return peak < 0 ? null : peak;
-    }
-
     function pushAurora(coords, drive) {
       auroraGrid = Array.isArray(coords) ? coords : null;
-      buildAuroraIndex(auroraGrid);
       const g = globeRef.current;
       if (g && typeof g.setAurora === "function") g.setAurora(auroraGrid, drive);
     }
@@ -1971,7 +1838,6 @@
           fetch("https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json"),
           fetch("https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json"),
           fetch("https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json"),
-          fetch("https://services.swpc.noaa.gov/products/kyoto-dst.json"),
         ];
         if (heavy) {
           jobs.push(
@@ -1979,7 +1845,7 @@
           );
         }
         const res = await Promise.all(jobs.map((p) => p.then((r) => (r.ok ? r.json() : null)).catch(() => null)));
-        const [kp, wind, mag, xray, dst, ovation] = res;
+        const [kp, wind, mag, xray, ovation] = res;
 
         if (Array.isArray(kp) && kp.length) {
           const row = kp[kp.length - 1];
@@ -2004,12 +1870,6 @@
         if (Array.isArray(xray)) {
           const row = [...xray].reverse().find((r) => r && r.energy === "0.1-0.8nm" && r.flux > 0);
           if (row) feed.xray = xrayClass(Number(row.flux));
-        }
-
-        if (Array.isArray(dst) && dst.length) {
-          const row = dst[dst.length - 1];
-          const n = Number(row.dst != null ? row.dst : row[1]);
-          if (Number.isFinite(n)) feed.dst = fmtSigned(n, 0);
         }
 
         const drive = newellDrive(mag, wind);
@@ -2403,8 +2263,6 @@
         }
       } catch (_) {}
 
-      const aur = Number.isFinite(lat) && Number.isFinite(lon) ? auroraAt(lat, lon) : null;
-
       return {
         phase01: dayPhase01(when),
         rise,
@@ -2413,7 +2271,6 @@
         dayLen,
         lat,
         lon,
-        aurora: aur == null ? "—" : `${Math.round(aur)}%`,
         when,
       };
     }
@@ -2429,8 +2286,6 @@
       el.cycle.textContent = feed.bz;
       el.bt.textContent = feed.bt;
       el.tofull.textContent = feed.xray;
-      el.ang.textContent = m.aurora;
-      el.dst.textContent = feed.dst;
       el.rise.textContent = fmtTime(m.rise);
       el.high.textContent = fmtTime(m.high);
       el.set.textContent = fmtTime(m.set);
@@ -2468,18 +2323,6 @@
     }
 
     let cloudsOn = true;
-    let auroraOn = true;
-
-    function setAuroraOn(on) {
-      auroraOn = !!on;
-      auroraBtn.setAttribute("aria-pressed", auroraOn ? "true" : "false");
-      auroraBtn.title = auroraOn
-        ? "Hide the aurora ribbon"
-        : "Show the aurora ribbon";
-      if (globeRef.current && typeof globeRef.current.setAuroraShown === "function") {
-        globeRef.current.setAuroraShown(auroraOn);
-      }
-    }
 
     function setClouds(on) {
       cloudsOn = !!on;
@@ -2612,7 +2455,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e63 " + level;
+        if (mark) mark.textContent = "e64 " + level;
       },
       onPhase: showPhase,
     });
@@ -2679,11 +2522,6 @@
       },
       { passive: false }
     );
-    auroraBtn.addEventListener("click", (e) => {
-      e.preventDefault();
-      setAuroraOn(!auroraOn);
-    });
-
     cloudsBtn.addEventListener("click", (e) => {
       e.preventDefault();
       setClouds(!cloudsOn);
