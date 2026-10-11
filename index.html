@@ -1322,7 +1322,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e66</span>
+    <span class="build-mark" id="build-mark">e67</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1499,7 +1499,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e66";
+    import { createEarthGlobe } from "./earth.js?v=e67";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     const TIDE_STATIONS_KEY = "superearth-noaa-tide-stations-v1";
@@ -1579,7 +1579,7 @@
       wind: {
         title: "Solar wind",
         body:
-          "Protons and electrons from the corona. Typical is about 400 km/s. DSCOVR or ACE measures it at L1, a million miles sunward of Earth, 15–60 minutes before it reaches Earth's magnetic field.",
+          "Protons and electrons from the corona. Typical is about 250 mi/s (400 km/s). DSCOVR or ACE measures it at L1, a million miles sunward of Earth, 15–60 minutes before it interacts with Earth's magnetosphere.",
       },
       xray: {
         title: "X-ray",
@@ -1639,9 +1639,10 @@
 
     function factText(key, fallback) {
       if (key === "wind" && Number.isFinite(windKms)) {
+        const mis = windKms / 1.609344;
         return (
-          `Protons and electrons from the corona. Now ${Math.round(windKms)} km/s. ` +
-          "Typical is about 400 km/s. DSCOVR or ACE measures it at L1, a million miles sunward of Earth, 15–60 minutes before it reaches Earth's magnetic field."
+          `Protons and electrons from the corona. Now ${Math.round(mis)} mi/s (${Math.round(windKms)} km/s). ` +
+          "Typical is about 250 mi/s (400 km/s). DSCOVR or ACE measures it at L1, a million miles sunward of Earth, 15–60 minutes before it interacts with Earth's magnetosphere."
         );
       }
       if (key === "bz" && Number.isFinite(lastBz)) {
@@ -2459,7 +2460,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e66 " + level;
+        if (mark) mark.textContent = "e67 " + level;
       },
       onPhase: showPhase,
     });
