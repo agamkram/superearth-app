@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PWA icons: Earth as a globe on black, same family as Sun, Mars, and Moon."""
+"""PWA icons from earth-8k.jpg, the day map the globe shows."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -52,19 +52,16 @@ def render_globe(size: int, *, maskable: bool = False) -> Image.Image:
     v = np.clip(0.5 - lat_deg / 180.0, 0.0, 1.0)
 
     col = np.zeros((size, size, 3), dtype=np.float32)
+    # The day map, unchanged. The app shows these pixels on the lit side.
     col[front] = _sample_equirect(src, u[front], v[front])
 
-    # The day map is flatly lit. A soft limb falloff makes it a sphere.
-    shade = np.where(front, 0.58 + 0.42 * nz, 0.0)
-    col *= shade[..., None]
-
-    # Thin blue air, about the globe's 5% atmosphere shell.
+    # The app's air shell: 5% outside the surface, #4da6ff, fade 0.75, strength 0.55.
     r = np.sqrt(rr)
-    span = 0.06
+    span = 0.05
     h = np.clip((r - 1.0) / span, 0.0, 1.0)
-    outside = np.where(r >= 1.0, np.power(1.0 - h, 0.75), 0.0)
-    limb = np.where(front, np.power(1.0 - nz, 1.8), 0.0)
-    col += AIR * (outside * 0.62 + limb * 0.28)[..., None]
+    outside = np.where(r >= 1.0, np.power(1.0 - h, 0.75) * 0.55, 0.0)
+    limb = np.where(front, np.power(1.0 - nz, 2.4) * 0.18, 0.0)
+    col += AIR * (outside + limb)[..., None]
 
     rng = np.random.default_rng(180)
     n_stars = 18 if not maskable else 10
