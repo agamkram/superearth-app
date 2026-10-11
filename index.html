@@ -293,8 +293,13 @@
 
     .m-grid {
       display: grid;
-      /* Space weather: two rows of three */
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      /* Space weather: R·S·G · Kp · Bz · Wind · X-ray */
+      grid-template-columns:
+        minmax(0, 1.35fr)
+        minmax(0, 0.85fr)
+        minmax(0, 0.95fr)
+        minmax(0, 1.15fr)
+        minmax(0, 0.95fr);
       grid-auto-rows: var(--m-row-h);
       gap: 0;
       pointer-events: none;
@@ -338,7 +343,10 @@
     }
 
     #m-station,
-    #m-daylen {
+    #m-daylen,
+    #m-scales,
+    #m-wind,
+    #m-xray {
       font-size: 11px;
       line-height: 1.1;
       letter-spacing: -0.02em;
@@ -487,7 +495,12 @@
       }
 
       .m-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns:
+          minmax(0, 1.35fr)
+          minmax(0, 0.85fr)
+          minmax(0, 0.95fr)
+          minmax(0, 1.15fr)
+          minmax(0, 0.95fr);
       }
 
       .m-grid-3 {
@@ -1297,7 +1310,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e64</span>
+    <span class="build-mark" id="build-mark">e65</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1398,29 +1411,25 @@
       <section class="metrics-section" aria-labelledby="metrics-space-label">
       <h2 class="metrics-section-label" id="metrics-space-label">Space weather</h2>
       <div class="m-grid" aria-label="Space weather">
-        <button type="button" class="m-cell m-cell-fact" data-fact="phase" title="Tap for explanation">
+        <button type="button" class="m-cell m-cell-fact" data-fact="scales" title="Tap for explanation">
+          <div class="k">R·S·G</div>
+          <div class="v sm" id="m-scales">—</div>
+        </button>
+        <button type="button" class="m-cell m-cell-fact" data-fact="kp" title="Tap for explanation">
           <div class="k">Kp</div>
-          <div class="v moon" id="m-phase">—</div>
+          <div class="v moon" id="m-kp">—</div>
         </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="illum" title="Tap for explanation">
-          <div class="k">Wind</div>
-          <div class="v" id="m-illum">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="density" title="Tap for explanation">
-          <div class="k">Density</div>
-          <div class="v sm" id="m-density">—</div>
-        </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="cycle" title="Tap for explanation">
+        <button type="button" class="m-cell m-cell-fact" data-fact="bz" title="Tap for explanation">
           <div class="k">Bz</div>
-          <div class="v sm" id="m-cycle">—</div>
+          <div class="v sm" id="m-bz">—</div>
         </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="bt" title="Tap for explanation">
-          <div class="k">Bt</div>
-          <div class="v sm" id="m-bt">—</div>
+        <button type="button" class="m-cell m-cell-fact" data-fact="wind" title="Tap for explanation">
+          <div class="k">Solar wind</div>
+          <div class="v" id="m-wind">—</div>
         </button>
-        <button type="button" class="m-cell m-cell-fact" data-fact="tofull" title="Tap for explanation">
+        <button type="button" class="m-cell m-cell-fact" data-fact="xray" title="Tap for explanation">
           <div class="k">X-ray</div>
-          <div class="v" id="m-tofull">—</div>
+          <div class="v" id="m-xray">—</div>
         </button>
       </div>
       </section>
@@ -1478,7 +1487,7 @@
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e64";
+    import { createEarthGlobe } from "./earth.js?v=e65";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     const TIDE_STATIONS_KEY = "superearth-noaa-tide-stations-v1";
@@ -1524,12 +1533,11 @@
     let pickLon = 0;
 
     const el = {
-      phase: document.getElementById("m-phase"),
-      illum: document.getElementById("m-illum"),
-      density: document.getElementById("m-density"),
-      cycle: document.getElementById("m-cycle"),
-      bt: document.getElementById("m-bt"),
-      tofull: document.getElementById("m-tofull"),
+      scales: document.getElementById("m-scales"),
+      kp: document.getElementById("m-kp"),
+      bz: document.getElementById("m-bz"),
+      wind: document.getElementById("m-wind"),
+      xray: document.getElementById("m-xray"),
       daylen: document.getElementById("m-daylen"),
       station: document.getElementById("m-station"),
       htide: document.getElementById("m-htide"),
@@ -1541,41 +1549,37 @@
     };
 
     const FACTS = {
-      phase: {
+      scales: {
+        title: "R·S·G",
+        body:
+          "NOAA scales, 0 quiet to 5 extreme.\n\n" +
+          "R (radio): soft X-rays ionize the dayside D-region and degrade HF.\n" +
+          "S (radiation): energetic protons (>10 MeV) raise satellite and polar-flight dose.\n" +
+          "G (geomagnetic): solar-wind–magnetosphere coupling; aurora expands equatorward; grids and satellites take the load.",
+      },
+      kp: {
         title: "Kp",
         body:
-          "The planetary K-index, a 0–9 measure of how disturbed Earth’s magnetic field is.\n\n" +
-          "Around 5 and above, aurora can reach mid-latitudes. The number is NOAA’s estimated Kp.",
+          "Planetary K-index, 0–9, from the global magnetometer network.\n\n" +
+          "0–2 quiet. ≥5 is geomagnetic storm level. NOAA’s estimated Kp updates about once a minute.",
       },
-      illum: {
-        title: "Wind",
-        body:
-          "Speed of the solar wind at the Sun–Earth L1 point, in kilometers per second.\n\n" +
-          "Typical quiet wind is near 300–450 km/s. A jump often means a coronal mass ejection or a fast stream has arrived. If the live satellite drops out, this stays on the last good sample.",
-      },
-      density: {
-        title: "Density",
-        body:
-          "Proton density of the solar wind at L1, in particles per cubic centimeter.\n\n" +
-          "Quiet wind is often a few per cm³. A dense gust with fast wind is a stronger punch on Earth’s field.",
-      },
-      cycle: {
+      bz: {
         title: "Bz",
         body:
-          "The north–south part of the solar-wind magnetic field, in nanotesla.\n\n" +
-          "A negative (southward) Bz opens Earth’s field and drives aurora and geomagnetic storms. Positive Bz mostly glances off.",
+          "GSM north–south component of the interplanetary magnetic field at L1, in nanotesla.\n\n" +
+          "Southward (negative) Bz enables dayside reconnection and drives geomagnetic activity. Northward Bz largely suppresses coupling.",
       },
-      bt: {
-        title: "Bt",
+      wind: {
+        title: "Solar wind",
         body:
-          "Total strength of the interplanetary magnetic field at L1, in nanotesla.\n\n" +
-          "Bt is how hard the field pushes. Bz is the north–south piece that opens the door. Strong Bt with southward Bz is the storm recipe.",
+          "Bulk proton speed of the solar wind at L1, in kilometers per second.\n\n" +
+          "Quiet flow is typically ~300–450 km/s. Fast streams and CME sheaths raise speed and coupling efficiency.",
       },
-      tofull: {
+      xray: {
         title: "X-ray",
         body:
-          "GOES soft X-ray class of the Sun right now (0.1–0.8 nm).\n\n" +
-          "A and B are quiet. C is a small flare. M and X are strong flares that can black out the sunlit side of Earth on HF radio.",
+          "GOES soft X-ray class (0.1–0.8 nm).\n\n" +
+          "A–B quiet, C small flare, M–X strong flares. Sets the R scale via dayside ionospheric absorption.",
       },
       rise: {
         title: "Sunrise",
@@ -1627,12 +1631,11 @@
     };
 
     const FACT_IDS = {
-      phase: "m-phase",
-      illum: "m-illum",
-      density: "m-density",
-      cycle: "m-cycle",
-      bt: "m-bt",
-      tofull: "m-tofull",
+      scales: "m-scales",
+      kp: "m-kp",
+      bz: "m-bz",
+      wind: "m-wind",
+      xray: "m-xray",
       rise: "m-rise",
       high: "m-high",
       set: "m-set",
@@ -1687,11 +1690,10 @@
     let metricsRaf = 0;
     const globeRef = { current: null };
     const feed = {
+      scales: "—",
       kp: "—",
-      wind: "—",
-      density: "—",
       bz: "—",
-      bt: "—",
+      wind: "—",
       xray: "—",
     };
     let auroraGrid = null;
@@ -1828,12 +1830,19 @@
       return `${n > 0 ? "+" : ""}${n.toFixed(digits)}`;
     }
 
+    function scaleDigit(block) {
+      if (!block || block.Scale == null || block.Scale === "") return "0";
+      const n = Number(block.Scale);
+      return Number.isFinite(n) ? String(Math.max(0, Math.min(5, Math.round(n)))) : "0";
+    }
+
     async function loadFeeds(forceHeavy) {
       if (feedsBusy) return;
       feedsBusy = true;
       const heavy = forceHeavy || Date.now() - heavyAt > 5 * 60 * 1000;
       try {
         const jobs = [
+          fetch("https://services.swpc.noaa.gov/products/noaa-scales.json"),
           fetch("https://services.swpc.noaa.gov/json/planetary_k_index_1m.json"),
           fetch("https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json"),
           fetch("https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json"),
@@ -1845,8 +1854,12 @@
           );
         }
         const res = await Promise.all(jobs.map((p) => p.then((r) => (r.ok ? r.json() : null)).catch(() => null)));
-        const [kp, wind, mag, xray, ovation] = res;
+        const [scales, kp, wind, mag, xray, ovation] = res;
 
+        const nowScale = scales && typeof scales === "object" ? scales["0"] : null;
+        if (nowScale) {
+          feed.scales = `R${scaleDigit(nowScale.R)} S${scaleDigit(nowScale.S)} G${scaleDigit(nowScale.G)}`;
+        }
         if (Array.isArray(kp) && kp.length) {
           const row = kp[kp.length - 1];
           const n = Number(row.estimated_kp);
@@ -1854,19 +1867,8 @@
         }
         const w = lastActive(wind, (r) => (r.proton_speed > 0 ? r.proton_speed : null));
         if (w) feed.wind = `${Math.round(w.proton_speed)} km/s`;
-        const dens = lastActive(wind, (r) =>
-          Number(r.proton_density) > 0 ? r.proton_density : null
-        );
-        if (dens) {
-          const n = Number(dens.proton_density);
-          feed.density = n >= 10 ? String(Math.round(n)) : n.toFixed(1);
-        }
         const b = lastActive(mag, (r) => (Number.isFinite(Number(r.bz_gsm)) ? r.bz_gsm : null));
         if (b) feed.bz = fmtSigned(Number(b.bz_gsm));
-        const btRow = lastActive(mag, (r) =>
-          Number(r.bt) > 0 ? r.bt : null
-        );
-        if (btRow) feed.bt = Number(btRow.bt).toFixed(1);
         if (Array.isArray(xray)) {
           const row = [...xray].reverse().find((r) => r && r.energy === "0.1-0.8nm" && r.flux > 0);
           if (row) feed.xray = xrayClass(Number(row.flux));
@@ -2280,12 +2282,11 @@
       if (!m) return;
       if (!previewMode && Number.isFinite(m.phase01)) syncSliderToPhase01(m.phase01);
 
-      el.phase.textContent = feed.kp;
-      el.illum.textContent = feed.wind;
-      el.density.textContent = feed.density;
-      el.cycle.textContent = feed.bz;
-      el.bt.textContent = feed.bt;
-      el.tofull.textContent = feed.xray;
+      el.scales.textContent = feed.scales;
+      el.kp.textContent = feed.kp;
+      el.bz.textContent = feed.bz;
+      el.wind.textContent = feed.wind;
+      el.xray.textContent = feed.xray;
       el.rise.textContent = fmtTime(m.rise);
       el.high.textContent = fmtTime(m.high);
       el.set.textContent = fmtTime(m.set);
@@ -2455,7 +2456,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e64 " + level;
+        if (mark) mark.textContent = "e65 " + level;
       },
       onPhase: showPhase,
     });
