@@ -914,7 +914,7 @@
         max(0.75rem, env(safe-area-inset-right))
         max(0.75rem, env(safe-area-inset-bottom))
         max(0.75rem, env(safe-area-inset-left));
-      background: rgba(0, 0, 0, 0.62);
+      background: transparent;
       pointer-events: auto;
       touch-action: manipulation;
     }
@@ -944,61 +944,73 @@
     .fact-sheet-inner {
       position: relative;
       z-index: 1;
-      width: min(360px, 100%);
-      padding: 16px 16px 14px;
+      width: min(320px, 100%);
+      padding: 12px 40px 12px 12px;
       border: 1px solid var(--line);
       border-radius: 12px;
-      background: #0c1018;
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+      background: rgba(12, 16, 24, 0.05);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: none;
       pointer-events: auto;
     }
 
     .fact-sheet-inner h2 {
       font-family: var(--font);
-      font-size: 1.05rem;
+      font-size: 0.92rem;
       font-weight: 600;
       letter-spacing: 0.02em;
-      margin: 0 0 10px;
+      margin: 0 0 6px;
+      padding-right: 4px;
       color: var(--text);
+      text-shadow: 0 1px 8px #000;
     }
 
     .fact-sheet-inner p {
-      font-size: 13px;
-      line-height: 1.45;
-      color: var(--dim);
-      margin: 0 0 12px;
-      white-space: pre-wrap;
+      font-size: 12px;
+      line-height: 1.35;
+      color: var(--text);
+      margin: 0;
+      white-space: normal;
+      text-shadow: 0 1px 8px #000;
     }
 
     .fact-sheet-inner p.fact-credit {
-      margin: 12px 0 0;
+      margin: 8px 0 0;
       font-size: 10px;
       letter-spacing: 0.02em;
       color: var(--faint);
+      text-shadow: 0 1px 6px #000;
     }
 
     .fact-sheet-close {
-      margin-top: 4px;
-      width: 100%;
-      border: 1px solid var(--line);
-      background: var(--cell);
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 36px;
+      height: 36px;
+      margin: 0;
+      padding: 0;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
       color: var(--text);
-      font: inherit;
-      font-weight: 600;
-      padding: 9px;
-      border-radius: 7px;
+      font: 22px/1 var(--font);
       cursor: pointer;
       touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
 
     body.is-red-mode .fact-sheet-inner {
-      background: #0a0000;
+      background: rgba(10, 0, 0, 0.05);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       border-color: #3a0c0c;
     }
 
     body.is-red-mode .fact-sheet-close {
-      background: rgba(40, 4, 4, 0.55);
-      border-color: #3a0c0c;
+      background: transparent;
+      color: var(--text);
     }
 
     body.is-red-mode .loc-dialog {
@@ -1310,7 +1322,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e65</span>
+    <span class="build-mark" id="build-mark">e66</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1477,17 +1489,17 @@
   <div id="fact-sheet" class="fact-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="fact-title">
     <button type="button" class="fact-sheet-scrim" id="fact-scrim" aria-label="Dismiss explanation"></button>
     <div class="fact-sheet-inner">
+      <button type="button" class="fact-sheet-close" id="fact-close" aria-label="Close">×</button>
       <h2 id="fact-title">—</h2>
       <p id="fact-body">—</p>
       <p class="fact-credit">Surface: NASA. Clouds: EUMETSAT.</p>
-      <button type="button" class="fact-sheet-close" id="fact-close">Close</button>
     </div>
   </div>
 
   <script src="astronomy.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e65";
+    import { createEarthGlobe } from "./earth.js?v=e66";
 
     const STORAGE_KEY = "earth-globe-loc-v1";
     const TIDE_STATIONS_KEY = "superearth-noaa-tide-stations-v1";
@@ -1552,98 +1564,68 @@
       scales: {
         title: "R·S·G",
         body:
-          "NOAA scales, 0 quiet to 5 extreme.\n\n" +
-          "R (radio): soft X-rays ionize the dayside D-region and degrade HF.\n" +
-          "S (radiation): energetic protons (>10 MeV) raise satellite and polar-flight dose.\n" +
-          "G (geomagnetic): solar-wind–magnetosphere coupling; aurora expands equatorward; grids and satellites take the load.",
+          "NOAA scales, 0 quiet to 5 extreme. R (radio): X-rays black out the day side. S (radiation): fast protons risk satellites and polar flights. G (geomagnetic): solar wind couples to Earth's magnetosphere, spreading aurora equatorward and stressing grids and satellites.",
       },
       kp: {
         title: "Kp",
         body:
-          "Planetary K-index, 0–9, from the global magnetometer network.\n\n" +
-          "0–2 quiet. ≥5 is geomagnetic storm level. NOAA’s estimated Kp updates about once a minute.",
+          "How disturbed Earth's magnetic field is, on a 0–9 scale, from magnetometers around the world. 0–2 is quiet. 5 and above is a geomagnetic storm. NOAA updates it about once a minute.",
       },
       bz: {
         title: "Bz",
         body:
-          "GSM north–south component of the interplanetary magnetic field at L1, in nanotesla.\n\n" +
-          "Southward (negative) Bz enables dayside reconnection and drives geomagnetic activity. Northward Bz largely suppresses coupling.",
+          "The north–south part of the solar wind's magnetic field, measured sunward of Earth at L1, in nanotesla. Negative (southward) opens Earth's field and drives aurora and storms. Positive mostly glances off.",
       },
       wind: {
         title: "Solar wind",
         body:
-          "Bulk proton speed of the solar wind at L1, in kilometers per second.\n\n" +
-          "Quiet flow is typically ~300–450 km/s. Fast streams and CME sheaths raise speed and coupling efficiency.",
+          "Protons and electrons from the corona. Typical is about 400 km/s. DSCOVR or ACE measures it at L1, a million miles sunward of Earth, 15–60 minutes before it reaches Earth's magnetic field.",
       },
       xray: {
         title: "X-ray",
         body:
-          "GOES soft X-ray class (0.1–0.8 nm).\n\n" +
-          "A–B quiet, C small flare, M–X strong flares. Sets the R scale via dayside ionospheric absorption.",
+          "Soft X-rays from the hot corona, measured by GOES in geostationary orbit. Classes A, B, C, M, and X each step up by ten. A–C are common. M and X are strong flares.",
       },
       rise: {
         title: "Sunrise",
         body:
-          "Local time the Sun rises at your chosen location on the day shown by the slider.\n\n" +
-          "A dash means the Sun stays up or stays down (polar day or night).",
+          "Local time when the Sun's upper edge crosses the horizon on the way up. It shifts through the year, and with where you sit inside the time zone. A dash means the Sun stays up or stays down.",
       },
       high: {
         title: "Solar noon",
         body:
-          "Local time the Sun is highest in your sky that day.\n\n" +
-          "That is the shortest shadow, not always 12:00 on the clock.",
+          "When the Sun is highest today. That is solar noon, not always 12:00. A time zone covers many longitudes, and Earth's oval orbit and tilt shift solar noon by up to about 16 minutes through the year.",
       },
       set: {
         title: "Sunset",
         body:
-          "Local time the Sun sets at your chosen location on the day shown by the slider.\n\n" +
-          "A dash means the Sun stays up or stays down.",
+          "Local time when the Sun's upper edge drops below the horizon. It shifts through the year, opposite sunrise. A dash means the Sun stays up or stays down.",
       },
       daylen: {
         title: "Day length",
         body:
-          "Hours and minutes of daylight at your location on the day shown.\n\n" +
-          "It stretches toward the summer solstice and shrinks toward the winter one.",
+          "Hours from sunrise to sunset. Longest near the June solstice, shortest near the December solstice. Near the poles the Sun can stay up, or down, all day.",
       },
       station: {
         title: "Nearest tide station",
         body:
-          "The closest NOAA tide-prediction station to your chosen location.\n\n" +
-          "High, mid, and low times are that station’s predictions. Real shoreline timing can still differ, especially in bays and inlets.",
+          "The closest NOAA tide-prediction station to your pin. High, mid, and low times come from that station. Real shoreline timing can still differ, especially in bays and inlets.",
       },
       htide: {
         title: "High tide",
         body:
-          "The next predicted high tide at the nearest NOAA station (local time).\n\n" +
-          "The slider’s day is used when you scrub; Live uses now.",
+          "The next predicted high tide at the nearest NOAA station, in local time. The slider's day is used when you scrub; Live uses now.",
       },
       mtide: {
         title: "Mid tide",
         body:
-          "Halfway in time between the next high and the next low at that station.\n\n" +
-          "It is not a separate NOAA product — a mark between the two extremes.",
+          "Halfway in time between the next high and the next low at that station. It is a mark between the two extremes, not a separate NOAA product.",
       },
       ltide: {
         title: "Low tide",
         body:
-          "The next predicted low tide at the nearest NOAA station (local time).",
+          "The next predicted low tide at the nearest NOAA station, in local time.",
       },
-    };
-
-    const FACT_IDS = {
-      scales: "m-scales",
-      kp: "m-kp",
-      bz: "m-bz",
-      wind: "m-wind",
-      xray: "m-xray",
-      rise: "m-rise",
-      high: "m-high",
-      set: "m-set",
-      daylen: "m-daylen",
-      station: "m-station",
-      htide: "m-htide",
-      mtide: "m-mtide",
-      ltide: "m-ltide",
     };
 
     const factSheet = document.getElementById("fact-sheet");
@@ -1652,16 +1634,31 @@
     const factClose = document.getElementById("fact-close");
     const factScrim = document.getElementById("fact-scrim");
 
+    let windKms = NaN;
+    let lastBz = NaN;
+
+    function factText(key, fallback) {
+      if (key === "wind" && Number.isFinite(windKms)) {
+        return (
+          `Protons and electrons from the corona. Now ${Math.round(windKms)} km/s. ` +
+          "Typical is about 400 km/s. DSCOVR or ACE measures it at L1, a million miles sunward of Earth, 15–60 minutes before it reaches Earth's magnetic field."
+        );
+      }
+      if (key === "bz" && Number.isFinite(lastBz)) {
+        const signed = `${lastBz > 0 ? "+" : ""}${lastBz.toFixed(1)}`;
+        return (
+          `The north–south part of the solar wind's magnetic field, measured sunward of Earth at L1, in nanotesla. ` +
+          `Now ${signed} nT. Negative (southward) opens Earth's field and drives aurora and storms. Positive mostly glances off.`
+        );
+      }
+      return fallback;
+    }
+
     function openFactSheet(key) {
       const f = FACTS[key];
       if (!f || !factSheet) return;
       factTitle.textContent = f.title;
-      const shown = (document.getElementById(FACT_IDS[key] || "")?.textContent || "").trim();
-      const body = f.body;
-      factBody.textContent =
-        shown && shown !== "—"
-          ? `Right now this box shows “${shown}”.\n\n${body}`
-          : body;
+      factBody.textContent = factText(key, f.body);
       factSheet.hidden = false;
     }
 
@@ -1866,9 +1863,15 @@
           if (Number.isFinite(n)) feed.kp = n.toFixed(1);
         }
         const w = lastActive(wind, (r) => (r.proton_speed > 0 ? r.proton_speed : null));
-        if (w) feed.wind = `${Math.round(w.proton_speed)} km/s`;
+        if (w) {
+          windKms = Number(w.proton_speed);
+          feed.wind = `${Math.round(windKms)} km/s`;
+        }
         const b = lastActive(mag, (r) => (Number.isFinite(Number(r.bz_gsm)) ? r.bz_gsm : null));
-        if (b) feed.bz = fmtSigned(Number(b.bz_gsm));
+        if (b) {
+          lastBz = Number(b.bz_gsm);
+          feed.bz = fmtSigned(lastBz);
+        }
         if (Array.isArray(xray)) {
           const row = [...xray].reverse().find((r) => r && r.energy === "0.1-0.8nm" && r.flux > 0);
           if (row) feed.xray = xrayClass(Number(row.flux));
@@ -2456,7 +2459,7 @@
       },
       onQuality(level) {
         const mark = document.getElementById("build-mark");
-        if (mark) mark.textContent = "e65 " + level;
+        if (mark) mark.textContent = "e66 " + level;
       },
       onPhase: showPhase,
     });
