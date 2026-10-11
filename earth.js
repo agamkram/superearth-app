@@ -30,6 +30,13 @@ const ATMO_COLOR = new THREE.Color(0x4da6ff);
 const AURORA_HEIGHT = 1.022;
 const AURORA_TEX_W = 360;
 const AURORA_TEX_H = 721;
+/**
+ * NOAA chance is 0…100, but quiet days often peak in the teens and
+ * moderate storms around the high 20s. Scaling by 90 left today's oval
+ * at ~8% opacity, then the feather pass wiped it. Map ~28% → full.
+ */
+const AURORA_MIN = 4;
+const AURORA_PEAK_REF = 28;
 
 const ATMO_VERTEX = /* glsl */ `
 varying vec3 vWorldPos;
@@ -1136,6 +1143,8 @@ export function createEarthGlobe(canvas, options = {}) {
   function setClouds(on) {
     cloudsOn = !!on;
     if (cloudMesh) cloudMesh.visible = cloudsOn;
+    // Aurora is a sibling mesh — keep its visibility independent of Clear/Clouds.
+    if (auroraMesh) auroraMesh.visible = auroraShown && auroraHas;
     kick();
     return cloudsOn;
   }
@@ -1151,7 +1160,7 @@ export function createEarthGlobe(canvas, options = {}) {
         peakLat = lat;
       }
     }
-    if (peakA < 10) return null;
+    if (peakA < AURORA_MIN) return null;
     const latMin = southern ? -90 : 0;
     const latMax = southern ? -1 : 90;
     let lo = peakLat;
@@ -1190,10 +1199,11 @@ export function createEarthGlobe(canvas, options = {}) {
     for (let i = 0; i <= steps; i++) {
       const lat = raw.lo + i / sub;
       const a = chanceAt(col, raw.lo, raw.hi, lat);
-      if (!(a >= 10)) continue;
-      const t = Math.min(1, Math.max(0, (a - 10) / 90));
+      if (!(a >= AURORA_MIN)) continue;
+      // Quiet peaks (~15) must still read as a ribbon; storms clamp at 1.
+      const t = Math.min(1, Math.pow(a / AURORA_PEAK_REF, 0.85));
       const rgb = colorAt ? colorAt(lat, lon) : [36, 200, 34];
-      const alpha = Math.min(255, Math.floor(255 * Math.pow(t, 0.85)));
+      const alpha = Math.min(255, Math.floor(255 * Math.min(1, t * 1.25)));
       const y = Math.round((90 - lat) * sub);
       if (y < 0 || y >= h) continue;
       const o = (y * w + x) * 4;
@@ -1237,7 +1247,9 @@ export function createEarthGlobe(canvas, options = {}) {
       pb[i] = src[i * 4 + 2] * a;
       pa[i] = a;
     }
-    const ky = blurKernel(4);
+    // ~0.6° of latitude on the 721-tall map — enough to hide 1° steps,
+    // not enough to erase a quiet-day ribbon after the alpha dilutes.
+    const ky = blurKernel(2.5);
     const vr = new Float32Array(n);
     const vg = new Float32Array(n);
     const vb = new Float32Array(n);
@@ -1272,7 +1284,7 @@ export function createEarthGlobe(canvas, options = {}) {
     for (let y = 0; y < h; y++) {
       const lat = 90 - y / pyPerDeg;
       const cos = Math.max(0.2, Math.cos((lat * Math.PI) / 180));
-      const kx = blurKernel(Math.max(0.8, (1.3 / cos) * (w / 360)));
+      const kx = blurKernel(Math.max(0.6, (1.0 / cos) * (w / 360)));
       for (let x = 0; x < w; x++) {
         let r = 0;
         let g = 0;
@@ -1288,7 +1300,7 @@ export function createEarthGlobe(canvas, options = {}) {
           a += va[i] * wgt;
         }
         const o = (y * w + x) * 4;
-        if (a < 8 / 255) {
+        if (a < 2 / 255) {
           src[o] = 0;
           src[o + 1] = 0;
           src[o + 2] = 0;
@@ -1310,7 +1322,8 @@ export function createEarthGlobe(canvas, options = {}) {
     const data = new Uint8Array(w * h * 4);
     if (!Array.isArray(coords)) {
       const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
-      tex.colorSpace = THREE.SRGBColorSpace;
+      // Additive glow — keep authored values, do not sRGB-decode.
+      tex.colorSpace = THREE.NoColorSpace;
       tex.flipY = true;
       tex.needsUpdate = true;
       return tex;
@@ -1324,14 +1337,13 @@ export function createEarthGlobe(canvas, options = {}) {
       const lon = Number(c[0]);
       const lat = Number(c[1]);
       const a = Number(c[2]);
-      if (!Number.isFinite(lon) || !Number.isFinite(lat) || !(a >= 10)) continue;
+      if (!Number.isFinite(lon) || !Number.isFinite(lat) || !(a >= AURORA_MIN)) continue;
       // Greenwich sits at texture u=0.5, so lon 0 → column 180.
       const x = (((Math.round(lon) + 180) % 360) + 360) % 360;
       const latR = Math.round(lat);
-      const y = Math.round(90 - lat);
-      if (x < 0 || x >= w || y < 0 || y >= h || latR < -90 || latR > 90) continue;
+      if (x < 0 || x >= w || latR < -90 || latR > 90) continue;
       const prev = cols[x].get(latR);
-      if (!prev || a > prev.a) cols[x].set(latR, { a, y });
+      if (!prev || a > prev.a) cols[x].set(latR, { a });
     }
     for (let x = 0; x < w; x++) {
       const col = cols[x];
@@ -1341,7 +1353,7 @@ export function createEarthGlobe(canvas, options = {}) {
     }
     smoothAurora(data, w, h);
     const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
-    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.colorSpace = THREE.NoColorSpace;
     tex.flipY = true;
     tex.magFilter = THREE.LinearFilter;
     tex.minFilter = THREE.LinearFilter;
@@ -1355,22 +1367,32 @@ export function createEarthGlobe(canvas, options = {}) {
     auroraMat = new THREE.ShaderMaterial({
       vertexShader: /* glsl */ `
         varying vec2 vUv;
+        varying vec3 vWorldN;
         void main() {
           vUv = uv;
+          vWorldN = normalize(mat3(modelMatrix) * normalize(position));
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
       fragmentShader: /* glsl */ `
         uniform sampler2D uMap;
+        uniform vec3 uSunDir;
         varying vec2 vUv;
+        varying vec3 vWorldN;
         void main() {
           vec4 tex = texture2D(uMap, vUv);
-          if (tex.a < 0.03) discard;
-          gl_FragColor = vec4(tex.rgb * tex.a, 1.0);
+          if (tex.a < 0.02) discard;
+          float ndl = dot(normalize(vWorldN), normalize(uSunDir));
+          // Full strength on the night side; keep a readable ribbon in daylight.
+          float wash = mix(0.4, 1.35, smoothstep(0.55, -0.45, ndl));
+          float glow = tex.a * wash;
+          if (glow < 0.02) discard;
+          gl_FragColor = vec4(tex.rgb * glow, 1.0);
         }
       `,
       uniforms: {
         uMap: { value: null },
+        uSunDir: sunDirUniform,
       },
       transparent: true,
       depthWrite: false,
@@ -1409,13 +1431,14 @@ export function createEarthGlobe(canvas, options = {}) {
     if (Array.isArray(coords)) {
       for (let i = 0; i < coords.length; i++) {
         const a = Number(coords[i] && coords[i][2]);
-        if (a >= 10) {
+        if (a >= AURORA_MIN) {
           any = true;
           break;
         }
       }
     }
     auroraHas = any;
+    // Visibility is only the Aurora toggle — Clear/Clouds never touch this mesh.
     auroraMesh.visible = auroraShown && auroraHas;
     kick();
     return any;
@@ -1430,6 +1453,10 @@ export function createEarthGlobe(canvas, options = {}) {
   function setAuroraShown(on) {
     auroraShown = !!on;
     if (auroraMesh) auroraMesh.visible = auroraShown && auroraHas;
+    // Re-bind the map in case a prior dispose left the uniform empty.
+    if (auroraShown && auroraHas && auroraMat && auroraTex) {
+      auroraMat.uniforms.uMap.value = auroraTex;
+    }
     kick();
     return auroraShown;
   }
