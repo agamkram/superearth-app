@@ -10,7 +10,13 @@ let SURFACE_SITES = [];
 
 const RADIUS = 1;
 const HOME_FILL = 0.9;
-const MIN_DIST = 1.02;
+/** Closest zoom — was 1.02 (near surface); keep some air. */
+const MIN_DIST = 1.55;
+/**
+ * Furthest zoom as a multiple of the opening (home) distance.
+ * Opening stays the “start” framing; you can pull further out past it.
+ */
+const MAX_OUT_FACTOR = 1.85;
 const MIN_POLAR = 0.15;
 const MAX_POLAR = Math.PI - 0.15;
 const MAX_PAN = RADIUS * 20;
@@ -176,9 +182,19 @@ function createStarfield() {
   return points;
 }
 
+const TEX_VER = "e87";
 const LOD = {
-  low: { map: "earth-2k.jpg?v=e28", night: "earth-night-2k.jpg?v=e28", segments: 128 },
-  high: { map: "earth-8k.jpg?v=e28", night: "earth-night-8k.jpg?v=e28", segments: 224 },
+  low: {
+    map: `earth-2k.jpg?v=${TEX_VER}`,
+    night: `earth-night-2k.jpg?v=${TEX_VER}`,
+    segments: 128,
+  },
+  high: {
+    map: `earth-8k.jpg?v=${TEX_VER}`,
+    night: `earth-night-8k.jpg?v=${TEX_VER}`,
+    // Denser mesh so coasts stay smoother when zoomed in
+    segments: 320,
+  },
 };
 
 const NIGHT_VERT = `
@@ -639,6 +655,8 @@ export function createEarthGlobe(canvas, options = {}) {
         float blu = smoothstep(0.0, 0.02, blue);
         float ocean = dark * blu;
         dayCol = mix(dayCol, vec3(0.02, 0.11, 0.32), ocean * 0.88);
+        // Land a bit brighter; ocean stays the glow wrap
+        dayCol *= mix(1.1, 1.0, ocean);
         vec3 nightCol = pow(texture2D(uNight, vMapUv).rgb, vec3(2.2));
         diffuseColor.rgb = mix(nightCol * 2.1, dayCol, day);`
       );
@@ -1553,6 +1571,16 @@ export function createEarthGlobe(canvas, options = {}) {
     return Math.max(distV, distH, MIN_DIST + 0.2);
   }
 
+  /** Furthest camera distance (past opening zoom). */
+  function maxCamDist() {
+    return Math.max(homeDist * MAX_OUT_FACTOR, homeDist + 0.5, MIN_DIST + 0.2);
+  }
+
+  /** Pan only when closer than the opening zoom. */
+  function canPan() {
+    return camDist() < homeDist - 1e-3;
+  }
+
   function readSpherical() {
     _offset.copy(camera.position).sub(target);
     if (_offset.lengthSq() < 1e-12) _offset.set(0, 0, homeDist || 3);
@@ -1564,7 +1592,7 @@ export function createEarthGlobe(canvas, options = {}) {
     spherical.radius = THREE.MathUtils.clamp(
       spherical.radius,
       MIN_DIST,
-      Math.max(homeDist, MIN_DIST + 0.2)
+      maxCamDist()
     );
     spherical.makeSafe();
     _offset.setFromSpherical(spherical);
@@ -1680,10 +1708,18 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function setCamDist(dist) {
-    dist = THREE.MathUtils.clamp(dist, MIN_DIST, Math.max(homeDist, MIN_DIST + 0.2));
-    // Full un-zoom (max distance) → starting location + face-on orientation
+    dist = THREE.MathUtils.clamp(dist, MIN_DIST, maxCamDist());
+    // Opening → full out: stay centered (no pan). Keep orbit angles.
     if (dist >= homeDist - 1e-4) {
-      applyHomeFraming();
+      target.set(0, 0, 0);
+      clearScreenPan();
+      homeLiftY = homeScreenOffsetY();
+      readSpherical();
+      spherical.radius = dist;
+      writeCamera();
+      syncMoon();
+      prevCamDist = camDist();
+      applyCanvasPanTransform();
       return;
     }
     readSpherical();
@@ -1724,6 +1760,7 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function panCamera(dxPx, dyPx) {
+    if (!canPan()) return;
     if (Math.abs(dxPx) < 0.5 && Math.abs(dyPx) < 0.5) return;
 
     screenPanX += dxPx;
@@ -1805,7 +1842,8 @@ export function createEarthGlobe(canvas, options = {}) {
 
     const prevHome = homeDist;
     const dist = camDist();
-    const atHome = dist >= prevHome * 0.97 && target.lengthSq() < 1e-4;
+    const centered = target.lengthSq() < 1e-4;
+    const atOpening = centered && Math.abs(dist - prevHome) / Math.max(prevHome, 0.01) < 0.03;
     const zoomFrac = prevHome > 0 ? dist / prevHome : 1;
 
     width = w;
@@ -1850,19 +1888,21 @@ export function createEarthGlobe(canvas, options = {}) {
     applyCanvasPanTransform();
 
     homeDist = computeHomeDistance(w, h);
-    if (atHome) {
-      if (orbiting) {
-        // Keep yaw; iOS viewport resize would otherwise snap face-on
-        homeLiftY = homeScreenOffsetY();
-        applyCanvasPanTransform();
-        readSpherical();
-        spherical.radius = homeDist;
-        writeCamera();
-        syncMoon();
-        prevCamDist = homeDist;
-      } else {
-        applyHomeFraming();
-      }
+    if (atOpening && !orbiting) {
+      applyHomeFraming();
+    } else if (centered) {
+      // Keep outer / opening zoom fraction; stay centered
+      homeLiftY = homeScreenOffsetY();
+      applyCanvasPanTransform();
+      readSpherical();
+      spherical.radius = THREE.MathUtils.clamp(
+        homeDist * zoomFrac,
+        MIN_DIST,
+        maxCamDist()
+      );
+      writeCamera();
+      syncMoon();
+      prevCamDist = camDist();
     } else setCamDist(homeDist * zoomFrac);
   }
 
