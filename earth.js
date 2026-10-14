@@ -12,7 +12,7 @@ const RADIUS = 1;
 const HOME_FILL = 0.9;
 /**
  * Closest zoom (camera distance to Earth center; Earth radius = 1).
- * Was 1.55 before look tiles; open again so we can pick a new stop.
+ * Was 1.55 before hi-res zoom tiles; open again so we can pick a new stop.
  */
 const MIN_DIST = 1.08;
 /**
@@ -185,7 +185,7 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e104";
+const TEX_VER = "e105";
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
@@ -203,15 +203,15 @@ const LOD = {
 };
 
 /**
- * Look patches from one Next Gen master (never a full high-k wrap).
+ * Zoom-in tiles from one Next Gen master (never a full high-k wrap).
  * Closer zoom → finer grid. Stops match the zoom readout (phone-tested).
- * JPEG quality ~95 for 8k/16/21. No 42 level (crushed q looked worse).
+ * JPEG quality ~95 for 8k/16/21.
  */
-const LOOK_EDGE = 0.22;
-const LOOK_LEVELS = {
+const TILE_EDGE = 0.22;
+const TILE_LEVELS = {
   16: {
     label: "16",
-    folder: "look-16",
+    folder: "tiles-16",
     cols: 8,
     rows: 4,
     onDist: 3.5,
@@ -219,7 +219,7 @@ const LOOK_LEVELS = {
   },
   21: {
     label: "21",
-    folder: "look-21",
+    folder: "tiles-21",
     cols: 12,
     rows: 6,
     onDist: 1.5,
@@ -538,16 +538,16 @@ export function createEarthGlobe(canvas, options = {}) {
   let nightMat = null;
   let cloudMesh = null;
   let cloudsOn = true;
-  let lookGroup = null;
-  const lookLive = new Map();
-  const lookLoading = new Set();
-  let lookWanted = new Set();
-  let lookEnabled = false;
+  let tileGroup = null;
+  const tileLive = new Map();
+  const tileLoading = new Set();
+  let tileWanted = new Set();
+  let tilesEnabled = false;
   /** @type {null | "16" | "21"} */
-  let lookLevel = null;
+  let tileLevel = null;
   let qualityLevel = "";
-  const _lookLocal = new THREE.Vector3();
-  const _lookQuat = new THREE.Quaternion();
+  const _tileLocal = new THREE.Vector3();
+  const _tileQuat = new THREE.Quaternion();
 
   function reportQuality(level) {
     if (qualityLevel === level) return;
@@ -555,9 +555,9 @@ export function createEarthGlobe(canvas, options = {}) {
     if (typeof onQuality === "function") onQuality(level);
   }
 
-  function pickLookLevel(dist) {
-    if (dist <= LOOK_LEVELS[21].onDist) return LOOK_LEVELS[21];
-    if (dist <= LOOK_LEVELS[16].onDist) return LOOK_LEVELS[16];
+  function pickTileLevel(dist) {
+    if (dist <= TILE_LEVELS[21].onDist) return TILE_LEVELS[21];
+    if (dist <= TILE_LEVELS[16].onDist) return TILE_LEVELS[16];
     return null;
   }
   let atmosphere = null;
@@ -756,7 +756,7 @@ export function createEarthGlobe(canvas, options = {}) {
     return material;
   }
 
-  function makeLookMaterial(map, nightUniform, normalUniform) {
+  function makeTileMaterial(map, nightUniform, normalUniform) {
     const mat = new THREE.MeshBasicMaterial({
       map,
       color: 0xffffff,
@@ -859,7 +859,7 @@ export function createEarthGlobe(canvas, options = {}) {
     );
     if (cloudMesh) mesh.add(cloudMesh);
     if (auroraMesh) mesh.add(auroraMesh);
-    if (lookGroup) mesh.add(lookGroup);
+    if (tileGroup) mesh.add(tileGroup);
     moonGroup.add(mesh);
     ensureAtmosphere();
     attachMissionPins(mesh);
@@ -1325,8 +1325,8 @@ export function createEarthGlobe(canvas, options = {}) {
         material.needsUpdate = true;
         if (oldMap && oldMap !== tex) disposeMap(oldMap);
         dayApplied = true;
-        lookEnabled = true;
-        updateLookTiles();
+        tilesEnabled = true;
+        updateTiles();
         if (mesh && mesh.geometry.parameters.widthSegments < cfg.segments) {
           mesh.geometry.dispose();
           mesh.geometry = new THREE.SphereGeometry(RADIUS, cfg.segments, cfg.segments);
@@ -1405,20 +1405,20 @@ export function createEarthGlobe(canvas, options = {}) {
     return ((c % cols) + cols) % cols;
   }
 
-  function lookLonLat() {
+  function viewLonLat() {
     if (!mesh) return null;
-    _lookLocal.copy(camera.position).sub(target);
-    mesh.getWorldQuaternion(_lookQuat);
-    _lookLocal.applyQuaternion(_lookQuat.invert());
-    _lookLocal.normalize();
+    _tileLocal.copy(camera.position).sub(target);
+    mesh.getWorldQuaternion(_tileQuat);
+    _tileLocal.applyQuaternion(_tileQuat.invert());
+    _tileLocal.normalize();
     const lat = THREE.MathUtils.radToDeg(
-      Math.asin(THREE.MathUtils.clamp(_lookLocal.y, -1, 1))
+      Math.asin(THREE.MathUtils.clamp(_tileLocal.y, -1, 1))
     );
-    const lon = THREE.MathUtils.radToDeg(Math.atan2(-_lookLocal.z, _lookLocal.x));
+    const lon = THREE.MathUtils.radToDeg(Math.atan2(-_tileLocal.z, _tileLocal.x));
     return { lat, lon };
   }
 
-  function neededLookKeys(level, lon, lat) {
+  function neededTileKeys(level, lon, lat) {
     let u = (lon + 180) / 360;
     u = ((u % 1) + 1) % 1;
     const v = THREE.MathUtils.clamp((90 - lat) / 180, 0, 0.9999);
@@ -1428,10 +1428,10 @@ export function createEarthGlobe(canvas, options = {}) {
     const fracR = v * level.rows - r0;
     const cols = [c0];
     const rows = [r0];
-    if (fracC < LOOK_EDGE) cols.push(wrapCol(c0 - 1, level.cols));
-    if (fracC > 1 - LOOK_EDGE) cols.push(wrapCol(c0 + 1, level.cols));
-    if (fracR < LOOK_EDGE && r0 > 0) rows.push(r0 - 1);
-    if (fracR > 1 - LOOK_EDGE && r0 < level.rows - 1) rows.push(r0 + 1);
+    if (fracC < TILE_EDGE) cols.push(wrapCol(c0 - 1, level.cols));
+    if (fracC > 1 - TILE_EDGE) cols.push(wrapCol(c0 + 1, level.cols));
+    if (fracR < TILE_EDGE && r0 > 0) rows.push(r0 - 1);
+    if (fracR > 1 - TILE_EDGE && r0 < level.rows - 1) rows.push(r0 + 1);
     const keys = [];
     for (const r of rows) {
       for (const c of cols) keys.push(`${level.label}:${c}:${r}`);
@@ -1439,39 +1439,39 @@ export function createEarthGlobe(canvas, options = {}) {
     return keys;
   }
 
-  function ensureLookGroup() {
-    if (!lookGroup) {
-      lookGroup = new THREE.Group();
-      lookGroup.name = "look-tiles";
+  function ensureTileGroup() {
+    if (!tileGroup) {
+      tileGroup = new THREE.Group();
+      tileGroup.name = "zoom-tiles";
     }
-    if (mesh && lookGroup.parent !== mesh) mesh.add(lookGroup);
+    if (mesh && tileGroup.parent !== mesh) mesh.add(tileGroup);
   }
 
-  function dropLook(key) {
-    const piece = lookLive.get(key);
+  function dropTile(key) {
+    const piece = tileLive.get(key);
     if (!piece) return;
-    lookLive.delete(key);
+    tileLive.delete(key);
     if (piece.parent) piece.parent.remove(piece);
     piece.geometry.dispose();
     disposeMap(piece.material.map);
     piece.material.dispose();
   }
 
-  function hideLookTiles() {
-    lookWanted = new Set();
-    if (lookGroup) lookGroup.visible = false;
-    for (const key of [...lookLive.keys()]) dropLook(key);
-    if (lookLevel) {
-      lookLevel = null;
+  function hideTiles() {
+    tileWanted = new Set();
+    if (tileGroup) tileGroup.visible = false;
+    for (const key of [...tileLive.keys()]) dropTile(key);
+    if (tileLevel) {
+      tileLevel = null;
       reportQuality("8k");
     }
   }
 
-  function lookTileUrl(level, c, r) {
+  function tileUrl(level, c, r) {
     return `${level.folder}/c${c}r${r}.jpg?v=${TEX_VER}`;
   }
 
-  function makeLookPatch(level, c, r, tex) {
+  function makeTilePatch(level, c, r, tex) {
     const phiStart = (c / level.cols) * Math.PI * 2;
     const phiLength = (1 / level.cols) * Math.PI * 2;
     const thetaStart = (r / level.rows) * Math.PI;
@@ -1487,78 +1487,78 @@ export function createEarthGlobe(canvas, options = {}) {
     );
     const nightU = material.userData.nightUniform;
     const normalU = material.userData.normalUniform;
-    const mat = makeLookMaterial(tex, nightU, normalU);
+    const mat = makeTileMaterial(tex, nightU, normalU);
     const piece = new THREE.Mesh(geo, mat);
     piece.renderOrder = 1;
-    piece.userData.lookKey = `${level.label}:${c}:${r}`;
+    piece.userData.tileKey = `${level.label}:${c}:${r}`;
     return piece;
   }
 
-  function loadLookTile(level, key) {
-    if (lookLive.has(key) || lookLoading.has(key) || disposed || !material) return;
-    lookLoading.add(key);
+  function loadTile(level, key) {
+    if (tileLive.has(key) || tileLoading.has(key) || disposed || !material) return;
+    tileLoading.add(key);
     const parts = key.split(":");
     const c = Number(parts[1]);
     const r = Number(parts[2]);
     loader.load(
-      lookTileUrl(level, c, r),
+      tileUrl(level, c, r),
       (tex) => {
-        lookLoading.delete(key);
+        tileLoading.delete(key);
         if (
           disposed ||
-          !lookEnabled ||
-          !lookGroup ||
-          !lookGroup.visible ||
-          !lookWanted.has(key) ||
-          lookLevel !== level.label
+          !tilesEnabled ||
+          !tileGroup ||
+          !tileGroup.visible ||
+          !tileWanted.has(key) ||
+          tileLevel !== level.label
         ) {
           tex.dispose();
           return;
         }
-        if (lookLive.has(key)) {
+        if (tileLive.has(key)) {
           tex.dispose();
           return;
         }
         configureColor(tex);
         releaseDecodedImage(tex);
-        ensureLookGroup();
-        const piece = makeLookPatch(level, c, r, tex);
-        lookGroup.add(piece);
-        lookLive.set(key, piece);
+        ensureTileGroup();
+        const piece = makeTilePatch(level, c, r, tex);
+        tileGroup.add(piece);
+        tileLive.set(key, piece);
         reportQuality(level.label);
         kick();
       },
       undefined,
-      () => lookLoading.delete(key)
+      () => tileLoading.delete(key)
     );
   }
 
-  function updateLookTiles() {
-    if (disposed || !lookEnabled || !mesh || !material) return;
+  function updateTiles() {
+    if (disposed || !tilesEnabled || !mesh || !material) return;
     const dist = camDist();
-    const level = pickLookLevel(dist);
+    const level = pickTileLevel(dist);
     if (!level) {
-      hideLookTiles();
+      hideTiles();
       return;
     }
-    const at = lookLonLat();
+    const at = viewLonLat();
     if (!at) {
-      hideLookTiles();
+      hideTiles();
       return;
     }
-    if (lookLevel && lookLevel !== level.label) {
-      for (const key of [...lookLive.keys()]) dropLook(key);
-      lookWanted = new Set();
+    if (tileLevel && tileLevel !== level.label) {
+      for (const key of [...tileLive.keys()]) dropTile(key);
+      tileWanted = new Set();
     }
-    lookLevel = level.label;
-    ensureLookGroup();
-    lookGroup.visible = true;
-    const want = new Set(neededLookKeys(level, at.lon, at.lat));
-    lookWanted = want;
-    for (const key of [...lookLive.keys()]) {
-      if (!want.has(key)) dropLook(key);
+    tileLevel = level.label;
+    ensureTileGroup();
+    tileGroup.visible = true;
+    const want = new Set(neededTileKeys(level, at.lon, at.lat));
+    tileWanted = want;
+    for (const key of [...tileLive.keys()]) {
+      if (!want.has(key)) dropTile(key);
     }
-    for (const key of want) loadLookTile(level, key);
+    for (const key of want) loadTile(level, key);
   }
 
   function captureSkyPose() {
@@ -2739,7 +2739,7 @@ export function createEarthGlobe(canvas, options = {}) {
     }
     syncMoon();
     if (missionMode !== "off") updateMissionPinFacing();
-    updateLookTiles();
+    updateTiles();
     renderer.render(scene, camera);
     if (orbiting || oneFinger || twoFinger) kick();
   }
@@ -2789,7 +2789,7 @@ export function createEarthGlobe(canvas, options = {}) {
       window.removeEventListener("mousedown", onMouseDown, true);
       window.removeEventListener("wheel", onWheel, true);
       window.removeEventListener("contextmenu", onContextMenu, true);
-      hideLookTiles();
+      hideTiles();
       disposePoleMarks();
       if (mesh) {
         mesh.geometry.dispose();
