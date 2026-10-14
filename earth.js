@@ -185,7 +185,7 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e100";
+const TEX_VER = "e101";
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
@@ -206,6 +206,8 @@ const LOD = {
 const LOOK_COLS = 8;
 const LOOK_ROWS = 4;
 const LOOK_EDGE = 0.22;
+/** Turn look patches on at this camera distance and closer (matches zoom readout). */
+const LOOK_ON_DIST = 3.5;
 
 const NIGHT_VERT = `
   varying vec2 vUv;
@@ -1505,9 +1507,7 @@ export function createEarthGlobe(canvas, options = {}) {
   function updateLookTiles() {
     if (disposed || !lookEnabled || !mesh || !material) return;
     const dist = camDist();
-    const span = Math.max(homeDist - MIN_DIST, 0.01);
-    const closeness = 1 - THREE.MathUtils.clamp((dist - MIN_DIST) / span, 0, 1);
-    if (closeness < 0.28) {
+    if (dist > LOOK_ON_DIST) {
       hideLookTiles();
       return;
     }
