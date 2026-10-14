@@ -204,7 +204,7 @@ const LOD = {
 
 /**
  * Zoom-in tiles from one Next Gen master (never a full high-k wrap).
- * Day wraps/tiles at JPEG 85. 16 at mid zoom; 32 under 1.15.
+ * Day wraps/tiles at JPEG 85. 16 at mid zoom; 32 under 1.2.
  */
 const TILE_EDGE = 0.22;
 const TILE_LEVELS = {
