@@ -185,7 +185,7 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e108";
+const TEX_VER = "e109";
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
@@ -204,8 +204,8 @@ const LOD = {
 
 /**
  * Zoom-in tiles from one Next Gen master (never a full high-k wrap).
- * 16 is the only rung that clearly beats the 8k wrap (~2× linear).
- * 21 was only ~1.3× over 16 and looked soft — dropped.
+ * Day wraps/tiles at JPEG 85. tiles-16 engages at onDist; final close
+ * tier (if present) sits under 1.15.
  */
 const TILE_EDGE = 0.22;
 const TILE_LEVELS = {
