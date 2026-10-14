@@ -10,8 +10,11 @@ let SURFACE_SITES = [];
 
 const RADIUS = 1;
 const HOME_FILL = 0.9;
-/** Closest zoom — was 1.02 (near surface); keep some air. */
-const MIN_DIST = 1.55;
+/**
+ * Closest zoom (camera distance to Earth center; Earth radius = 1).
+ * Was 1.55 before look tiles; open again so we can pick a new stop.
+ */
+const MIN_DIST = 1.08;
 /**
  * Furthest zoom as a multiple of the opening (home) distance.
  * Opening stays the “start” framing; you can pull further out past it.
@@ -182,20 +185,27 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e87";
+const TEX_VER = "e100";
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
     night: `earth-night-2k.jpg?v=${TEX_VER}`,
+    normal: `earth-normal-2k.jpg?v=${TEX_VER}`,
     segments: 128,
   },
   high: {
     map: `earth-8k.jpg?v=${TEX_VER}`,
     night: `earth-night-8k.jpg?v=${TEX_VER}`,
+    normal: `earth-normal-4k.jpg?v=${TEX_VER}`,
     // Denser mesh so coasts stay smoother when zoomed in
     segments: 320,
   },
 };
+
+/** 16k sharpness, but only the patch under the camera (8×4 grid of 2048 tiles). */
+const LOOK_COLS = 8;
+const LOOK_ROWS = 4;
+const LOOK_EDGE = 0.22;
 
 const NIGHT_VERT = `
   varying vec2 vUv;
@@ -447,6 +457,7 @@ export function createEarthGlobe(canvas, options = {}) {
     onReady = null,
     onQuality = null,
     onPhase = null,
+    onZoom = null,
     onTap = null,
     onMissionTap = null,
   } = options;
@@ -507,6 +518,21 @@ export function createEarthGlobe(canvas, options = {}) {
   let nightMat = null;
   let cloudMesh = null;
   let cloudsOn = true;
+  let lookGroup = null;
+  const lookLive = new Map();
+  const lookLoading = new Set();
+  let lookWanted = new Set();
+  let lookEnabled = false;
+  let lookActive = false;
+  let qualityLevel = "";
+  const _lookLocal = new THREE.Vector3();
+  const _lookQuat = new THREE.Quaternion();
+
+  function reportQuality(level) {
+    if (qualityLevel === level) return;
+    qualityLevel = level;
+    if (typeof onQuality === "function") onQuality(level);
+  }
   let atmosphere = null;
   let atmosphereMat = null;
   const _atmoCenter = new THREE.Vector3();
@@ -623,40 +649,79 @@ export function createEarthGlobe(canvas, options = {}) {
     tex.needsUpdate = true;
   }
 
-  function makeSurfaceMaterial(map, night) {
+  function makeSurfaceMaterial(map, night, normal) {
     const nightUniform = { value: night };
+    const normalUniform = { value: normal };
     const material = new THREE.MeshBasicMaterial({ map, color: 0xffffff });
     material.userData.nightUniform = nightUniform;
+    material.userData.normalUniform = normalUniform;
     material.onBeforeCompile = (shader) => {
       shader.uniforms.uNight = nightUniform;
+      shader.uniforms.uNormal = normalUniform;
       shader.uniforms.uSunDir = sunDirUniform;
       shader.uniforms.uSunOn = sunOnUniform;
       shader.vertexShader = shader.vertexShader.replace(
         "#include <common>",
-        "#include <common>\nvarying vec3 vWorldN;"
+        "#include <common>\nvarying vec3 vWorldN;\nvarying vec3 vWorldPos;\nvarying vec3 vWorldT;\nvarying vec3 vWorldB;"
       );
       shader.vertexShader = shader.vertexShader.replace(
         "#include <begin_vertex>",
-        "#include <begin_vertex>\nvWorldN = normalize(mat3(modelMatrix) * normalize(position));"
+        `#include <begin_vertex>
+        vec3 nLocal = normalize(position);
+        vWorldN = normalize(mat3(modelMatrix) * nLocal);
+        vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+        vec3 tLocal = normalize(vec3(-nLocal.z, 0.0, nLocal.x));
+        if (length(tLocal) < 1e-4) tLocal = vec3(1.0, 0.0, 0.0);
+        vec3 bLocal = normalize(cross(nLocal, tLocal));
+        vWorldT = normalize(mat3(modelMatrix) * tLocal);
+        vWorldB = normalize(mat3(modelMatrix) * bLocal);`
       );
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <common>",
-        "#include <common>\nuniform sampler2D uNight;\nuniform vec3 uSunDir;\nuniform float uSunOn;\nvarying vec3 vWorldN;"
+        `#include <common>
+        uniform sampler2D uNight;
+        uniform sampler2D uNormal;
+        uniform vec3 uSunDir;
+        uniform float uSunOn;
+        varying vec3 vWorldN;
+        varying vec3 vWorldPos;
+        varying vec3 vWorldT;
+        varying vec3 vWorldB;`
       );
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <color_fragment>",
         `#include <color_fragment>
-        float ndl = dot(normalize(vWorldN), normalize(uSunDir));
+        vec3 nSphere = normalize(vWorldN);
+        vec3 sunD = normalize(uSunDir);
+        float ndl = dot(nSphere, sunD);
         float day = uSunOn * smoothstep(-0.04, 0.20, ndl);
         vec3 dayCol = diffuseColor.rgb;
         float lum = dot(dayCol, vec3(0.2126, 0.7152, 0.0722));
         float blue = dayCol.b - max(dayCol.r, dayCol.g);
-        float dark = smoothstep(0.16, 0.03, lum);
-        float blu = smoothstep(0.0, 0.02, blue);
+        // Linear-space water mask: catches all deep & coastal water uniformly without amplifying 8x8 JPEG steps
+        float dark = smoothstep(0.016, 0.0035, lum);
+        float blu = smoothstep(0.0004, 0.0028, blue);
         float ocean = dark * blu;
-        dayCol = mix(dayCol, vec3(0.02, 0.11, 0.32), ocean * 0.88);
-        // Land a bit brighter; ocean stays the glow wrap
-        dayCol *= mix(1.1, 1.0, ocean);
+        // Same deep navy tone as the original open ocean, applied smoothly across all dark water
+        dayCol = mix(dayCol, vec3(0.0038, 0.0191, 0.0577), ocean * 0.94);
+
+        // 3D mountain relief on land from NASA elevation normal map
+        vec3 nTex = texture2D(uNormal, vMapUv).xyz * 2.0 - 1.0;
+        vec2 slope = nTex.xy * (1.0 - ocean) * 1.35;
+        vec3 nPerturbed = normalize(nSphere + normalize(vWorldT) * slope.x + normalize(vWorldB) * slope.y);
+        float ndlRelief = max(0.0, dot(nPerturbed, sunD));
+        float ndlSmooth = max(0.0, ndl);
+        float relief = clamp(1.0 + (ndlRelief - ndlSmooth) * 1.4, 0.68, 1.34);
+
+        // Gentle day shading from noon center toward the limb + brighter land
+        float sunShade = mix(0.84, 1.06, pow(ndlSmooth, 0.42));
+        dayCol *= mix(1.16 * relief * sunShade, 1.0, ocean);
+
+        // Subtle Rayleigh atmospheric blue haze near the limb on the day side
+        vec3 viewD = normalize(cameraPosition - vWorldPos);
+        float rim = 1.0 - max(0.0, dot(nSphere, viewD));
+        dayCol += vec3(0.03, 0.09, 0.22) * pow(rim, 3.2) * smoothstep(-0.05, 0.35, ndl) * uSunOn * 0.42;
+
         vec3 nightCol = pow(texture2D(uNight, vMapUv).rgb, vec3(2.2));
         diffuseColor.rgb = mix(nightCol * 2.1, dayCol, day);`
       );
@@ -664,7 +729,87 @@ export function createEarthGlobe(canvas, options = {}) {
     return material;
   }
 
-  function buildMesh(map, night, cfg) {
+  function makeLookMaterial(map, nightUniform, normalUniform) {
+    const mat = new THREE.MeshBasicMaterial({
+      map,
+      color: 0xffffff,
+      transparent: true,
+      depthWrite: false,
+    });
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uNight = nightUniform;
+      shader.uniforms.uNormal = normalUniform;
+      shader.uniforms.uSunDir = sunDirUniform;
+      shader.uniforms.uSunOn = sunOnUniform;
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <common>",
+        "#include <common>\nvarying vec3 vWorldN;\nvarying vec3 vWorldPos;\nvarying vec3 vWorldT;\nvarying vec3 vWorldB;\nvarying vec3 vLocalN;"
+      );
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <begin_vertex>",
+        `#include <begin_vertex>
+        vec3 nLocal = normalize(position);
+        vLocalN = nLocal;
+        vWorldN = normalize(mat3(modelMatrix) * nLocal);
+        vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+        vec3 tLocal = normalize(vec3(-nLocal.z, 0.0, nLocal.x));
+        if (length(tLocal) < 1e-4) tLocal = vec3(1.0, 0.0, 0.0);
+        vec3 bLocal = normalize(cross(nLocal, tLocal));
+        vWorldT = normalize(mat3(modelMatrix) * tLocal);
+        vWorldB = normalize(mat3(modelMatrix) * bLocal);`
+      );
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <common>",
+        `#include <common>
+        uniform sampler2D uNight;
+        uniform sampler2D uNormal;
+        uniform vec3 uSunDir;
+        uniform float uSunOn;
+        varying vec3 vWorldN;
+        varying vec3 vWorldPos;
+        varying vec3 vWorldT;
+        varying vec3 vWorldB;
+        varying vec3 vLocalN;`
+      );
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <color_fragment>",
+        `#include <color_fragment>
+        vec3 nSphere = normalize(vWorldN);
+        vec3 sunD = normalize(uSunDir);
+        float ndl = dot(nSphere, sunD);
+        float day = uSunOn * smoothstep(-0.04, 0.20, ndl);
+        vec3 dayCol = diffuseColor.rgb;
+        float lum = dot(dayCol, vec3(0.2126, 0.7152, 0.0722));
+        float blue = dayCol.b - max(dayCol.r, dayCol.g);
+        float dark = smoothstep(0.016, 0.0035, lum);
+        float blu = smoothstep(0.0004, 0.0028, blue);
+        float ocean = dark * blu;
+        dayCol = mix(dayCol, vec3(0.0038, 0.0191, 0.0577), ocean * 0.94);
+        vec2 planetUv = vec2(
+          atan(-vLocalN.z, vLocalN.x) / 6.28318530718 + 0.5,
+          asin(clamp(vLocalN.y, -1.0, 1.0)) / 3.14159265359 + 0.5
+        );
+        vec3 nTex = texture2D(uNormal, planetUv).xyz * 2.0 - 1.0;
+        vec2 slope = nTex.xy * (1.0 - ocean) * 1.35;
+        vec3 nPerturbed = normalize(nSphere + normalize(vWorldT) * slope.x + normalize(vWorldB) * slope.y);
+        float ndlRelief = max(0.0, dot(nPerturbed, sunD));
+        float ndlSmooth = max(0.0, ndl);
+        float relief = clamp(1.0 + (ndlRelief - ndlSmooth) * 1.4, 0.68, 1.34);
+        float sunShade = mix(0.84, 1.06, pow(ndlSmooth, 0.42));
+        dayCol *= mix(1.16 * relief * sunShade, 1.0, ocean);
+        vec3 viewD = normalize(cameraPosition - vWorldPos);
+        float rim = 1.0 - max(0.0, dot(nSphere, viewD));
+        dayCol += vec3(0.03, 0.09, 0.22) * pow(rim, 3.2) * smoothstep(-0.05, 0.35, ndl) * uSunOn * 0.42;
+        vec3 nightCol = pow(texture2D(uNight, planetUv).rgb, vec3(2.2));
+        diffuseColor.rgb = mix(nightCol * 2.1, dayCol, day);
+        float edge = min(min(vMapUv.x, 1.0 - vMapUv.x), min(vMapUv.y, 1.0 - vMapUv.y));
+        diffuseColor.a *= smoothstep(0.0, 0.12, edge) * mix(0.0, 1.0, day);`
+      );
+    };
+    return mat;
+  }
+
+  function buildMesh(map, night, normal, cfg) {
     if (mesh) {
       moonGroup.remove(mesh);
       mesh.geometry.dispose();
@@ -680,16 +825,18 @@ export function createEarthGlobe(canvas, options = {}) {
     }
     nightMesh = null;
 
-    material = makeSurfaceMaterial(map, night);
+    material = makeSurfaceMaterial(map, night, normal);
     mesh = new THREE.Mesh(
       new THREE.SphereGeometry(RADIUS, cfg.segments, cfg.segments),
       material
     );
     if (cloudMesh) mesh.add(cloudMesh);
     if (auroraMesh) mesh.add(auroraMesh);
+    if (lookGroup) mesh.add(lookGroup);
     moonGroup.add(mesh);
     ensureAtmosphere();
     attachMissionPins(mesh);
+    attachPoleMarks(mesh);
     applyEphemeris();
   }
 
@@ -734,6 +881,95 @@ export function createEarthGlobe(canvas, options = {}) {
     atmosphereMat.uniforms.uPlanetCenter.value.copy(_atmoCenter);
     atmosphereMat.uniforms.uPlanetRadius.value = RADIUS * g;
     atmosphereMat.uniforms.uAtmoRadius.value = RADIUS * ATMO_HEIGHT * g;
+  }
+
+  let poleGroup = null;
+  let poleGeo = null;
+  const poleMarks = [];
+  const POLE_GEO_R = 0.006;
+  const POLE_PX_FAR = 1;
+  const POLE_PX_NEAR = 5;
+
+  function makePoleBadge(letter) {
+    const size = 96;
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, size, size);
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, size / 2 - 5, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(6, 10, 18, 0.82)";
+    ctx.fill();
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
+    ctx.stroke();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "700 52px system-ui, -apple-system, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(letter, size / 2, size / 2 + 2);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      depthTest: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+      toneMapped: false,
+    });
+    const mark = new THREE.Mesh(poleGeo, mat);
+    mark.renderOrder = 6;
+    mark.userData.poleTex = tex;
+    return mark;
+  }
+
+  function disposePoleMarks() {
+    if (!poleGroup) return;
+    for (const mark of poleMarks) {
+      mark.userData.poleTex?.dispose();
+      mark.material?.dispose();
+    }
+    poleMarks.length = 0;
+    poleGeo?.dispose();
+    poleGeo = null;
+    if (poleGroup.parent) poleGroup.parent.remove(poleGroup);
+    poleGroup = null;
+  }
+
+  function attachPoleMarks(parentMesh) {
+    disposePoleMarks();
+    if (!parentMesh) return;
+    poleGeo = new THREE.CircleGeometry(POLE_GEO_R, 24);
+    poleGroup = new THREE.Group();
+    poleGroup.name = "pole-marks";
+    const north = makePoleBadge("N");
+    north.position.set(0, RADIUS * 1.0008, 0);
+    north.rotation.set(-Math.PI / 2, 0, 0);
+    const south = makePoleBadge("S");
+    south.position.set(0, -RADIUS * 1.0008, 0);
+    south.rotation.set(Math.PI / 2, 0, 0);
+    poleGroup.add(north, south);
+    poleMarks.push(north, south);
+    parentMesh.add(poleGroup);
+    updatePoleScale();
+  }
+
+  function updatePoleScale() {
+    if (!poleMarks.length) return;
+    const dist = Math.max(camDist(), MIN_DIST);
+    const span = Math.max(homeDist - MIN_DIST, 0.01);
+    const zoomIn = 1 - THREE.MathUtils.clamp((dist - MIN_DIST) / span, 0, 1);
+    const px = THREE.MathUtils.lerp(POLE_PX_FAR, POLE_PX_NEAR, zoomIn);
+    const h = Math.max(height || window.innerHeight || 1, 1);
+    const vFov = THREE.MathUtils.degToRad(BASE_FOV);
+    const world = (px * dist * 2 * Math.tan(vFov / 2)) / h;
+    const s = world / (POLE_GEO_R * 2);
+    for (const mark of poleMarks) mark.scale.setScalar(s);
   }
 
   /**
@@ -929,8 +1165,9 @@ export function createEarthGlobe(canvas, options = {}) {
     const cfg = LOD.low;
     let lowMapReady = false;
     let lowNightReady = false;
+    let lowNormalReady = false;
     const maybeSchedule = () => {
-      if (lowMapReady && lowNightReady) scheduleHigh();
+      if (lowMapReady && lowNightReady && lowNormalReady) scheduleHigh();
     };
     const map = loader.load(
       cfg.map,
@@ -938,7 +1175,7 @@ export function createEarthGlobe(canvas, options = {}) {
         configureColor(tex);
         ready = true;
         if (typeof onReady === "function") onReady();
-        if (typeof onQuality === "function") onQuality("2k");
+        reportQuality("2k");
         kick();
         lowMapReady = true;
         maybeSchedule();
@@ -969,9 +1206,31 @@ export function createEarthGlobe(canvas, options = {}) {
         maybeSchedule();
       }
     );
+    const normal = loader.load(
+      cfg.normal,
+      (tex) => {
+        if (
+          !disposed &&
+          material &&
+          material.userData.normalUniform &&
+          material.userData.normalUniform.value === tex
+        ) {
+          configureNormal(tex);
+          kick();
+        }
+        lowNormalReady = true;
+        maybeSchedule();
+      },
+      undefined,
+      () => {
+        lowNormalReady = true;
+        maybeSchedule();
+      }
+    );
     configureColor(map);
     configureNight(night);
-    buildMesh(map, night, cfg);
+    configureNormal(normal);
+    buildMesh(map, night, normal, cfg);
   }
 
   function upgradeHigh() {
@@ -980,6 +1239,27 @@ export function createEarthGlobe(canvas, options = {}) {
     let dayApplied = false;
     // Let Safari reclaim the previous decode before the next 8k image starts.
     const next = (fn) => setTimeout(fn, 150);
+
+    const loadNormal = () => {
+      if (disposed) return;
+      loader.load(
+        cfg.normal,
+        (tex) => {
+          if (disposed) return;
+          configureNormal(tex);
+          releaseDecodedImage(tex);
+          if (material && material.userData.normalUniform) {
+            const old = material.userData.normalUniform.value;
+            material.userData.normalUniform.value = tex;
+            if (old && old !== tex) disposeMap(old);
+          }
+          kick();
+          next(loadClouds);
+        },
+        undefined,
+        () => next(loadClouds)
+      );
+    };
 
     const loadNight = () => {
       if (disposed) return;
@@ -995,11 +1275,11 @@ export function createEarthGlobe(canvas, options = {}) {
             if (old && old !== tex) disposeMap(old);
           }
           kick();
-          if (dayApplied && typeof onQuality === "function") onQuality("8k");
-          next(loadClouds);
+          if (dayApplied) reportQuality("8k");
+          next(loadNormal);
         },
         undefined,
-        () => next(loadClouds)
+        () => next(loadNormal)
       );
     };
 
@@ -1018,6 +1298,8 @@ export function createEarthGlobe(canvas, options = {}) {
         material.needsUpdate = true;
         if (oldMap && oldMap !== tex) disposeMap(oldMap);
         dayApplied = true;
+        lookEnabled = true;
+        updateLookTiles();
         if (mesh && mesh.geometry.parameters.widthSegments < cfg.segments) {
           mesh.geometry.dispose();
           mesh.geometry = new THREE.SphereGeometry(RADIUS, cfg.segments, cfg.segments);
@@ -1090,6 +1372,158 @@ export function createEarthGlobe(canvas, options = {}) {
       undefined,
       () => {}
     );
+  }
+
+  function wrapCol(c) {
+    return ((c % LOOK_COLS) + LOOK_COLS) % LOOK_COLS;
+  }
+
+  function lookLonLat() {
+    if (!mesh) return null;
+    _lookLocal.copy(camera.position).sub(target);
+    mesh.getWorldQuaternion(_lookQuat);
+    _lookLocal.applyQuaternion(_lookQuat.invert());
+    _lookLocal.normalize();
+    const lat = THREE.MathUtils.radToDeg(
+      Math.asin(THREE.MathUtils.clamp(_lookLocal.y, -1, 1))
+    );
+    const lon = THREE.MathUtils.radToDeg(Math.atan2(-_lookLocal.z, _lookLocal.x));
+    return { lat, lon };
+  }
+
+  function neededLookKeys(lon, lat) {
+    let u = (lon + 180) / 360;
+    u = ((u % 1) + 1) % 1;
+    const v = THREE.MathUtils.clamp((90 - lat) / 180, 0, 0.9999);
+    const c0 = Math.floor(u * LOOK_COLS);
+    const r0 = Math.min(LOOK_ROWS - 1, Math.floor(v * LOOK_ROWS));
+    const fracC = u * LOOK_COLS - c0;
+    const fracR = v * LOOK_ROWS - r0;
+    const cols = [c0];
+    const rows = [r0];
+    if (fracC < LOOK_EDGE) cols.push(wrapCol(c0 - 1));
+    if (fracC > 1 - LOOK_EDGE) cols.push(wrapCol(c0 + 1));
+    if (fracR < LOOK_EDGE && r0 > 0) rows.push(r0 - 1);
+    if (fracR > 1 - LOOK_EDGE && r0 < LOOK_ROWS - 1) rows.push(r0 + 1);
+    const keys = [];
+    for (const r of rows) {
+      for (const c of cols) keys.push(`${c}:${r}`);
+    }
+    return keys;
+  }
+
+  function ensureLookGroup() {
+    if (!lookGroup) {
+      lookGroup = new THREE.Group();
+      lookGroup.name = "look-tiles";
+    }
+    if (mesh && lookGroup.parent !== mesh) mesh.add(lookGroup);
+  }
+
+  function dropLook(key) {
+    const piece = lookLive.get(key);
+    if (!piece) return;
+    lookLive.delete(key);
+    if (piece.parent) piece.parent.remove(piece);
+    piece.geometry.dispose();
+    disposeMap(piece.material.map);
+    piece.material.dispose();
+  }
+
+  function hideLookTiles() {
+    lookWanted = new Set();
+    if (lookGroup) lookGroup.visible = false;
+    for (const key of [...lookLive.keys()]) dropLook(key);
+    if (lookActive) {
+      lookActive = false;
+      reportQuality("8k");
+    }
+  }
+
+  function lookTileUrl(c, r) {
+    return `look-tiles/c${c}r${r}.jpg?v=${TEX_VER}`;
+  }
+
+  function makeLookPatch(c, r, tex) {
+    const phiStart = (c / LOOK_COLS) * Math.PI * 2;
+    const phiLength = (1 / LOOK_COLS) * Math.PI * 2;
+    const thetaStart = (r / LOOK_ROWS) * Math.PI;
+    const thetaLength = (1 / LOOK_ROWS) * Math.PI;
+    const geo = new THREE.SphereGeometry(
+      RADIUS * 1.0018,
+      48,
+      48,
+      phiStart,
+      phiLength,
+      thetaStart,
+      thetaLength
+    );
+    const nightU = material.userData.nightUniform;
+    const normalU = material.userData.normalUniform;
+    const mat = makeLookMaterial(tex, nightU, normalU);
+    const piece = new THREE.Mesh(geo, mat);
+    piece.renderOrder = 1;
+    piece.userData.lookKey = `${c}:${r}`;
+    return piece;
+  }
+
+  function loadLookTile(key) {
+    if (lookLive.has(key) || lookLoading.has(key) || disposed || !material) return;
+    lookLoading.add(key);
+    const [cs, rs] = key.split(":");
+    const c = Number(cs);
+    const r = Number(rs);
+    loader.load(
+      lookTileUrl(c, r),
+      (tex) => {
+        lookLoading.delete(key);
+        if (disposed || !lookEnabled || !lookGroup || !lookGroup.visible || !lookWanted.has(key)) {
+          tex.dispose();
+          return;
+        }
+        if (lookLive.has(key)) {
+          tex.dispose();
+          return;
+        }
+        configureColor(tex);
+        releaseDecodedImage(tex);
+        ensureLookGroup();
+        const piece = makeLookPatch(c, r, tex);
+        lookGroup.add(piece);
+        lookLive.set(key, piece);
+        if (!lookActive) {
+          lookActive = true;
+          reportQuality("16");
+        }
+        kick();
+      },
+      undefined,
+      () => lookLoading.delete(key)
+    );
+  }
+
+  function updateLookTiles() {
+    if (disposed || !lookEnabled || !mesh || !material) return;
+    const dist = camDist();
+    const span = Math.max(homeDist - MIN_DIST, 0.01);
+    const closeness = 1 - THREE.MathUtils.clamp((dist - MIN_DIST) / span, 0, 1);
+    if (closeness < 0.28) {
+      hideLookTiles();
+      return;
+    }
+    const at = lookLonLat();
+    if (!at) {
+      hideLookTiles();
+      return;
+    }
+    ensureLookGroup();
+    lookGroup.visible = true;
+    const want = new Set(neededLookKeys(at.lon, at.lat));
+    lookWanted = want;
+    for (const key of [...lookLive.keys()]) {
+      if (!want.has(key)) dropLook(key);
+    }
+    for (const key of want) loadLookTile(key);
   }
 
   function captureSkyPose() {
@@ -1606,6 +2040,8 @@ export function createEarthGlobe(canvas, options = {}) {
     camera.near = Math.max(0.001, frontGap * 0.35);
     camera.far = Math.max(200, dist + 40);
     camera.updateProjectionMatrix();
+    updatePoleScale();
+    if (typeof onZoom === "function") onZoom(spherical.radius);
     kick();
   }
 
@@ -1917,15 +2353,66 @@ export function createEarthGlobe(canvas, options = {}) {
 
   // —— Touch + pointer: 2fs pans the canvas (CSS) so movement is always visible ——
 
-  function isFormControl(el) {
-    // Also ignore map picker / Leaflet so UI dialogs receive touch
-    return !!(
-      el &&
-      el.closest &&
-      el.closest(
-        "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#mission-sheet,#fact-sheet,.cycle,.slider-track,.cycle-controls"
-      )
-    );
+  const UI_HIT =
+    "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#mission-sheet,#fact-sheet,.cycle,.slider-track,.cycle-controls,.m-cell-fact,.vision-btn,.geo-btn,.live-btn,.sun-btn,.fact-sheet-inner,.fact-sheet-scrim";
+
+  function eventPoint(e) {
+    if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
+      return { x: e.clientX, y: e.clientY };
+    }
+    const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
+    if (t) return { x: t.clientX, y: t.clientY };
+    return null;
+  }
+
+  function nodeIsUi(el) {
+    return !!(el && el.closest && el.closest(UI_HIT));
+  }
+
+  function uiControlAt(pt) {
+    if (!pt) return null;
+    const roots = ["fact-sheet", "loc-dialog", "mission-sheet", "loc-bar"];
+    for (const id of roots) {
+      const root = document.getElementById(id);
+      if (!root || root.hasAttribute("hidden")) continue;
+      const ctrls = root.querySelectorAll(
+        "button,input,select,textarea,a,.cycle,.slider-track,.cycle-controls,.leaflet-container,.fact-sheet-scrim"
+      );
+      for (const ctrl of ctrls) {
+        const r = ctrl.getBoundingClientRect();
+        if (pt.x >= r.left && pt.x <= r.right && pt.y >= r.top && pt.y <= r.bottom) {
+          return ctrl;
+        }
+      }
+    }
+    return null;
+  }
+
+  function isFormControl(el, e) {
+    if (nodeIsUi(el)) return true;
+    if (e && typeof e.composedPath === "function") {
+      for (const n of e.composedPath()) {
+        if (nodeIsUi(n)) return true;
+      }
+    }
+    return !!uiControlAt(e && eventPoint(e));
+  }
+
+  let uiClickAt = 0;
+
+  function passToUi(e) {
+    const ctrl = uiControlAt(eventPoint(e));
+    if (!isFormControl(e.target, e) && !ctrl) return false;
+    if (ctrl && e.target !== ctrl && !(typeof ctrl.contains === "function" && ctrl.contains(e.target))) {
+      e.preventDefault();
+      e.stopPropagation();
+      const now = Date.now();
+      if (now - uiClickAt > 400 && typeof ctrl.click === "function" && ctrl.type !== "range") {
+        uiClickAt = now;
+        ctrl.click();
+      }
+    }
+    return true;
   }
 
   function touchPair(list) {
@@ -1958,7 +2445,7 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function onTouchStart(e) {
-    if (e.touches.length === 1 && isFormControl(e.target)) return;
+    if (e.touches.length === 1 && passToUi(e)) return;
     e.preventDefault();
     if (e.touches.length >= 2) {
       twoFinger = touchPair(e.touches);
@@ -1973,7 +2460,7 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function onTouchMove(e) {
     if (e.touches.length === 0) return;
-    if (e.touches.length === 1 && isFormControl(e.target) && !oneFinger) return;
+    if (e.touches.length === 1 && isFormControl(e.target, e) && !oneFinger) return;
     e.preventDefault();
 
     if (e.touches.length >= 2) {
@@ -2053,7 +2540,7 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function onPtrDown(e) {
     if (e.pointerType === "mouse") return;
-    if (isFormControl(e.target)) return;
+    if (passToUi(e)) return;
     e.preventDefault();
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (ptrs.size >= 2) {
@@ -2092,7 +2579,7 @@ export function createEarthGlobe(canvas, options = {}) {
   let mouseGesture = null;
 
   function onMouseDown(e) {
-    if (isFormControl(e.target)) return;
+    if (isFormControl(e.target, e) || uiControlAt(eventPoint(e))) return;
     if (e.button === 0 && !e.shiftKey) mouseMode = "orbit";
     else if (e.button === 0 && e.shiftKey) mouseMode = "pan";
     else if (e.button === 2) {
@@ -2145,12 +2632,13 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function onWheel(e) {
-    if (isFormControl(e.target)) return;
+    if (isFormControl(e.target, e) || uiControlAt(eventPoint(e))) return;
     e.preventDefault();
     setCamDist(camDist() * Math.exp(e.deltaY * WHEEL_DOLLY));
   }
 
   function onContextMenu(e) {
+    if (isFormControl(e.target, e) || uiControlAt(eventPoint(e))) return;
     e.preventDefault();
   }
 
@@ -2163,9 +2651,9 @@ export function createEarthGlobe(canvas, options = {}) {
   window.addEventListener("pointermove", onPtrMove, cap);
   window.addEventListener("pointerup", onPtrUp, { capture: true });
   window.addEventListener("pointercancel", onPtrUp, { capture: true });
-  surface.addEventListener("mousedown", onMouseDown);
-  surface.addEventListener("wheel", onWheel, { passive: false });
-  surface.addEventListener("contextmenu", onContextMenu);
+  window.addEventListener("mousedown", onMouseDown, cap);
+  window.addEventListener("wheel", onWheel, { passive: false, capture: true });
+  window.addEventListener("contextmenu", onContextMenu, true);
   document.addEventListener("visibilitychange", onVisibility);
   canvas.style.touchAction = "none";
   surface.style.touchAction = "none";
@@ -2216,6 +2704,7 @@ export function createEarthGlobe(canvas, options = {}) {
     }
     syncMoon();
     if (missionMode !== "off") updateMissionPinFacing();
+    updateLookTiles();
     renderer.render(scene, camera);
     if (orbiting || oneFinger || twoFinger) kick();
   }
@@ -2242,6 +2731,7 @@ export function createEarthGlobe(canvas, options = {}) {
     getMissionsMode,
     getPhaseInfo,
     getObserver,
+    getCamDist: () => camDist(),
     isReady: () => ready,
     dispose() {
       disposed = true;
@@ -2261,12 +2751,16 @@ export function createEarthGlobe(canvas, options = {}) {
       window.removeEventListener("pointercancel", onPtrUp, true);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
-      surface.removeEventListener("mousedown", onMouseDown);
-      surface.removeEventListener("wheel", onWheel);
-      surface.removeEventListener("contextmenu", onContextMenu);
+      window.removeEventListener("mousedown", onMouseDown, true);
+      window.removeEventListener("wheel", onWheel, true);
+      window.removeEventListener("contextmenu", onContextMenu, true);
+      hideLookTiles();
+      disposePoleMarks();
       if (mesh) {
         mesh.geometry.dispose();
         material?.map?.dispose();
+        material?.userData?.nightUniform?.value?.dispose?.();
+        material?.userData?.normalUniform?.value?.dispose?.();
         material?.dispose();
       }
       nightMesh?.geometry?.dispose();
