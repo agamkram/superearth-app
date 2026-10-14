@@ -185,7 +185,7 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e109";
+const TEX_VER = "e110";
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
@@ -204,8 +204,7 @@ const LOD = {
 
 /**
  * Zoom-in tiles from one Next Gen master (never a full high-k wrap).
- * Day wraps/tiles at JPEG 85. tiles-16 engages at onDist; final close
- * tier (if present) sits under 1.15.
+ * Day wraps/tiles at JPEG 85. 16 at mid zoom; 32 under 1.15.
  */
 const TILE_EDGE = 0.22;
 const TILE_LEVELS = {
@@ -216,6 +215,14 @@ const TILE_LEVELS = {
     rows: 4,
     onDist: 1.5,
     radius: 1.0018,
+  },
+  32: {
+    label: "32",
+    folder: "tiles-32",
+    cols: 16,
+    rows: 8,
+    onDist: 1.15,
+    radius: 1.0022,
   },
 };
 
@@ -535,7 +542,7 @@ export function createEarthGlobe(canvas, options = {}) {
   const tileLoading = new Set();
   let tileWanted = new Set();
   let tilesEnabled = false;
-  /** @type {null | "16"} */
+  /** @type {null | "16" | "32"} */
   let tileLevel = null;
   let qualityLevel = "";
   const _tileLocal = new THREE.Vector3();
@@ -548,6 +555,7 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function pickTileLevel(dist) {
+    if (dist <= TILE_LEVELS[32].onDist) return TILE_LEVELS[32];
     if (dist <= TILE_LEVELS[16].onDist) return TILE_LEVELS[16];
     return null;
   }
