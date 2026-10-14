@@ -14,7 +14,7 @@ const HOME_FILL = 0.9;
  * Closest zoom (camera distance to Earth center; Earth radius = 1).
  * Was 1.55 before hi-res zoom tiles; open again so we can pick a new stop.
  */
-const MIN_DIST = 1.08;
+const MIN_DIST = 1.05;
 /**
  * Furthest zoom as a multiple of the opening (home) distance.
  * Opening stays the “start” framing; you can pull further out past it.
@@ -185,7 +185,7 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e111";
+const TEX_VER = "e112";
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
@@ -221,7 +221,7 @@ const TILE_LEVELS = {
     folder: "tiles-32",
     cols: 16,
     rows: 8,
-    onDist: 1.15,
+    onDist: 1.2,
     radius: 1.0022,
   },
 };
