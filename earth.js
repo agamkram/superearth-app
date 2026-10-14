@@ -185,7 +185,7 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e103";
+const TEX_VER = "e104";
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
@@ -203,8 +203,9 @@ const LOD = {
 };
 
 /**
- * Look patches from one Next Gen 42k master (never a full high-k wrap).
+ * Look patches from one Next Gen master (never a full high-k wrap).
  * Closer zoom → finer grid. Stops match the zoom readout (phone-tested).
+ * JPEG quality ~95 for 8k/16/21. No 42 level (crushed q looked worse).
  */
 const LOOK_EDGE = 0.22;
 const LOOK_LEVELS = {
@@ -223,14 +224,6 @@ const LOOK_LEVELS = {
     rows: 6,
     onDist: 1.5,
     radius: 1.0022,
-  },
-  42: {
-    label: "42",
-    folder: "look-42",
-    cols: 24,
-    rows: 12,
-    onDist: 1.25,
-    radius: 1.0026,
   },
 };
 
@@ -550,7 +543,7 @@ export function createEarthGlobe(canvas, options = {}) {
   const lookLoading = new Set();
   let lookWanted = new Set();
   let lookEnabled = false;
-  /** @type {null | "16" | "21" | "42"} */
+  /** @type {null | "16" | "21"} */
   let lookLevel = null;
   let qualityLevel = "";
   const _lookLocal = new THREE.Vector3();
@@ -563,7 +556,6 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function pickLookLevel(dist) {
-    if (dist <= LOOK_LEVELS[42].onDist) return LOOK_LEVELS[42];
     if (dist <= LOOK_LEVELS[21].onDist) return LOOK_LEVELS[21];
     if (dist <= LOOK_LEVELS[16].onDist) return LOOK_LEVELS[16];
     return null;
