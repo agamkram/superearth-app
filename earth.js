@@ -185,7 +185,7 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e110";
+const TEX_VER = "e111";
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
@@ -652,6 +652,17 @@ export function createEarthGlobe(canvas, options = {}) {
     tex.minFilter = THREE.LinearMipmapLinearFilter;
     tex.magFilter = THREE.LinearFilter;
     tex.generateMipmaps = true;
+    tex.needsUpdate = true;
+  }
+
+  /** Zoom tiles sit large on screen — skip mips so they stay crisp. */
+  function configureTileColor(tex) {
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.flipY = true;
+    tex.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
     tex.needsUpdate = true;
   }
 
@@ -1423,14 +1434,24 @@ export function createEarthGlobe(canvas, options = {}) {
     const v = THREE.MathUtils.clamp((90 - lat) / 180, 0, 0.9999);
     const c0 = Math.floor(u * level.cols);
     const r0 = Math.min(level.rows - 1, Math.floor(v * level.rows));
-    const fracC = u * level.cols - c0;
-    const fracR = v * level.rows - r0;
-    const cols = [c0];
-    const rows = [r0];
-    if (fracC < TILE_EDGE) cols.push(wrapCol(c0 - 1, level.cols));
-    if (fracC > 1 - TILE_EDGE) cols.push(wrapCol(c0 + 1, level.cols));
-    if (fracR < TILE_EDGE && r0 > 0) rows.push(r0 - 1);
-    if (fracR > 1 - TILE_EDGE && r0 < level.rows - 1) rows.push(r0 + 1);
+    const cols = new Set([c0]);
+    const rows = new Set([r0]);
+    // Fine grids: one tile is only ~22°. Close zoom sees past that, so
+    // pull a 3×3 ring or the view is mostly soft 8k around a sharp patch.
+    if (level.cols >= 12) {
+      for (let dc = -1; dc <= 1; dc++) cols.add(wrapCol(c0 + dc, level.cols));
+      for (let dr = -1; dr <= 1; dr++) {
+        const rr = r0 + dr;
+        if (rr >= 0 && rr < level.rows) rows.add(rr);
+      }
+    } else {
+      const fracC = u * level.cols - c0;
+      const fracR = v * level.rows - r0;
+      if (fracC < TILE_EDGE) cols.add(wrapCol(c0 - 1, level.cols));
+      if (fracC > 1 - TILE_EDGE) cols.add(wrapCol(c0 + 1, level.cols));
+      if (fracR < TILE_EDGE && r0 > 0) rows.add(r0 - 1);
+      if (fracR > 1 - TILE_EDGE && r0 < level.rows - 1) rows.add(r0 + 1);
+    }
     const keys = [];
     for (const r of rows) {
       for (const c of cols) keys.push(`${level.label}:${c}:${r}`);
@@ -1518,7 +1539,7 @@ export function createEarthGlobe(canvas, options = {}) {
           tex.dispose();
           return;
         }
-        configureColor(tex);
+        configureTileColor(tex);
         releaseDecodedImage(tex);
         ensureTileGroup();
         const piece = makeTilePatch(level, c, r, tex);
@@ -2530,7 +2551,8 @@ export function createEarthGlobe(canvas, options = {}) {
         0,
         1
       );
-      const speed = THREE.MathUtils.lerp(0.28, 0.55, z * z);
+      // Close zoom: slow orbit so a drag doesn't whip the surface away.
+      const speed = THREE.MathUtils.lerp(0.07, 0.55, z * z);
       readSpherical();
       spherical.theta -= (2 * Math.PI * dx * speed) / h;
       spherical.phi -= (2 * Math.PI * dy * speed) / h;
@@ -2649,9 +2671,16 @@ export function createEarthGlobe(canvas, options = {}) {
       panCamera(dx, dy);
     } else {
       const h = Math.max(height, 1);
+      const dist = camDist();
+      const z = THREE.MathUtils.clamp(
+        (dist - MIN_DIST) / Math.max(homeDist - MIN_DIST, 0.01),
+        0,
+        1
+      );
+      const speed = THREE.MathUtils.lerp(0.07, 0.55, z * z);
       readSpherical();
-      spherical.theta -= (2 * Math.PI * dx * 0.5) / h;
-      spherical.phi -= (2 * Math.PI * dy * 0.5) / h;
+      spherical.theta -= (2 * Math.PI * dx * speed) / h;
+      spherical.phi -= (2 * Math.PI * dy * speed) / h;
       writeCamera();
     }
   }
