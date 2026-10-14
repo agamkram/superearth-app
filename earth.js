@@ -185,7 +185,7 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e105";
+const TEX_VER = "e106";
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
@@ -204,8 +204,8 @@ const LOD = {
 
 /**
  * Zoom-in tiles from one Next Gen master (never a full high-k wrap).
- * Closer zoom → finer grid. Stops match the zoom readout (phone-tested).
- * JPEG quality ~95 for 8k/16/21.
+ * 16 is the only rung that clearly beats the 8k wrap (~2× linear).
+ * 21 was only ~1.3× over 16 and looked soft — dropped.
  */
 const TILE_EDGE = 0.22;
 const TILE_LEVELS = {
@@ -216,14 +216,6 @@ const TILE_LEVELS = {
     rows: 4,
     onDist: 3.5,
     radius: 1.0018,
-  },
-  21: {
-    label: "21",
-    folder: "tiles-21",
-    cols: 12,
-    rows: 6,
-    onDist: 1.5,
-    radius: 1.0022,
   },
 };
 
@@ -543,7 +535,7 @@ export function createEarthGlobe(canvas, options = {}) {
   const tileLoading = new Set();
   let tileWanted = new Set();
   let tilesEnabled = false;
-  /** @type {null | "16" | "21"} */
+  /** @type {null | "16"} */
   let tileLevel = null;
   let qualityLevel = "";
   const _tileLocal = new THREE.Vector3();
@@ -556,7 +548,6 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function pickTileLevel(dist) {
-    if (dist <= TILE_LEVELS[21].onDist) return TILE_LEVELS[21];
     if (dist <= TILE_LEVELS[16].onDist) return TILE_LEVELS[16];
     return null;
   }
