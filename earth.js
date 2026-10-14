@@ -185,7 +185,7 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e101";
+const TEX_VER = "e102";
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
@@ -202,12 +202,29 @@ const LOD = {
   },
 };
 
-/** 16k sharpness, but only the patch under the camera (8×4 grid of 2048 tiles). */
-const LOOK_COLS = 8;
-const LOOK_ROWS = 4;
+/**
+ * Look patches from one Next Gen source (never a full 16/21 wrap).
+ * Closer zoom → finer grid. Stops match the zoom readout (phone-tested).
+ */
 const LOOK_EDGE = 0.22;
-/** Turn look patches on at this camera distance and closer (matches zoom readout). */
-const LOOK_ON_DIST = 3.5;
+const LOOK_LEVELS = {
+  16: {
+    label: "16",
+    folder: "look-16",
+    cols: 8,
+    rows: 4,
+    onDist: 3.5,
+    radius: 1.0018,
+  },
+  21: {
+    label: "21",
+    folder: "look-21",
+    cols: 12,
+    rows: 6,
+    onDist: 1.5,
+    radius: 1.0022,
+  },
+};
 
 const NIGHT_VERT = `
   varying vec2 vUv;
@@ -525,7 +542,8 @@ export function createEarthGlobe(canvas, options = {}) {
   const lookLoading = new Set();
   let lookWanted = new Set();
   let lookEnabled = false;
-  let lookActive = false;
+  /** @type {null | "16" | "21"} */
+  let lookLevel = null;
   let qualityLevel = "";
   const _lookLocal = new THREE.Vector3();
   const _lookQuat = new THREE.Quaternion();
@@ -534,6 +552,12 @@ export function createEarthGlobe(canvas, options = {}) {
     if (qualityLevel === level) return;
     qualityLevel = level;
     if (typeof onQuality === "function") onQuality(level);
+  }
+
+  function pickLookLevel(dist) {
+    if (dist <= LOOK_LEVELS[21].onDist) return LOOK_LEVELS[21];
+    if (dist <= LOOK_LEVELS[16].onDist) return LOOK_LEVELS[16];
+    return null;
   }
   let atmosphere = null;
   let atmosphereMat = null;
@@ -805,7 +829,7 @@ export function createEarthGlobe(canvas, options = {}) {
         vec3 nightCol = pow(texture2D(uNight, planetUv).rgb, vec3(2.2));
         diffuseColor.rgb = mix(nightCol * 2.1, dayCol, day);
         float edge = min(min(vMapUv.x, 1.0 - vMapUv.x), min(vMapUv.y, 1.0 - vMapUv.y));
-        diffuseColor.a *= smoothstep(0.0, 0.12, edge) * mix(0.0, 1.0, day);`
+        diffuseColor.a *= smoothstep(0.0, 0.18, edge) * mix(0.0, 1.0, day);`
       );
     };
     return mat;
@@ -1376,8 +1400,8 @@ export function createEarthGlobe(canvas, options = {}) {
     );
   }
 
-  function wrapCol(c) {
-    return ((c % LOOK_COLS) + LOOK_COLS) % LOOK_COLS;
+  function wrapCol(c, cols) {
+    return ((c % cols) + cols) % cols;
   }
 
   function lookLonLat() {
@@ -1393,23 +1417,23 @@ export function createEarthGlobe(canvas, options = {}) {
     return { lat, lon };
   }
 
-  function neededLookKeys(lon, lat) {
+  function neededLookKeys(level, lon, lat) {
     let u = (lon + 180) / 360;
     u = ((u % 1) + 1) % 1;
     const v = THREE.MathUtils.clamp((90 - lat) / 180, 0, 0.9999);
-    const c0 = Math.floor(u * LOOK_COLS);
-    const r0 = Math.min(LOOK_ROWS - 1, Math.floor(v * LOOK_ROWS));
-    const fracC = u * LOOK_COLS - c0;
-    const fracR = v * LOOK_ROWS - r0;
+    const c0 = Math.floor(u * level.cols);
+    const r0 = Math.min(level.rows - 1, Math.floor(v * level.rows));
+    const fracC = u * level.cols - c0;
+    const fracR = v * level.rows - r0;
     const cols = [c0];
     const rows = [r0];
-    if (fracC < LOOK_EDGE) cols.push(wrapCol(c0 - 1));
-    if (fracC > 1 - LOOK_EDGE) cols.push(wrapCol(c0 + 1));
+    if (fracC < LOOK_EDGE) cols.push(wrapCol(c0 - 1, level.cols));
+    if (fracC > 1 - LOOK_EDGE) cols.push(wrapCol(c0 + 1, level.cols));
     if (fracR < LOOK_EDGE && r0 > 0) rows.push(r0 - 1);
-    if (fracR > 1 - LOOK_EDGE && r0 < LOOK_ROWS - 1) rows.push(r0 + 1);
+    if (fracR > 1 - LOOK_EDGE && r0 < level.rows - 1) rows.push(r0 + 1);
     const keys = [];
     for (const r of rows) {
-      for (const c of cols) keys.push(`${c}:${r}`);
+      for (const c of cols) keys.push(`${level.label}:${c}:${r}`);
     }
     return keys;
   }
@@ -1436,23 +1460,23 @@ export function createEarthGlobe(canvas, options = {}) {
     lookWanted = new Set();
     if (lookGroup) lookGroup.visible = false;
     for (const key of [...lookLive.keys()]) dropLook(key);
-    if (lookActive) {
-      lookActive = false;
+    if (lookLevel) {
+      lookLevel = null;
       reportQuality("8k");
     }
   }
 
-  function lookTileUrl(c, r) {
-    return `look-tiles/c${c}r${r}.jpg?v=${TEX_VER}`;
+  function lookTileUrl(level, c, r) {
+    return `${level.folder}/c${c}r${r}.jpg?v=${TEX_VER}`;
   }
 
-  function makeLookPatch(c, r, tex) {
-    const phiStart = (c / LOOK_COLS) * Math.PI * 2;
-    const phiLength = (1 / LOOK_COLS) * Math.PI * 2;
-    const thetaStart = (r / LOOK_ROWS) * Math.PI;
-    const thetaLength = (1 / LOOK_ROWS) * Math.PI;
+  function makeLookPatch(level, c, r, tex) {
+    const phiStart = (c / level.cols) * Math.PI * 2;
+    const phiLength = (1 / level.cols) * Math.PI * 2;
+    const thetaStart = (r / level.rows) * Math.PI;
+    const thetaLength = (1 / level.rows) * Math.PI;
     const geo = new THREE.SphereGeometry(
-      RADIUS * 1.0018,
+      RADIUS * level.radius,
       48,
       48,
       phiStart,
@@ -1465,21 +1489,28 @@ export function createEarthGlobe(canvas, options = {}) {
     const mat = makeLookMaterial(tex, nightU, normalU);
     const piece = new THREE.Mesh(geo, mat);
     piece.renderOrder = 1;
-    piece.userData.lookKey = `${c}:${r}`;
+    piece.userData.lookKey = `${level.label}:${c}:${r}`;
     return piece;
   }
 
-  function loadLookTile(key) {
+  function loadLookTile(level, key) {
     if (lookLive.has(key) || lookLoading.has(key) || disposed || !material) return;
     lookLoading.add(key);
-    const [cs, rs] = key.split(":");
-    const c = Number(cs);
-    const r = Number(rs);
+    const parts = key.split(":");
+    const c = Number(parts[1]);
+    const r = Number(parts[2]);
     loader.load(
-      lookTileUrl(c, r),
+      lookTileUrl(level, c, r),
       (tex) => {
         lookLoading.delete(key);
-        if (disposed || !lookEnabled || !lookGroup || !lookGroup.visible || !lookWanted.has(key)) {
+        if (
+          disposed ||
+          !lookEnabled ||
+          !lookGroup ||
+          !lookGroup.visible ||
+          !lookWanted.has(key) ||
+          lookLevel !== level.label
+        ) {
           tex.dispose();
           return;
         }
@@ -1490,13 +1521,10 @@ export function createEarthGlobe(canvas, options = {}) {
         configureColor(tex);
         releaseDecodedImage(tex);
         ensureLookGroup();
-        const piece = makeLookPatch(c, r, tex);
+        const piece = makeLookPatch(level, c, r, tex);
         lookGroup.add(piece);
         lookLive.set(key, piece);
-        if (!lookActive) {
-          lookActive = true;
-          reportQuality("16");
-        }
+        reportQuality(level.label);
         kick();
       },
       undefined,
@@ -1507,7 +1535,8 @@ export function createEarthGlobe(canvas, options = {}) {
   function updateLookTiles() {
     if (disposed || !lookEnabled || !mesh || !material) return;
     const dist = camDist();
-    if (dist > LOOK_ON_DIST) {
+    const level = pickLookLevel(dist);
+    if (!level) {
       hideLookTiles();
       return;
     }
@@ -1516,14 +1545,19 @@ export function createEarthGlobe(canvas, options = {}) {
       hideLookTiles();
       return;
     }
+    if (lookLevel && lookLevel !== level.label) {
+      for (const key of [...lookLive.keys()]) dropLook(key);
+      lookWanted = new Set();
+    }
+    lookLevel = level.label;
     ensureLookGroup();
     lookGroup.visible = true;
-    const want = new Set(neededLookKeys(at.lon, at.lat));
+    const want = new Set(neededLookKeys(level, at.lon, at.lat));
     lookWanted = want;
     for (const key of [...lookLive.keys()]) {
       if (!want.has(key)) dropLook(key);
     }
-    for (const key of want) loadLookTile(key);
+    for (const key of want) loadLookTile(level, key);
   }
 
   function captureSkyPose() {
