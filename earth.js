@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e145";
+export const BUILD = "e146";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -2356,23 +2356,11 @@ export function createEarthGlobe(canvas, options = {}) {
     return camDist() < homeDist - 1e-3;
   }
 
-  /** Orbit around geographic north (tipped axle when Grid is on). */
-  function orbitUpAxis(out) {
-    if (mesh && gridTilt > 1e-4) {
-      out.set(0, 1, 0).applyQuaternion(mesh.quaternion).normalize();
-    } else {
-      out.copy(_yUp);
-    }
-    return out;
-  }
-
+  // Camera stays world-up so a fixed sun stays fixed on screen.
+  // (Following the tipped axle rolls the view and makes the sun look like it moves.)
   function readSpherical() {
     _offset.copy(camera.position).sub(target);
     if (_offset.lengthSq() < 1e-12) _offset.set(0, 0, homeDist || 3);
-    orbitUpAxis(_orbitUp);
-    _orbitAlign.setFromUnitVectors(_yUp, _orbitUp);
-    _orbitAlignInv.copy(_orbitAlign).invert();
-    _offset.applyQuaternion(_orbitAlignInv);
     spherical.setFromVector3(_offset);
   }
 
@@ -2384,12 +2372,9 @@ export function createEarthGlobe(canvas, options = {}) {
       maxCamDist()
     );
     spherical.makeSafe();
-    orbitUpAxis(_orbitUp);
-    _orbitAlign.setFromUnitVectors(_yUp, _orbitUp);
     _offset.setFromSpherical(spherical);
-    _offset.applyQuaternion(_orbitAlign);
     camera.position.copy(target).add(_offset);
-    camera.up.copy(_orbitUp);
+    camera.up.copy(_yUp);
     camera.lookAt(target);
     // Near plane must be *closer* than the front of the sphere (dist − RADIUS).
     // Default near=0.05 clipped the moon when zoomed in → hard L/R edges.
@@ -3068,9 +3053,8 @@ export function createEarthGlobe(canvas, options = {}) {
       const s = u * u * (3 - 2 * u);
       gridTilt = gridTiltFrom + (gridTiltTarget - gridTiltFrom) * s;
       if (u >= 1) gridTilt = gridTiltTarget;
+      // Tip Earth only — leave camera alone so the sun stays put on screen.
       applyEphemeris();
-      readSpherical();
-      writeCamera();
       tilting = gridTilt !== gridTiltTarget;
     }
     if (orbiting) {
