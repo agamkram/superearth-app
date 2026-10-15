@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e144";
+export const BUILD = "e145";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1880,18 +1880,16 @@ export function createEarthGlobe(canvas, options = {}) {
     } catch (_) {}
 
     const placeLon = orientLocked ? frozenLon : observerLon;
-    // Upright: seasons in the sun's latitude. Tipped: seasons in the axle.
-    // Hand off sunLat δ→0 as we tip, but keep the sun in the *untilted*
-    // frame — if the sun rides the tip, north stays 90° from it (eternal equinox).
-    const sunLat = sub.lat * (1 - gridTilt);
+    // Day/night is world normal · uSunDir — sun can stay fixed while Earth moves.
+    // Lon-only frame sets today's sun; tip is applied to the mesh only.
     const yLon = -Math.PI / 2 - THREE.MathUtils.degToRad(placeLon);
     _lonEuler.set(0, yLon, 0);
     _lonQuat.setFromEuler(_lonEuler);
+    const sunWorld = latLonToLocal(sub.lat, sub.lon, 12).applyQuaternion(_lonQuat);
     if (mesh) {
       mesh.quaternion.copy(_lonQuat);
       if (gridTilt > 1e-5) {
-        const sunForTip = latLonToLocal(0, sub.lon, 1).applyQuaternion(_lonQuat);
-        _tipAxis.crossVectors(_yUp, sunForTip);
+        _tipAxis.crossVectors(_yUp, sunWorld);
         if (_tipAxis.lengthSq() > 1e-8) {
           _tipAxis.normalize();
           _tipQ.setFromAxisAngle(_tipAxis, earthObliquityRad() * gridTilt);
@@ -1903,8 +1901,6 @@ export function createEarthGlobe(canvas, options = {}) {
     moonGroup.rotation.set(0, 0, 0);
     moonGroup.position.copy(target);
 
-    // Sun stays untilted; Earth tips under it.
-    const sunWorld = latLonToLocal(sunLat, sub.lon, 12).applyQuaternion(_lonQuat);
     key.position.copy(target).add(sunWorld);
     key.target.position.copy(target);
     sunDir.copy(sunWorld).normalize();
