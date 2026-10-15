@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e136";
+export const BUILD = "e137";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1150,7 +1150,7 @@ export function createEarthGlobe(canvas, options = {}) {
   /** Visible end past each pole was 0.07R; ×3 → 0.21R. Width 2px (was 1px). */
   const AXIS_EXT = RADIUS * (1 + 0.07 * 3);
   const AXIS_RADIUS = 0.01;
-  const AXIS_PX = 2;
+  const AXIS_PX = 1.35;
   const GRID_STEP = 15;
   const GRID_SEGS = 128;
   let gridGroup = null;
@@ -1187,7 +1187,6 @@ export function createEarthGlobe(canvas, options = {}) {
   function buildGrid() {
     disposeGrid();
     const fine = [];
-    const strong = [];
     // Parallels (skip poles)
     for (let lat = -90 + GRID_STEP; lat <= 90 - GRID_STEP; lat += GRID_STEP) {
       const pts = [];
@@ -1195,7 +1194,7 @@ export function createEarthGlobe(canvas, options = {}) {
         const lon = (i / GRID_SEGS) * 360 - 180;
         pts.push(latLonToLocal(lat, lon, GRID_R));
       }
-      pushArc(lat === 0 ? strong : fine, pts);
+      pushArc(fine, pts);
     }
     // Meridians
     for (let lon = -180; lon < 180; lon += GRID_STEP) {
@@ -1204,7 +1203,7 @@ export function createEarthGlobe(canvas, options = {}) {
         const lat = (i / GRID_SEGS) * 180 - 90;
         pts.push(latLonToLocal(lat, lon, GRID_R));
       }
-      pushArc(lon === 0 ? strong : fine, pts);
+      pushArc(fine, pts);
     }
     // Polar axle: 2px-wide rod; ends stick out 3× the original visible length
     const axisGeo = new THREE.CylinderGeometry(
@@ -1225,8 +1224,7 @@ export function createEarthGlobe(canvas, options = {}) {
     axisMesh.renderOrder = 2;
     gridGroup = new THREE.Group();
     gridGroup.name = "globe-grid";
-    gridGroup.add(makeLineObj(fine, 0.28, "grid-fine"));
-    gridGroup.add(makeLineObj(strong, 0.55, "grid-strong"));
+    gridGroup.add(makeLineObj(fine, 0.32, "grid-fine"));
     gridGroup.add(axisMesh);
     gridGroup.visible = gridOn;
     if (mesh) mesh.add(gridGroup);
