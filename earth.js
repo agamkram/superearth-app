@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e133";
+export const BUILD = "e134";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1039,16 +1039,22 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function updatePoleScale() {
-    if (!poleMarks.length) return;
     const dist = Math.max(camDist(), MIN_DIST);
-    const span = Math.max(homeDist - MIN_DIST, 0.01);
-    const zoomIn = 1 - THREE.MathUtils.clamp((dist - MIN_DIST) / span, 0, 1);
-    const px = THREE.MathUtils.lerp(POLE_PX_FAR, POLE_PX_NEAR, zoomIn);
     const h = Math.max(height || window.innerHeight || 1, 1);
     const vFov = THREE.MathUtils.degToRad(BASE_FOV);
-    const world = (px * dist * 2 * Math.tan(vFov / 2)) / h;
-    const s = world / (POLE_GEO_R * 2);
-    for (const mark of poleMarks) mark.scale.setScalar(s);
+    const worldPerPx = (dist * 2 * Math.tan(vFov / 2)) / h;
+    if (poleMarks.length) {
+      const span = Math.max(homeDist - MIN_DIST, 0.01);
+      const zoomIn = 1 - THREE.MathUtils.clamp((dist - MIN_DIST) / span, 0, 1);
+      const px = THREE.MathUtils.lerp(POLE_PX_FAR, POLE_PX_NEAR, zoomIn);
+      const s = (px * worldPerPx) / (POLE_GEO_R * 2);
+      for (const mark of poleMarks) mark.scale.setScalar(s);
+    }
+    // Axis width: was 1px hairline → keep 2px (double) at every zoom
+    if (axisMesh) {
+      const s = (AXIS_PX * worldPerPx) / (AXIS_RADIUS * 2);
+      axisMesh.scale.set(s, 1, s);
+    }
   }
 
   /**
@@ -1142,12 +1148,14 @@ export function createEarthGlobe(canvas, options = {}) {
 
   /** Classic globe grid: polar axis, equator, 15° lat/lon lines. */
   const GRID_R = RADIUS * 1.0018;
-  /** Stub past each pole was 0.07R; height ×3. Diameter was a hairline; now a rod ×2 of a fine axle. */
+  /** Was half-length 1.07R (0.07R stubs). Height ×3 → 0.21R stubs. Width was 1px → 2px. */
   const AXIS_EXT = RADIUS * (1 + 0.07 * 3);
-  const AXIS_RADIUS = 0.004 * 2;
+  const AXIS_RADIUS = 0.01;
+  const AXIS_PX = 2;
   const GRID_STEP = 15;
   const GRID_SEGS = 128;
   let gridGroup = null;
+  let axisMesh = null;
   let gridOn = false;
 
   function pushArc(positions, pts) {
@@ -1199,12 +1207,12 @@ export function createEarthGlobe(canvas, options = {}) {
       }
       pushArc(lon === 0 ? strong : fine, pts);
     }
-    // Polar axle (geographic): thin rod through the poles, stubs past the surface
+    // Polar axle: same idea as the old 1px line, 2× wide and 3× stub height
     const axisGeo = new THREE.CylinderGeometry(
       AXIS_RADIUS,
       AXIS_RADIUS,
       AXIS_EXT * 2,
-      12
+      10
     );
     const axisMat = new THREE.MeshBasicMaterial({
       color: 0xd4deec,
@@ -1213,16 +1221,17 @@ export function createEarthGlobe(canvas, options = {}) {
       depthWrite: false,
       toneMapped: false,
     });
-    const axis = new THREE.Mesh(axisGeo, axisMat);
-    axis.name = "grid-axis";
-    axis.renderOrder = 2;
+    axisMesh = new THREE.Mesh(axisGeo, axisMat);
+    axisMesh.name = "grid-axis";
+    axisMesh.renderOrder = 2;
     gridGroup = new THREE.Group();
     gridGroup.name = "globe-grid";
     gridGroup.add(makeLineObj(fine, 0.28, "grid-fine"));
     gridGroup.add(makeLineObj(strong, 0.55, "grid-strong"));
-    gridGroup.add(axis);
+    gridGroup.add(axisMesh);
     gridGroup.visible = gridOn;
     if (mesh) mesh.add(gridGroup);
+    updatePoleScale();
   }
 
   function disposeGrid() {
@@ -1233,6 +1242,7 @@ export function createEarthGlobe(canvas, options = {}) {
       obj.material?.dispose();
     });
     gridGroup = null;
+    axisMesh = null;
   }
 
   function setGrid(on) {
