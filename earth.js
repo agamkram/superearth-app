@@ -185,7 +185,7 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e124";
+const TEX_VER = "e125";
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
@@ -532,12 +532,12 @@ export function createEarthGlobe(canvas, options = {}) {
   const sunDir = new THREE.Vector3(1, 0, 0);
   const sunDirUniform = { value: sunDir };
   const sunOnUniform = { value: 1 };
-  /** Temp day-look knobs (topo always on). Brighter defaults than the old 1.16 pack. */
+  /** Day look — locked from Mark's dial-in (bright 1.60 · topo 2.00). */
   const dayLook = {
-    landGain: 1.32,
+    landGain: 1.6,
     shadeMin: 0.9,
     shadeMax: 1.14,
-    reliefStr: 1.4,
+    reliefStr: 2.0,
     slope: 1.35,
   };
   const uLandGain = { value: dayLook.landGain };
@@ -2011,25 +2011,6 @@ export function createEarthGlobe(canvas, options = {}) {
     return sunOnUniform.value > 0.5;
   }
 
-  function getDayLook() {
-    return { ...dayLook };
-  }
-
-  function setDayLook(partial = {}) {
-    if (Number.isFinite(partial.landGain)) dayLook.landGain = partial.landGain;
-    if (Number.isFinite(partial.shadeMin)) dayLook.shadeMin = partial.shadeMin;
-    if (Number.isFinite(partial.shadeMax)) dayLook.shadeMax = partial.shadeMax;
-    if (Number.isFinite(partial.reliefStr)) dayLook.reliefStr = partial.reliefStr;
-    if (Number.isFinite(partial.slope)) dayLook.slope = partial.slope;
-    uLandGain.value = dayLook.landGain;
-    uShadeMin.value = dayLook.shadeMin;
-    uShadeMax.value = dayLook.shadeMax;
-    uReliefStr.value = dayLook.reliefStr;
-    uSlope.value = dayLook.slope;
-    kick();
-    return getDayLook();
-  }
-
   function setObserver(lat, lon) {
     let la = Number(lat);
     let lo = Number(lon);
@@ -2486,7 +2467,7 @@ export function createEarthGlobe(canvas, options = {}) {
   // —— Touch + pointer: 2fs pans the canvas (CSS) so movement is always visible ——
 
   const UI_HIT =
-    "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#mission-sheet,#fact-sheet,.cycle,.slider-track,.cycle-controls,.m-cell-fact,.vision-btn,.geo-btn,.live-btn,.sun-btn,.day-look,#day-look,.fact-sheet-inner,.fact-sheet-scrim";
+    "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#mission-sheet,#fact-sheet,.cycle,.slider-track,.cycle-controls,.m-cell-fact,.vision-btn,.geo-btn,.live-btn,.sun-btn,.fact-sheet-inner,.fact-sheet-scrim";
 
   function eventPoint(e) {
     if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
@@ -2863,8 +2844,6 @@ export function createEarthGlobe(canvas, options = {}) {
     setClouds,
     setAurora,
     setSun,
-    getDayLook,
-    setDayLook,
     setTime,
     setOrbiting,
     isOrbiting,
