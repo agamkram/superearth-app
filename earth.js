@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e140";
+export const BUILD = "e141";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1248,13 +1248,6 @@ export function createEarthGlobe(canvas, options = {}) {
     axisMesh = null;
   }
 
-  /** 0 = poles straight up; 1 = tipped by today's axial tilt. */
-  let gridTilt = 0;
-  let gridTiltFrom = 0;
-  let gridTiltTarget = 0;
-  let gridTiltAnimStart = 0;
-  const GRID_TILT_MS = 1000;
-
   function earthObliquityRad() {
     const A = globalThis.Astronomy;
     try {
@@ -1270,9 +1263,6 @@ export function createEarthGlobe(canvas, options = {}) {
   function setGrid(on) {
     gridOn = !!on;
     if (gridGroup) gridGroup.visible = gridOn;
-    gridTiltFrom = gridTilt;
-    gridTiltTarget = gridOn ? 1 : 0;
-    gridTiltAnimStart = performance.now();
     kick();
     return gridOn;
   }
@@ -1879,20 +1869,17 @@ export function createEarthGlobe(canvas, options = {}) {
 
     const placeLon = orientLocked ? frozenLon : observerLon;
     if (mesh) {
-      // Longitude only. The camera, not the planet, sits on the user's
-      // latitude — otherwise a spin that keeps the US upright rolls Africa.
-      // Grid mode tips north toward today's sun by Earth's axial tilt.
+      // Real axial tilt always: longitude, then tip north toward today's sun.
+      // Camera (not the planet roll) still carries the user's latitude.
       const yLon = -Math.PI / 2 - THREE.MathUtils.degToRad(placeLon);
       mesh.quaternion.setFromEuler(new THREE.Euler(0, yLon, 0, "XYZ"));
-      if (gridTilt > 1e-5) {
-        const sunForTip = latLonToLocal(sub.lat, sub.lon, 1);
-        sunForTip.applyQuaternion(mesh.quaternion);
-        _tipAxis.crossVectors(_yUp, sunForTip);
-        if (_tipAxis.lengthSq() > 1e-8) {
-          _tipAxis.normalize();
-          _tipQ.setFromAxisAngle(_tipAxis, earthObliquityRad() * gridTilt);
-          mesh.quaternion.premultiply(_tipQ);
-        }
+      const sunForTip = latLonToLocal(sub.lat, sub.lon, 1);
+      sunForTip.applyQuaternion(mesh.quaternion);
+      _tipAxis.crossVectors(_yUp, sunForTip);
+      if (_tipAxis.lengthSq() > 1e-8) {
+        _tipAxis.normalize();
+        _tipQ.setFromAxisAngle(_tipAxis, earthObliquityRad());
+        mesh.quaternion.premultiply(_tipQ);
       }
       mesh.rotation.setFromQuaternion(mesh.quaternion, "XYZ");
     }
@@ -2356,9 +2343,9 @@ export function createEarthGlobe(canvas, options = {}) {
     return camDist() < homeDist - 1e-3;
   }
 
-  /** Orbit around geographic north (tipped with Grid, else world up). */
+  /** Orbit around geographic north (Earth's tipped axle). */
   function orbitUpAxis(out) {
-    if (mesh && gridTilt > 1e-4) {
+    if (mesh) {
       out.set(0, 1, 0).applyQuaternion(mesh.quaternion).normalize();
     } else {
       out.copy(_yUp);
@@ -3057,23 +3044,8 @@ export function createEarthGlobe(canvas, options = {}) {
     if (disposed) return;
     animId = 0;
     if (typeof document !== "undefined" && document.hidden) return;
-    const t = typeof now === "number" ? now : performance.now();
-    let tilting = false;
-    if (gridTilt !== gridTiltTarget) {
-      const u = THREE.MathUtils.clamp(
-        (t - gridTiltAnimStart) / GRID_TILT_MS,
-        0,
-        1
-      );
-      const s = u * u * (3 - 2 * u);
-      gridTilt = gridTiltFrom + (gridTiltTarget - gridTiltFrom) * s;
-      if (u >= 1) gridTilt = gridTiltTarget;
-      applyEphemeris();
-      readSpherical();
-      writeCamera();
-      tilting = gridTilt !== gridTiltTarget;
-    }
     if (orbiting) {
+      const t = typeof now === "number" ? now : performance.now();
       if (!lastOrbitMs) lastOrbitMs = t;
       const dt = Math.min(0.05, (t - lastOrbitMs) / 1000);
       lastOrbitMs = t;
@@ -3087,7 +3059,7 @@ export function createEarthGlobe(canvas, options = {}) {
     if (missionMode !== "off") updateMissionPinFacing();
     updateTiles();
     renderer.render(scene, camera);
-    if (orbiting || oneFinger || twoFinger || tilting) kick();
+    if (orbiting || oneFinger || twoFinger) kick();
   }
 
   applyEphemeris();
