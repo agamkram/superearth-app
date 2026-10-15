@@ -185,7 +185,7 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e117";
+const TEX_VER = "e118";
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
@@ -206,7 +206,6 @@ const LOD = {
  * Zoom-in tiles from one Next Gen master (never a full high-k wrap).
  * Day wraps/tiles at JPEG 85. 16 at mid zoom; 32 under 1.5.
  */
-const TILE_EDGE = 0.22;
 const TILE_LEVELS = {
   16: {
     label: "16",
@@ -548,7 +547,10 @@ export function createEarthGlobe(canvas, options = {}) {
   let tileLevel = null;
   let qualityLevel = "";
   const _tileLocal = new THREE.Vector3();
-  const _tileQuat = new THREE.Quaternion();
+  const _tileHit = new THREE.Vector3();
+  const _tileNdc = new THREE.Vector2(0, 0);
+  const _tileRay = new THREE.Raycaster();
+  const _earthSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), RADIUS);
 
   function reportQuality(level) {
     if (qualityLevel === level) return;
@@ -1423,11 +1425,25 @@ export function createEarthGlobe(canvas, options = {}) {
     return ((c % cols) + cols) % cols;
   }
 
+  /**
+   * Lon/lat under the *screen center* (not the orbit pivot). After a pan the
+   * pivot and the view diverge — aiming tiles at the pivot left soft 8k on
+   * screen while the sharp patch sat elsewhere.
+   */
   function viewLonLat() {
     if (!mesh) return null;
-    _tileLocal.copy(camera.position).sub(target);
-    mesh.getWorldQuaternion(_tileQuat);
-    _tileLocal.applyQuaternion(_tileQuat.invert());
+    camera.updateMatrixWorld(true);
+    _tileRay.setFromCamera(_tileNdc, camera);
+    const hit = _tileRay.ray.intersectSphere(_earthSphere, _tileHit);
+    if (hit) {
+      _tileLocal.copy(hit);
+    } else {
+      // Off-limb: nearest point on the globe to the view ray
+      _tileRay.ray.closestPointToPoint(_earthSphere.center, _tileHit);
+      if (_tileHit.lengthSq() < 1e-12) _tileHit.copy(camera.position);
+      _tileLocal.copy(_tileHit).normalize().multiplyScalar(RADIUS);
+    }
+    mesh.worldToLocal(_tileLocal);
     _tileLocal.normalize();
     const lat = THREE.MathUtils.radToDeg(
       Math.asin(THREE.MathUtils.clamp(_tileLocal.y, -1, 1))
@@ -1436,33 +1452,30 @@ export function createEarthGlobe(canvas, options = {}) {
     return { lat, lon };
   }
 
-  function neededTileKeys(level, lon, lat) {
+  /** How many neighbor rings to cover the close-up view. */
+  function tileRing(level) {
+    // 32 tiles are 22.5°; at ~1.2 the visible disk is ~30°+ — need 2 rings.
+    // 16 tiles are 45°; one ring is enough for mid zoom.
+    return level.cols >= 12 ? 2 : 1;
+  }
+
+  function neededTileKeys(level, lon, lat, ring) {
     let u = (lon + 180) / 360;
     u = ((u % 1) + 1) % 1;
     const v = THREE.MathUtils.clamp((90 - lat) / 180, 0, 0.9999);
     const c0 = Math.floor(u * level.cols);
     const r0 = Math.min(level.rows - 1, Math.floor(v * level.rows));
-    const cols = new Set([c0]);
-    const rows = new Set([r0]);
-    // Fine grids: one tile is only ~22°. Close zoom sees past that, so
-    // pull a 3×3 ring or the view is mostly soft 8k around a sharp patch.
-    if (level.cols >= 12) {
-      for (let dc = -1; dc <= 1; dc++) cols.add(wrapCol(c0 + dc, level.cols));
-      for (let dr = -1; dr <= 1; dr++) {
-        const rr = r0 + dr;
-        if (rr >= 0 && rr < level.rows) rows.add(rr);
-      }
-    } else {
-      const fracC = u * level.cols - c0;
-      const fracR = v * level.rows - r0;
-      if (fracC < TILE_EDGE) cols.add(wrapCol(c0 - 1, level.cols));
-      if (fracC > 1 - TILE_EDGE) cols.add(wrapCol(c0 + 1, level.cols));
-      if (fracR < TILE_EDGE && r0 > 0) rows.add(r0 - 1);
-      if (fracR > 1 - TILE_EDGE && r0 < level.rows - 1) rows.add(r0 + 1);
+    const cols = new Set();
+    const rows = new Set();
+    const r = Math.max(0, ring | 0);
+    for (let dc = -r; dc <= r; dc++) cols.add(wrapCol(c0 + dc, level.cols));
+    for (let dr = -r; dr <= r; dr++) {
+      const rr = r0 + dr;
+      if (rr >= 0 && rr < level.rows) rows.add(rr);
     }
     const keys = [];
-    for (const r of rows) {
-      for (const c of cols) keys.push(`${level.label}:${c}:${r}`);
+    for (const row of rows) {
+      for (const c of cols) keys.push(`${level.label}:${c}:${row}`);
     }
     return keys;
   }
@@ -1581,10 +1594,13 @@ export function createEarthGlobe(canvas, options = {}) {
     tileLevel = level.label;
     ensureTileGroup();
     tileGroup.visible = true;
-    const want = new Set(neededTileKeys(level, at.lon, at.lat));
+    const ring = tileRing(level);
+    const want = new Set(neededTileKeys(level, at.lon, at.lat, ring));
+    // Keep one extra ring so a drag doesn't flash soft 8k while neighbors load.
+    const keep = new Set(neededTileKeys(level, at.lon, at.lat, ring + 1));
     tileWanted = want;
     for (const key of [...tileLive.keys()]) {
-      if (!want.has(key)) dropTile(key);
+      if (!keep.has(key)) dropTile(key);
     }
     for (const key of want) loadTile(level, key);
   }
