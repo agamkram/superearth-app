@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e131";
+export const BUILD = "e132";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -898,6 +898,7 @@ export function createEarthGlobe(canvas, options = {}) {
     if (auroraMesh) mesh.add(auroraMesh);
     if (tileGroup) mesh.add(tileGroup);
     if (borderLines) mesh.add(borderLines);
+    if (gridGroup) mesh.add(gridGroup);
     moonGroup.add(mesh);
     ensureAtmosphere();
     attachMissionPins(mesh);
@@ -1026,20 +1027,13 @@ export function createEarthGlobe(canvas, options = {}) {
     poleGeo = new THREE.CircleGeometry(POLE_GEO_R, 24);
     poleGroup = new THREE.Group();
     poleGroup.name = "pole-marks";
-    // Geographic axis poles
-    const north = makePoleBadge("N");
-    placePoleMark(north, 90, 0);
-    const south = makePoleBadge("S");
-    placePoleMark(south, -90, 0);
-    // Magnetic dip poles (WMM 2025)
+    // Magnetic dip poles only — geographic N/S are the grid axis ends
     for (const m of MAG_POLES) {
       const mark = makePoleBadge(m.letter, m.stroke);
       placePoleMark(mark, m.lat, m.lon);
       poleGroup.add(mark);
       poleMarks.push(mark);
     }
-    poleGroup.add(north, south);
-    poleMarks.push(north, south);
     parentMesh.add(poleGroup);
     updatePoleScale();
   }
@@ -1144,6 +1138,94 @@ export function createEarthGlobe(canvas, options = {}) {
     if (borderLines) borderLines.visible = bordersOn;
     kick();
     return bordersOn;
+  }
+
+  /** Classic globe grid: polar axis, equator, 15° lat/lon lines. */
+  const GRID_R = RADIUS * 1.0018;
+  const AXIS_EXT = RADIUS * 1.07;
+  const GRID_STEP = 15;
+  const GRID_SEGS = 128;
+  let gridGroup = null;
+  let gridOn = false;
+
+  function pushArc(positions, pts) {
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    }
+  }
+
+  function makeLineObj(positions, opacity, name) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(new Float32Array(positions), 3)
+    );
+    const mat = new THREE.LineBasicMaterial({
+      color: 0xd4deec,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const lines = new THREE.LineSegments(geo, mat);
+    lines.name = name;
+    lines.renderOrder = 2;
+    return lines;
+  }
+
+  function buildGrid() {
+    disposeGrid();
+    const fine = [];
+    const strong = [];
+    // Parallels (skip poles)
+    for (let lat = -90 + GRID_STEP; lat <= 90 - GRID_STEP; lat += GRID_STEP) {
+      const pts = [];
+      for (let i = 0; i <= GRID_SEGS; i++) {
+        const lon = (i / GRID_SEGS) * 360 - 180;
+        pts.push(latLonToLocal(lat, lon, GRID_R));
+      }
+      pushArc(lat === 0 ? strong : fine, pts);
+    }
+    // Meridians
+    for (let lon = -180; lon < 180; lon += GRID_STEP) {
+      const pts = [];
+      for (let i = 0; i <= GRID_SEGS; i++) {
+        const lat = (i / GRID_SEGS) * 180 - 90;
+        pts.push(latLonToLocal(lat, lon, GRID_R));
+      }
+      pushArc(lon === 0 ? strong : fine, pts);
+    }
+    // Polar axis (geographic), slightly past the surface like a globe axle
+    const axis = [
+      0, -AXIS_EXT, 0,
+      0, AXIS_EXT, 0,
+    ];
+    gridGroup = new THREE.Group();
+    gridGroup.name = "globe-grid";
+    gridGroup.add(makeLineObj(fine, 0.28, "grid-fine"));
+    gridGroup.add(makeLineObj(strong, 0.55, "grid-strong"));
+    gridGroup.add(makeLineObj(axis, 0.82, "grid-axis"));
+    gridGroup.visible = gridOn;
+    if (mesh) mesh.add(gridGroup);
+  }
+
+  function disposeGrid() {
+    if (!gridGroup) return;
+    if (gridGroup.parent) gridGroup.parent.remove(gridGroup);
+    gridGroup.traverse((obj) => {
+      obj.geometry?.dispose();
+      obj.material?.dispose();
+    });
+    gridGroup = null;
+  }
+
+  function setGrid(on) {
+    gridOn = !!on;
+    if (gridGroup) gridGroup.visible = gridOn;
+    kick();
+    return gridOn;
   }
 
   function disposeMissionPins() {
@@ -2921,6 +3003,7 @@ export function createEarthGlobe(canvas, options = {}) {
   applyEphemeris();
   loadLow();
   loadBorders();
+  buildGrid();
   fitToHost();
   applyHomeFraming();
   kick();
@@ -2932,6 +3015,7 @@ export function createEarthGlobe(canvas, options = {}) {
     setObserver,
     setClouds,
     setBorders,
+    setGrid,
     setAurora,
     setAuroraShown,
     setSun,
@@ -2969,6 +3053,7 @@ export function createEarthGlobe(canvas, options = {}) {
       hideTiles();
       disposePoleMarks();
       disposeBorders();
+      disposeGrid();
       if (mesh) {
         mesh.geometry.dispose();
         material?.map?.dispose();
