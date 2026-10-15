@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e146";
+export const BUILD = "e147";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -512,6 +512,10 @@ export function createEarthGlobe(canvas, options = {}) {
 
   const moonGroup = new THREE.Group();
   scene.add(moonGroup);
+  /** Tips under a fixed sun; mesh under this only carries longitude. */
+  const earthTilt = new THREE.Group();
+  earthTilt.name = "earth-tilt";
+  moonGroup.add(earthTilt);
 
   const loader = new THREE.TextureLoader();
   let mesh = null;
@@ -643,7 +647,7 @@ export function createEarthGlobe(canvas, options = {}) {
   const _orbitAlign = new THREE.Quaternion();
   const _orbitAlignInv = new THREE.Quaternion();
   const _tipAxis = new THREE.Vector3();
-  const _tipQ = new THREE.Quaternion();
+  const _sunFlat = new THREE.Vector3();
   const _lonQuat = new THREE.Quaternion();
   const _lonEuler = new THREE.Euler(0, 0, 0, "XYZ");
   let prevCamDist = homeDist;
@@ -907,7 +911,7 @@ export function createEarthGlobe(canvas, options = {}) {
     if (tileGroup) mesh.add(tileGroup);
     if (borderLines) mesh.add(borderLines);
     if (gridGroup) mesh.add(gridGroup);
-    moonGroup.add(mesh);
+    earthTilt.add(mesh);
     ensureAtmosphere();
     attachMissionPins(mesh);
     attachPoleMarks(mesh);
@@ -1880,23 +1884,26 @@ export function createEarthGlobe(canvas, options = {}) {
     } catch (_) {}
 
     const placeLon = orientLocked ? frozenLon : observerLon;
-    // Day/night is world normal · uSunDir — sun can stay fixed while Earth moves.
-    // Lon-only frame sets today's sun; tip is applied to the mesh only.
+    // Sun is fixed in world (day/night = world normal · uSunDir).
+    // Longitude spins the Earth under that sun; Grid tips earthTilt only.
     const yLon = -Math.PI / 2 - THREE.MathUtils.degToRad(placeLon);
     _lonEuler.set(0, yLon, 0);
     _lonQuat.setFromEuler(_lonEuler);
     const sunWorld = latLonToLocal(sub.lat, sub.lon, 12).applyQuaternion(_lonQuat);
-    if (mesh) {
-      mesh.quaternion.copy(_lonQuat);
-      if (gridTilt > 1e-5) {
-        _tipAxis.crossVectors(_yUp, sunWorld);
-        if (_tipAxis.lengthSq() > 1e-8) {
-          _tipAxis.normalize();
-          _tipQ.setFromAxisAngle(_tipAxis, earthObliquityRad() * gridTilt);
-          mesh.quaternion.premultiply(_tipQ);
-        }
-      }
-      mesh.rotation.setFromQuaternion(mesh.quaternion, "XYZ");
+    // Longitude on the mesh only (euler). Tip on the parent group — never
+    // combine both on one quaternion (Euler sync was eating the tip).
+    if (mesh) mesh.rotation.set(0, yLon, 0);
+    if (gridTilt > 1e-5) {
+      _sunFlat.set(sunWorld.x, 0, sunWorld.z);
+      if (_sunFlat.lengthSq() < 1e-8) _sunFlat.set(1, 0, 0);
+      _sunFlat.normalize();
+      _tipAxis.crossVectors(_yUp, _sunFlat).normalize();
+      earthTilt.quaternion.setFromAxisAngle(
+        _tipAxis,
+        earthObliquityRad() * gridTilt
+      );
+    } else {
+      earthTilt.quaternion.identity();
     }
     moonGroup.rotation.set(0, 0, 0);
     moonGroup.position.copy(target);
