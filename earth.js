@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e128";
+export const BUILD = "e131";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -582,6 +582,7 @@ export function createEarthGlobe(canvas, options = {}) {
     .catch(() => null);
   let auroraMat = null;
   let auroraTex = null;
+  let auroraShown = true;
   let auroraHas = false;
   let frozenLat = 0;
   let frozenLon = 0;
@@ -1070,7 +1071,7 @@ export function createEarthGlobe(canvas, options = {}) {
     );
   }
 
-  /** Natural Earth 50m country borders — hairline shell just above the surface. */
+  /** Natural Earth 50m land borders + coastlines — hairline shell just above the surface. */
   const BORDER_R = RADIUS * 1.0012;
   let borderLines = null;
   let bordersOn = false;
@@ -1124,7 +1125,7 @@ export function createEarthGlobe(canvas, options = {}) {
         const mat = new THREE.LineBasicMaterial({
           color: 0xd4deec,
           transparent: true,
-          opacity: 0.4,
+          opacity: 0.7,
           depthWrite: false,
           toneMapped: false,
         });
@@ -2080,9 +2081,16 @@ export function createEarthGlobe(canvas, options = {}) {
       }
     }
     auroraHas = any;
-    auroraMesh.visible = auroraHas;
+    auroraMesh.visible = auroraShown && auroraHas;
     kick();
     return any;
+  }
+
+  function setAuroraShown(on) {
+    auroraShown = !!on;
+    if (auroraMesh) auroraMesh.visible = auroraShown && auroraHas;
+    kick();
+    return auroraShown;
   }
 
   function setSun(on) {
@@ -2925,6 +2933,7 @@ export function createEarthGlobe(canvas, options = {}) {
     setClouds,
     setBorders,
     setAurora,
+    setAuroraShown,
     setSun,
     setTime,
     setOrbiting,
