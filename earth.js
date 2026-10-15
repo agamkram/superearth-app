@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e143";
+export const BUILD = "e144";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -644,6 +644,8 @@ export function createEarthGlobe(canvas, options = {}) {
   const _orbitAlignInv = new THREE.Quaternion();
   const _tipAxis = new THREE.Vector3();
   const _tipQ = new THREE.Quaternion();
+  const _lonQuat = new THREE.Quaternion();
+  const _lonEuler = new THREE.Euler(0, 0, 0, "XYZ");
   let prevCamDist = homeDist;
   /** @type {null | { x: number, y: number }} */
   let oneFinger = null;
@@ -1878,16 +1880,17 @@ export function createEarthGlobe(canvas, options = {}) {
     } catch (_) {}
 
     const placeLon = orientLocked ? frozenLon : observerLon;
-    // Upright: seasons live in the sun's latitude. Tipped: seasons live in
-    // the axle. As Grid eases, hand that off so the sun does not ride the tip.
+    // Upright: seasons in the sun's latitude. Tipped: seasons in the axle.
+    // Hand off sunLat δ→0 as we tip, but keep the sun in the *untilted*
+    // frame — if the sun rides the tip, north stays 90° from it (eternal equinox).
     const sunLat = sub.lat * (1 - gridTilt);
+    const yLon = -Math.PI / 2 - THREE.MathUtils.degToRad(placeLon);
+    _lonEuler.set(0, yLon, 0);
+    _lonQuat.setFromEuler(_lonEuler);
     if (mesh) {
-      const yLon = -Math.PI / 2 - THREE.MathUtils.degToRad(placeLon);
-      mesh.quaternion.setFromEuler(new THREE.Euler(0, yLon, 0, "XYZ"));
+      mesh.quaternion.copy(_lonQuat);
       if (gridTilt > 1e-5) {
-        // Tip toward the ecliptic sun (equator at today's subsolar lon).
-        const sunForTip = latLonToLocal(0, sub.lon, 1);
-        sunForTip.applyQuaternion(mesh.quaternion);
+        const sunForTip = latLonToLocal(0, sub.lon, 1).applyQuaternion(_lonQuat);
         _tipAxis.crossVectors(_yUp, sunForTip);
         if (_tipAxis.lengthSq() > 1e-8) {
           _tipAxis.normalize();
@@ -1900,11 +1903,11 @@ export function createEarthGlobe(canvas, options = {}) {
     moonGroup.rotation.set(0, 0, 0);
     moonGroup.position.copy(target);
 
-    const sunLocal = latLonToLocal(sunLat, sub.lon, 12);
-    if (mesh) sunLocal.applyQuaternion(mesh.quaternion);
-    key.position.copy(target).add(sunLocal);
+    // Sun stays untilted; Earth tips under it.
+    const sunWorld = latLonToLocal(sunLat, sub.lon, 12).applyQuaternion(_lonQuat);
+    key.position.copy(target).add(sunWorld);
     key.target.position.copy(target);
-    sunDir.copy(sunLocal).normalize();
+    sunDir.copy(sunWorld).normalize();
     updateViewLighting();
     kick();
 
