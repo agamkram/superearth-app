@@ -185,7 +185,7 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e119";
+const TEX_VER = "e120";
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
@@ -849,9 +849,8 @@ export function createEarthGlobe(canvas, options = {}) {
         dayCol += vec3(0.03, 0.09, 0.22) * pow(rim, 3.2) * smoothstep(-0.05, 0.35, ndl) * uSunOn * 0.42;
         vec3 nightCol = pow(texture2D(uNight, planetUv).rgb, vec3(2.2));
         diffuseColor.rgb = mix(nightCol * 2.1, dayCol, day);
-        // No soft edge fade — a wide UV feather left soft 8k bands between
-        // sharp tile centers (clear → blurry → clear when dragging).
-        diffuseColor.a *= mix(0.0, 1.0, day);`
+        // Opaque on the day side so sharp tiles fully cover the soft 8k under them.
+        diffuseColor.a = mix(0.0, 1.0, day);`
       );
     };
     return mat;
@@ -1427,22 +1426,32 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   /**
-   * Lon/lat under the *screen center* (not the orbit pivot). After a pan the
-   * pivot and the view diverge — aiming tiles at the pivot left soft 8k on
-   * screen while the sharp patch sat elsewhere.
+   * Lon/lat under the screen center. The globe mesh rides on the pan
+   * target, so the hit sphere must be centered on the mesh in world space
+   * — a sphere at the origin misses after any pan and 32 never lands on
+   * what you're looking at.
    */
   function viewLonLat() {
     if (!mesh) return null;
     camera.updateMatrixWorld(true);
+    mesh.updateMatrixWorld(true);
+    mesh.getWorldPosition(_earthSphere.center);
+    _earthSphere.radius = RADIUS;
     _tileRay.setFromCamera(_tileNdc, camera);
     const hit = _tileRay.ray.intersectSphere(_earthSphere, _tileHit);
     if (hit) {
       _tileLocal.copy(hit);
     } else {
-      // Off-limb: nearest point on the globe to the view ray
       _tileRay.ray.closestPointToPoint(_earthSphere.center, _tileHit);
-      if (_tileHit.lengthSq() < 1e-12) _tileHit.copy(camera.position);
-      _tileLocal.copy(_tileHit).normalize().multiplyScalar(RADIUS);
+      if (_tileHit.distanceToSquared(_earthSphere.center) < 1e-12) {
+        _tileHit.copy(camera.position);
+      }
+      _tileLocal
+        .copy(_tileHit)
+        .sub(_earthSphere.center)
+        .normalize()
+        .multiplyScalar(RADIUS)
+        .add(_earthSphere.center);
     }
     mesh.worldToLocal(_tileLocal);
     _tileLocal.normalize();
@@ -1453,11 +1462,10 @@ export function createEarthGlobe(canvas, options = {}) {
     return { lat, lon };
   }
 
-  /** How many neighbor rings to cover the close-up view. */
+  /** Neighbor rings to cover the close-up view (keep GPU load in check). */
   function tileRing(level) {
-    // 32 tiles are 22.5°; at ~1.2 the visible disk is ~30°+ — need 2 rings.
-    // 16 tiles are 45°; one ring is enough for mid zoom.
-    return level.cols >= 12 ? 2 : 1;
+    // 3×3 is enough now that tile edges are opaque; 5×5 thrashed phones.
+    return 1;
   }
 
   function neededTileKeys(level, lon, lat, ring) {
