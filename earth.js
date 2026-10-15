@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e127";
+export const BUILD = "e128";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -896,6 +896,7 @@ export function createEarthGlobe(canvas, options = {}) {
     if (cloudMesh) mesh.add(cloudMesh);
     if (auroraMesh) mesh.add(auroraMesh);
     if (tileGroup) mesh.add(tileGroup);
+    if (borderLines) mesh.add(borderLines);
     moonGroup.add(mesh);
     ensureAtmosphere();
     attachMissionPins(mesh);
@@ -1067,6 +1068,81 @@ export function createEarthGlobe(canvas, options = {}) {
       r * Math.sin(lat),
       -r * cl * Math.sin(lon)
     );
+  }
+
+  /** Natural Earth 50m country borders — hairline shell just above the surface. */
+  const BORDER_R = RADIUS * 1.0012;
+  let borderLines = null;
+  let bordersOn = false;
+
+  function disposeBorders() {
+    if (!borderLines) return;
+    if (borderLines.parent) borderLines.parent.remove(borderLines);
+    borderLines.geometry?.dispose();
+    borderLines.material?.dispose();
+    borderLines = null;
+  }
+
+  function loadBorders() {
+    fetch(new URL(`./borders-50m.bin?v=${TEX_VER}`, import.meta.url))
+      .then((res) => {
+        if (!res.ok) throw new Error("borders " + res.status);
+        return res.arrayBuffer();
+      })
+      .then((buf) => {
+        if (disposed) return;
+        const view = new DataView(buf);
+        let o = 0;
+        const nLines = view.getUint32(o, true);
+        o += 4;
+        const positions = [];
+        for (let i = 0; i < nLines; i++) {
+          const n = view.getUint32(o, true);
+          o += 4;
+          let prevLon = NaN;
+          let prevLat = NaN;
+          for (let j = 0; j < n; j++) {
+            const lon = view.getFloat32(o, true);
+            o += 4;
+            const lat = view.getFloat32(o, true);
+            o += 4;
+            if (Number.isFinite(prevLon) && Math.abs(lon - prevLon) < 180) {
+              const a = latLonToLocal(prevLat, prevLon, BORDER_R);
+              const b = latLonToLocal(lat, lon, BORDER_R);
+              positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+            }
+            prevLon = lon;
+            prevLat = lat;
+          }
+        }
+        disposeBorders();
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute(
+          "position",
+          new THREE.Float32BufferAttribute(new Float32Array(positions), 3)
+        );
+        const mat = new THREE.LineBasicMaterial({
+          color: 0xd4deec,
+          transparent: true,
+          opacity: 0.4,
+          depthWrite: false,
+          toneMapped: false,
+        });
+        borderLines = new THREE.LineSegments(geo, mat);
+        borderLines.name = "country-borders";
+        borderLines.renderOrder = 3;
+        borderLines.visible = bordersOn;
+        if (mesh) mesh.add(borderLines);
+        kick();
+      })
+      .catch(() => {});
+  }
+
+  function setBorders(on) {
+    bordersOn = !!on;
+    if (borderLines) borderLines.visible = bordersOn;
+    kick();
+    return bordersOn;
   }
 
   function disposeMissionPins() {
@@ -2836,6 +2912,7 @@ export function createEarthGlobe(canvas, options = {}) {
 
   applyEphemeris();
   loadLow();
+  loadBorders();
   fitToHost();
   applyHomeFraming();
   kick();
@@ -2846,6 +2923,7 @@ export function createEarthGlobe(canvas, options = {}) {
     resetView,
     setObserver,
     setClouds,
+    setBorders,
     setAurora,
     setSun,
     setTime,
@@ -2881,6 +2959,7 @@ export function createEarthGlobe(canvas, options = {}) {
       window.removeEventListener("contextmenu", onContextMenu, true);
       hideTiles();
       disposePoleMarks();
+      disposeBorders();
       if (mesh) {
         mesh.geometry.dispose();
         material?.map?.dispose();
