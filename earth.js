@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e147";
+export const BUILD = "e148";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -663,6 +663,8 @@ export function createEarthGlobe(canvas, options = {}) {
   let orientLocked = false;
   let frozenRoll = 0;
   let frozenSouthern = false;
+  /** Extra Earth spin (Orbit / drag). Sun stays fixed; this turns the planet. */
+  let userSpin = 0;
 
   function configureColor(tex) {
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -1883,18 +1885,15 @@ export function createEarthGlobe(canvas, options = {}) {
       sub = subsolarPoint(when);
     } catch (_) {}
 
-    const placeLon = orientLocked ? frozenLon : observerLon;
-    // Sun is fixed in world (day/night = world normal · uSunDir).
-    // Longitude spins the Earth under that sun; Grid tips earthTilt only.
-    const yLon = -Math.PI / 2 - THREE.MathUtils.degToRad(placeLon);
-    _lonEuler.set(0, yLon, 0);
-    _lonQuat.setFromEuler(_lonEuler);
-    const sunWorld = latLonToLocal(sub.lat, sub.lon, 12).applyQuaternion(_lonQuat);
-    // Longitude on the mesh only (euler). Tip on the parent group — never
-    // combine both on one quaternion (Euler sync was eating the tip).
+    // Fixed sun in world (declination only). Earth spins under it via
+    // sub.lon (time) + userSpin (Orbit / drag). Never parent the sun to Earth.
+    const dec = THREE.MathUtils.degToRad(sub.lat);
+    sunDir.set(Math.cos(dec), Math.sin(dec), 0).normalize();
+    const yLon =
+      -Math.PI / 2 - THREE.MathUtils.degToRad(sub.lon) + userSpin;
     if (mesh) mesh.rotation.set(0, yLon, 0);
     if (gridTilt > 1e-5) {
-      _sunFlat.set(sunWorld.x, 0, sunWorld.z);
+      _sunFlat.set(sunDir.x, 0, sunDir.z);
       if (_sunFlat.lengthSq() < 1e-8) _sunFlat.set(1, 0, 0);
       _sunFlat.normalize();
       _tipAxis.crossVectors(_yUp, _sunFlat).normalize();
@@ -1908,9 +1907,8 @@ export function createEarthGlobe(canvas, options = {}) {
     moonGroup.rotation.set(0, 0, 0);
     moonGroup.position.copy(target);
 
-    key.position.copy(target).add(sunWorld);
+    key.position.copy(target).addScaledVector(sunDir, 12);
     key.target.position.copy(target);
-    sunDir.copy(sunWorld).normalize();
     updateViewLighting();
     kick();
 
@@ -2257,6 +2255,7 @@ export function createEarthGlobe(canvas, options = {}) {
     observerLon = lo;
     if (orientLocked) captureSkyPose(new Date());
     applyEphemeris();
+    frameCameraToObserver();
     return getPhaseInfo();
   }
 
@@ -2269,6 +2268,8 @@ export function createEarthGlobe(canvas, options = {}) {
       orientLocked = true;
     }
     applyEphemeris();
+    // Scrubbing: keep your location centered while Earth turns under the sun.
+    if (orientLocked) frameCameraToObserver();
     return getPhaseInfo();
   }
 
@@ -2476,21 +2477,34 @@ export function createEarthGlobe(canvas, options = {}) {
     return (pads.top - pads.bottom) / 2 - homeExtraUpPx() + homeLowerBiasPx();
   }
 
+  /** World direction of the observer on the spun / tipped Earth. */
+  function observerWorldDir(out) {
+    const p = latLonToLocal(observerLat, observerLon, 1);
+    if (mesh) p.applyEuler(mesh.rotation);
+    p.applyQuaternion(earthTilt.quaternion);
+    return out.copy(p).normalize();
+  }
+
+  /** Put the camera on the observer's radial (location-centered). */
+  function frameCameraToObserver(dist) {
+    const r = Number.isFinite(dist) ? dist : Math.max(camDist(), homeDist);
+    observerWorldDir(_offset);
+    camera.position.copy(target).addScaledVector(_offset, r);
+    camera.up.copy(_yUp);
+    camera.lookAt(target);
+    readSpherical();
+    syncMoon();
+  }
+
   function applyHomeFraming() {
     target.set(0, 0, 0);
-    camera.up.set(0, 1, 0);
-    camera.position.set(0, 0, homeDist);
+    userSpin = 0;
     clearScreenPan();
-    // Phone home: lift into top band (fades out as you zoom — see applyCanvasPanTransform)
     homeLiftY = homeScreenOffsetY();
     applyCanvasPanTransform();
-    readSpherical();
-    spherical.theta = 0;
-    spherical.phi = Math.PI / 2 - THREE.MathUtils.degToRad(observerLat);
-    writeCamera();
-    syncMoon();
-    prevCamDist = homeDist;
     applyEphemeris();
+    frameCameraToObserver(homeDist);
+    prevCamDist = homeDist;
   }
 
   function setCamDist(dist) {
@@ -2846,10 +2860,12 @@ export function createEarthGlobe(canvas, options = {}) {
         0,
         1
       );
-      // Close zoom: slow orbit so a drag doesn't whip the surface away.
+      // Close zoom: slow spin so a drag doesn't whip the surface away.
       const speed = THREE.MathUtils.lerp(0.07, 0.55, z * z);
+      // Horizontal: spin Earth under the fixed sun. Vertical: tilt the view.
+      userSpin -= (2 * Math.PI * dx * speed) / h;
+      applyEphemeris();
       readSpherical();
-      spherical.theta -= (2 * Math.PI * dx * speed) / h;
       spherical.phi -= (2 * Math.PI * dy * speed) / h;
       writeCamera();
       oneFinger.x = t.clientX;
@@ -2973,8 +2989,9 @@ export function createEarthGlobe(canvas, options = {}) {
         1
       );
       const speed = THREE.MathUtils.lerp(0.07, 0.55, z * z);
+      userSpin -= (2 * Math.PI * dx * speed) / h;
+      applyEphemeris();
       readSpherical();
-      spherical.theta -= (2 * Math.PI * dx * speed) / h;
       spherical.phi -= (2 * Math.PI * dy * speed) / h;
       writeCamera();
     }
@@ -3069,9 +3086,9 @@ export function createEarthGlobe(canvas, options = {}) {
       const dt = Math.min(0.05, (t - lastOrbitMs) / 1000);
       lastOrbitMs = t;
       if (dt > 0) {
-        readSpherical();
-        spherical.theta -= ORBIT_RAD_PER_SEC * dt;
-        writeCamera();
+        // Spin Earth under the fixed sun (camera stays put).
+        userSpin += ORBIT_RAD_PER_SEC * dt;
+        applyEphemeris();
       }
     }
     syncMoon();
