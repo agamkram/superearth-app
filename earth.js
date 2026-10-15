@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e138";
+export const BUILD = "e139";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1150,7 +1150,7 @@ export function createEarthGlobe(canvas, options = {}) {
   /** Visible end past each pole was 0.07R; ×3 → 0.21R. Width 2px (was 1px). */
   const AXIS_EXT = RADIUS * (1 + 0.07 * 3);
   const AXIS_RADIUS = 0.01;
-  const AXIS_PX = 1.1;
+  const AXIS_PX = 1;
   const GRID_STEP = 15;
   const GRID_SEGS = 128;
   let gridGroup = null;
@@ -1242,9 +1242,31 @@ export function createEarthGlobe(canvas, options = {}) {
     axisMesh = null;
   }
 
+  /** 0 = poles straight up; 1 = tipped by today's axial tilt. */
+  let gridTilt = 0;
+  let gridTiltFrom = 0;
+  let gridTiltTarget = 0;
+  let gridTiltAnimStart = 0;
+  const GRID_TILT_MS = 1000;
+
+  function earthObliquityRad() {
+    const A = globalThis.Astronomy;
+    try {
+      if (A?.e_tilt) {
+        const t = A.e_tilt(when);
+        const deg = Number(t?.tobl);
+        if (Number.isFinite(deg)) return THREE.MathUtils.degToRad(deg);
+      }
+    } catch (_) {}
+    return THREE.MathUtils.degToRad(23.44);
+  }
+
   function setGrid(on) {
     gridOn = !!on;
     if (gridGroup) gridGroup.visible = gridOn;
+    gridTiltFrom = gridTilt;
+    gridTiltTarget = gridOn ? 1 : 0;
+    gridTiltAnimStart = performance.now();
     kick();
     return gridOn;
   }
@@ -1851,13 +1873,13 @@ export function createEarthGlobe(canvas, options = {}) {
 
     const placeLon = orientLocked ? frozenLon : observerLon;
     if (mesh) {
-      // Polar axis stays straight up. Longitude only. The camera, not the
-      // planet, is what sits on the user's latitude — otherwise a spin that
-      // keeps the US upright rolls Africa onto its side.
+      // Longitude only when upright. Grid mode tips by Earth's axial tilt.
+      // The camera, not the planet, is what sits on the user's latitude —
+      // otherwise a spin that keeps the US upright rolls Africa onto its side.
       mesh.rotation.order = "XYZ";
       mesh.rotation.x = 0;
       mesh.rotation.y = -Math.PI / 2 - THREE.MathUtils.degToRad(placeLon);
-      mesh.rotation.z = 0;
+      mesh.rotation.z = -earthObliquityRad() * gridTilt;
     }
     moonGroup.rotation.set(0, 0, 0);
     moonGroup.position.copy(target);
@@ -3003,8 +3025,21 @@ export function createEarthGlobe(canvas, options = {}) {
     if (disposed) return;
     animId = 0;
     if (typeof document !== "undefined" && document.hidden) return;
+    const t = typeof now === "number" ? now : performance.now();
+    let tilting = false;
+    if (gridTilt !== gridTiltTarget) {
+      const u = THREE.MathUtils.clamp(
+        (t - gridTiltAnimStart) / GRID_TILT_MS,
+        0,
+        1
+      );
+      const s = u * u * (3 - 2 * u);
+      gridTilt = gridTiltFrom + (gridTiltTarget - gridTiltFrom) * s;
+      if (u >= 1) gridTilt = gridTiltTarget;
+      applyEphemeris();
+      tilting = gridTilt !== gridTiltTarget;
+    }
     if (orbiting) {
-      const t = typeof now === "number" ? now : performance.now();
       if (!lastOrbitMs) lastOrbitMs = t;
       const dt = Math.min(0.05, (t - lastOrbitMs) / 1000);
       lastOrbitMs = t;
@@ -3018,7 +3053,7 @@ export function createEarthGlobe(canvas, options = {}) {
     if (missionMode !== "off") updateMissionPinFacing();
     updateTiles();
     renderer.render(scene, camera);
-    if (orbiting || oneFinger || twoFinger) kick();
+    if (orbiting || oneFinger || twoFinger || tilting) kick();
   }
 
   applyEphemeris();
