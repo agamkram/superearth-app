@@ -185,7 +185,7 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e113";
+const TEX_VER = "e114";
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
@@ -213,7 +213,7 @@ const TILE_LEVELS = {
     folder: "tiles-16",
     cols: 8,
     rows: 4,
-    onDist: 1.5,
+    onDist: 2.5,
     radius: 1.0018,
   },
   32: {
