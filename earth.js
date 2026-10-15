@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e126";
+export const BUILD = "e127";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -952,8 +952,14 @@ export function createEarthGlobe(canvas, options = {}) {
   const POLE_GEO_R = 0.006;
   const POLE_PX_FAR = 1;
   const POLE_PX_NEAR = 5;
+  const _poleOut = new THREE.Vector3();
+  /** WMM2025.0 magnetic dip poles (where the field is vertical). */
+  const MAG_POLES = [
+    { letter: "MN", lat: 85.76, lon: 139.3, stroke: "rgba(110, 220, 255, 0.95)" },
+    { letter: "MS", lat: -63.85, lon: 135.08, stroke: "rgba(110, 220, 255, 0.95)" },
+  ];
 
-  function makePoleBadge(letter) {
+  function makePoleBadge(letter, stroke = "rgba(255, 255, 255, 0.95)") {
     const size = 96;
     const c = document.createElement("canvas");
     c.width = size;
@@ -965,10 +971,11 @@ export function createEarthGlobe(canvas, options = {}) {
     ctx.fillStyle = "rgba(6, 10, 18, 0.82)";
     ctx.fill();
     ctx.lineWidth = 5;
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
+    ctx.strokeStyle = stroke;
     ctx.stroke();
     ctx.fillStyle = "#ffffff";
-    ctx.font = "700 52px system-ui, -apple-system, sans-serif";
+    const fontPx = letter.length > 1 ? 40 : 52;
+    ctx.font = `700 ${fontPx}px system-ui, -apple-system, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(letter, size / 2, size / 2 + 2);
@@ -991,6 +998,13 @@ export function createEarthGlobe(canvas, options = {}) {
     return mark;
   }
 
+  function placePoleMark(mark, lat, lon) {
+    const p = latLonToLocal(lat, lon, RADIUS * 1.0008);
+    mark.position.copy(p);
+    _poleOut.copy(p).normalize();
+    mark.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), _poleOut);
+  }
+
   function disposePoleMarks() {
     if (!poleGroup) return;
     for (const mark of poleMarks) {
@@ -1010,12 +1024,18 @@ export function createEarthGlobe(canvas, options = {}) {
     poleGeo = new THREE.CircleGeometry(POLE_GEO_R, 24);
     poleGroup = new THREE.Group();
     poleGroup.name = "pole-marks";
+    // Geographic axis poles
     const north = makePoleBadge("N");
-    north.position.set(0, RADIUS * 1.0008, 0);
-    north.rotation.set(-Math.PI / 2, 0, 0);
+    placePoleMark(north, 90, 0);
     const south = makePoleBadge("S");
-    south.position.set(0, -RADIUS * 1.0008, 0);
-    south.rotation.set(Math.PI / 2, 0, 0);
+    placePoleMark(south, -90, 0);
+    // Magnetic dip poles (WMM 2025)
+    for (const m of MAG_POLES) {
+      const mark = makePoleBadge(m.letter, m.stroke);
+      placePoleMark(mark, m.lat, m.lon);
+      poleGroup.add(mark);
+      poleMarks.push(mark);
+    }
     poleGroup.add(north, south);
     poleMarks.push(north, south);
     parentMesh.add(poleGroup);
