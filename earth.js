@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e148";
+export const BUILD = "e149";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -2863,7 +2863,7 @@ export function createEarthGlobe(canvas, options = {}) {
       // Close zoom: slow spin so a drag doesn't whip the surface away.
       const speed = THREE.MathUtils.lerp(0.07, 0.55, z * z);
       // Horizontal: spin Earth under the fixed sun. Vertical: tilt the view.
-      userSpin -= (2 * Math.PI * dx * speed) / h;
+      userSpin += (2 * Math.PI * dx * speed) / h;
       applyEphemeris();
       readSpherical();
       spherical.phi -= (2 * Math.PI * dy * speed) / h;
@@ -2989,7 +2989,7 @@ export function createEarthGlobe(canvas, options = {}) {
         1
       );
       const speed = THREE.MathUtils.lerp(0.07, 0.55, z * z);
-      userSpin -= (2 * Math.PI * dx * speed) / h;
+      userSpin += (2 * Math.PI * dx * speed) / h;
       applyEphemeris();
       readSpherical();
       spherical.phi -= (2 * Math.PI * dy * speed) / h;
