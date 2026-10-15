@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e137";
+export const BUILD = "e138";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1150,7 +1150,7 @@ export function createEarthGlobe(canvas, options = {}) {
   /** Visible end past each pole was 0.07R; ×3 → 0.21R. Width 2px (was 1px). */
   const AXIS_EXT = RADIUS * (1 + 0.07 * 3);
   const AXIS_RADIUS = 0.01;
-  const AXIS_PX = 1.35;
+  const AXIS_PX = 1.1;
   const GRID_STEP = 15;
   const GRID_SEGS = 128;
   let gridGroup = null;
