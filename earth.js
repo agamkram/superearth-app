@@ -185,7 +185,7 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e123";
+const TEX_VER = "e124";
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
