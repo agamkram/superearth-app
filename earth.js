@@ -185,7 +185,7 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e114";
+const TEX_VER = "e115";
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
@@ -204,7 +204,7 @@ const LOD = {
 
 /**
  * Zoom-in tiles from one Next Gen master (never a full high-k wrap).
- * Day wraps/tiles at JPEG 85. 16 at mid zoom; 32 under 1.2.
+ * Day wraps/tiles at JPEG 85. 16 at mid zoom; 32 under 1.5.
  */
 const TILE_EDGE = 0.22;
 const TILE_LEVELS = {
@@ -221,7 +221,7 @@ const TILE_LEVELS = {
     folder: "tiles-32",
     cols: 16,
     rows: 8,
-    onDist: 1.2,
+    onDist: 1.5,
     radius: 1.0022,
   },
 };
