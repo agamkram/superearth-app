@@ -185,7 +185,7 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e116";
+const TEX_VER = "e117";
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
@@ -533,6 +533,8 @@ export function createEarthGlobe(canvas, options = {}) {
   const sunDir = new THREE.Vector3(1, 0, 0);
   const sunDirUniform = { value: sunDir };
   const sunOnUniform = { value: 1 };
+  /** Land topo relief from the elevation normal map + sun. */
+  const reliefUniform = { value: 1 };
   let nightMesh = null;
   let nightMat = null;
   let cloudMesh = null;
@@ -697,6 +699,7 @@ export function createEarthGlobe(canvas, options = {}) {
       shader.uniforms.uNormal = normalUniform;
       shader.uniforms.uSunDir = sunDirUniform;
       shader.uniforms.uSunOn = sunOnUniform;
+      shader.uniforms.uRelief = reliefUniform;
       shader.vertexShader = shader.vertexShader.replace(
         "#include <common>",
         "#include <common>\nvarying vec3 vWorldN;\nvarying vec3 vWorldPos;\nvarying vec3 vWorldT;\nvarying vec3 vWorldB;"
@@ -720,6 +723,7 @@ export function createEarthGlobe(canvas, options = {}) {
         uniform sampler2D uNormal;
         uniform vec3 uSunDir;
         uniform float uSunOn;
+        uniform float uRelief;
         varying vec3 vWorldN;
         varying vec3 vWorldPos;
         varying vec3 vWorldT;
@@ -749,10 +753,11 @@ export function createEarthGlobe(canvas, options = {}) {
         float ndlRelief = max(0.0, dot(nPerturbed, sunD));
         float ndlSmooth = max(0.0, ndl);
         float relief = clamp(1.0 + (ndlRelief - ndlSmooth) * 1.4, 0.68, 1.34);
+        float reliefAmt = mix(1.0, relief, uRelief);
 
         // Gentle day shading from noon center toward the limb + brighter land
         float sunShade = mix(0.84, 1.06, pow(ndlSmooth, 0.42));
-        dayCol *= mix(1.16 * relief * sunShade, 1.0, ocean);
+        dayCol *= mix(1.16 * reliefAmt * sunShade, 1.0, ocean);
 
         // Subtle Rayleigh atmospheric blue haze near the limb on the day side
         vec3 viewD = normalize(cameraPosition - vWorldPos);
@@ -778,6 +783,7 @@ export function createEarthGlobe(canvas, options = {}) {
       shader.uniforms.uNormal = normalUniform;
       shader.uniforms.uSunDir = sunDirUniform;
       shader.uniforms.uSunOn = sunOnUniform;
+      shader.uniforms.uRelief = reliefUniform;
       shader.vertexShader = shader.vertexShader.replace(
         "#include <common>",
         "#include <common>\nvarying vec3 vWorldN;\nvarying vec3 vWorldPos;\nvarying vec3 vWorldT;\nvarying vec3 vWorldB;\nvarying vec3 vLocalN;"
@@ -802,6 +808,7 @@ export function createEarthGlobe(canvas, options = {}) {
         uniform sampler2D uNormal;
         uniform vec3 uSunDir;
         uniform float uSunOn;
+        uniform float uRelief;
         varying vec3 vWorldN;
         varying vec3 vWorldPos;
         varying vec3 vWorldT;
@@ -832,8 +839,9 @@ export function createEarthGlobe(canvas, options = {}) {
         float ndlRelief = max(0.0, dot(nPerturbed, sunD));
         float ndlSmooth = max(0.0, ndl);
         float relief = clamp(1.0 + (ndlRelief - ndlSmooth) * 1.4, 0.68, 1.34);
+        float reliefAmt = mix(1.0, relief, uRelief);
         float sunShade = mix(0.84, 1.06, pow(ndlSmooth, 0.42));
-        dayCol *= mix(1.16 * relief * sunShade, 1.0, ocean);
+        dayCol *= mix(1.16 * reliefAmt * sunShade, 1.0, ocean);
         vec3 viewD = normalize(cameraPosition - vWorldPos);
         float rim = 1.0 - max(0.0, dot(nSphere, viewD));
         dayCol += vec3(0.03, 0.09, 0.22) * pow(rim, 3.2) * smoothstep(-0.05, 0.35, ndl) * uSunOn * 0.42;
@@ -1953,6 +1961,12 @@ export function createEarthGlobe(canvas, options = {}) {
     return sunOnUniform.value > 0.5;
   }
 
+  function setRelief(on) {
+    reliefUniform.value = on ? 1 : 0;
+    kick();
+    return reliefUniform.value > 0.5;
+  }
+
   function setObserver(lat, lon) {
     let la = Number(lat);
     let lo = Number(lon);
@@ -2409,7 +2423,7 @@ export function createEarthGlobe(canvas, options = {}) {
   // —— Touch + pointer: 2fs pans the canvas (CSS) so movement is always visible ——
 
   const UI_HIT =
-    "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#mission-sheet,#fact-sheet,.cycle,.slider-track,.cycle-controls,.m-cell-fact,.vision-btn,.geo-btn,.live-btn,.sun-btn,.fact-sheet-inner,.fact-sheet-scrim";
+    "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#mission-sheet,#fact-sheet,.cycle,.slider-track,.cycle-controls,.m-cell-fact,.vision-btn,.geo-btn,.live-btn,.sun-btn,.relief-btn,.fact-sheet-inner,.fact-sheet-scrim";
 
   function eventPoint(e) {
     if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
@@ -2786,6 +2800,7 @@ export function createEarthGlobe(canvas, options = {}) {
     setClouds,
     setAurora,
     setSun,
+    setRelief,
     setTime,
     setOrbiting,
     isOrbiting,
