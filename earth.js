@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e139";
+export const BUILD = "e140";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -638,6 +638,12 @@ export function createEarthGlobe(canvas, options = {}) {
   const _offset = new THREE.Vector3();
   const _right = new THREE.Vector3();
   const _up = new THREE.Vector3();
+  const _yUp = new THREE.Vector3(0, 1, 0);
+  const _orbitUp = new THREE.Vector3(0, 1, 0);
+  const _orbitAlign = new THREE.Quaternion();
+  const _orbitAlignInv = new THREE.Quaternion();
+  const _tipAxis = new THREE.Vector3();
+  const _tipQ = new THREE.Quaternion();
   let prevCamDist = homeDist;
   /** @type {null | { x: number, y: number }} */
   let oneFinger = null;
@@ -1873,19 +1879,28 @@ export function createEarthGlobe(canvas, options = {}) {
 
     const placeLon = orientLocked ? frozenLon : observerLon;
     if (mesh) {
-      // Longitude only when upright. Grid mode tips by Earth's axial tilt.
-      // The camera, not the planet, is what sits on the user's latitude —
-      // otherwise a spin that keeps the US upright rolls Africa onto its side.
-      mesh.rotation.order = "XYZ";
-      mesh.rotation.x = 0;
-      mesh.rotation.y = -Math.PI / 2 - THREE.MathUtils.degToRad(placeLon);
-      mesh.rotation.z = -earthObliquityRad() * gridTilt;
+      // Longitude only. The camera, not the planet, sits on the user's
+      // latitude — otherwise a spin that keeps the US upright rolls Africa.
+      // Grid mode tips north toward today's sun by Earth's axial tilt.
+      const yLon = -Math.PI / 2 - THREE.MathUtils.degToRad(placeLon);
+      mesh.quaternion.setFromEuler(new THREE.Euler(0, yLon, 0, "XYZ"));
+      if (gridTilt > 1e-5) {
+        const sunForTip = latLonToLocal(sub.lat, sub.lon, 1);
+        sunForTip.applyQuaternion(mesh.quaternion);
+        _tipAxis.crossVectors(_yUp, sunForTip);
+        if (_tipAxis.lengthSq() > 1e-8) {
+          _tipAxis.normalize();
+          _tipQ.setFromAxisAngle(_tipAxis, earthObliquityRad() * gridTilt);
+          mesh.quaternion.premultiply(_tipQ);
+        }
+      }
+      mesh.rotation.setFromQuaternion(mesh.quaternion, "XYZ");
     }
     moonGroup.rotation.set(0, 0, 0);
     moonGroup.position.copy(target);
 
     const sunLocal = latLonToLocal(sub.lat, sub.lon, 12);
-    if (mesh) sunLocal.applyEuler(mesh.rotation);
+    if (mesh) sunLocal.applyQuaternion(mesh.quaternion);
     key.position.copy(target).add(sunLocal);
     key.target.position.copy(target);
     sunDir.copy(sunLocal).normalize();
@@ -2341,9 +2356,23 @@ export function createEarthGlobe(canvas, options = {}) {
     return camDist() < homeDist - 1e-3;
   }
 
+  /** Orbit around geographic north (tipped with Grid, else world up). */
+  function orbitUpAxis(out) {
+    if (mesh && gridTilt > 1e-4) {
+      out.set(0, 1, 0).applyQuaternion(mesh.quaternion).normalize();
+    } else {
+      out.copy(_yUp);
+    }
+    return out;
+  }
+
   function readSpherical() {
     _offset.copy(camera.position).sub(target);
     if (_offset.lengthSq() < 1e-12) _offset.set(0, 0, homeDist || 3);
+    orbitUpAxis(_orbitUp);
+    _orbitAlign.setFromUnitVectors(_yUp, _orbitUp);
+    _orbitAlignInv.copy(_orbitAlign).invert();
+    _offset.applyQuaternion(_orbitAlignInv);
     spherical.setFromVector3(_offset);
   }
 
@@ -2355,9 +2384,12 @@ export function createEarthGlobe(canvas, options = {}) {
       maxCamDist()
     );
     spherical.makeSafe();
+    orbitUpAxis(_orbitUp);
+    _orbitAlign.setFromUnitVectors(_yUp, _orbitUp);
     _offset.setFromSpherical(spherical);
+    _offset.applyQuaternion(_orbitAlign);
     camera.position.copy(target).add(_offset);
-    camera.up.set(0, 1, 0);
+    camera.up.copy(_orbitUp);
     camera.lookAt(target);
     // Near plane must be *closer* than the front of the sphere (dist − RADIUS).
     // Default near=0.05 clipped the moon when zoomed in → hard L/R edges.
@@ -3037,6 +3069,8 @@ export function createEarthGlobe(canvas, options = {}) {
       gridTilt = gridTiltFrom + (gridTiltTarget - gridTiltFrom) * s;
       if (u >= 1) gridTilt = gridTiltTarget;
       applyEphemeris();
+      readSpherical();
+      writeCamera();
       tilting = gridTilt !== gridTiltTarget;
     }
     if (orbiting) {
