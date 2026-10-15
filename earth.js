@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e150";
+export const BUILD = "e151";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1885,12 +1885,11 @@ export function createEarthGlobe(canvas, options = {}) {
       sub = subsolarPoint(when);
     } catch (_) {}
 
-    // Fixed sun in world (declination only). Earth spins under it via
-    // sub.lon (time) + userSpin (Orbit / drag). Never parent the sun to Earth.
+    // Fixed sun in world (declination only). Earth Y-spin must use the same
+    // convention so the subsolar point faces that sun (Three.js Ry: θ = lon).
     const dec = THREE.MathUtils.degToRad(sub.lat);
     sunDir.set(Math.cos(dec), Math.sin(dec), 0).normalize();
-    const yLon =
-      -Math.PI / 2 - THREE.MathUtils.degToRad(sub.lon) + userSpin;
+    const yLon = THREE.MathUtils.degToRad(sub.lon) + userSpin;
     if (mesh) mesh.rotation.set(0, yLon, 0);
     if (gridTilt > 1e-5) {
       _sunFlat.set(sunDir.x, 0, sunDir.z);
