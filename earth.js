@@ -10,15 +10,9 @@ let SURFACE_SITES = [];
 
 const RADIUS = 1;
 const HOME_FILL = 0.9;
-/**
- * Closest zoom (camera distance to Earth center; Earth radius = 1).
- * Was 1.55 before hi-res zoom tiles; open again so we can pick a new stop.
- */
+/** Closest zoom (camera distance to Earth center; Earth radius = 1). */
 const MIN_DIST = 1.15;
-/**
- * Furthest zoom as a multiple of the opening (home) distance.
- * Opening stays the “start” framing; you can pull further out past it.
- */
+/** Furthest zoom as a multiple of the opening (home) distance. */
 const MAX_OUT_FACTOR = 1.85;
 const MIN_POLAR = 0.15;
 const MAX_POLAR = Math.PI - 0.15;
@@ -185,7 +179,10 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e125";
+/** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
+export const BUILD = "e126";
+const TEX_VER = BUILD;
+
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
@@ -197,15 +194,16 @@ const LOD = {
     map: `earth-8k.jpg?v=${TEX_VER}`,
     night: `earth-night-8k.jpg?v=${TEX_VER}`,
     normal: `earth-normal-4k.jpg?v=${TEX_VER}`,
-    // Denser mesh so coasts stay smoother when zoomed in
     segments: 320,
   },
 };
 
 /**
- * Zoom-in tiles from one Next Gen master (never a full high-k wrap).
- * Day wraps/tiles at JPEG 85. 16 at mid zoom; 32 under 1.5.
+ * Zoom tiles (Next Gen day @ JPEG 85). Never a full high-k wrap.
+ * Ladder by camera distance: 8k wrap → tiles-16 @≤2.5 → tiles-32 @≤1.5 → floor 1.15.
+ * Each level loads a 3×3 under the screen center (plus one keep-ring while loading).
  */
+const TILE_RING = 1;
 const TILE_LEVELS = {
   16: {
     label: "16",
@@ -532,19 +530,12 @@ export function createEarthGlobe(canvas, options = {}) {
   const sunDir = new THREE.Vector3(1, 0, 0);
   const sunDirUniform = { value: sunDir };
   const sunOnUniform = { value: 1 };
-  /** Day look — locked from Mark's dial-in (bright 1.60 · topo 2.00). */
-  const dayLook = {
-    landGain: 1.6,
-    shadeMin: 0.9,
-    shadeMax: 1.14,
-    reliefStr: 2.0,
-    slope: 1.35,
-  };
-  const uLandGain = { value: dayLook.landGain };
-  const uShadeMin = { value: dayLook.shadeMin };
-  const uShadeMax = { value: dayLook.shadeMax };
-  const uReliefStr = { value: dayLook.reliefStr };
-  const uSlope = { value: dayLook.slope };
+  // Day look (locked): land bright 1.60 · topo relief 2.00
+  const uLandGain = { value: 1.6 };
+  const uShadeMin = { value: 0.9 };
+  const uShadeMax = { value: 1.14 };
+  const uReliefStr = { value: 2.0 };
+  const uSlope = { value: 1.35 };
   let nightMesh = null;
   let nightMat = null;
   let cloudMesh = null;
@@ -1487,12 +1478,6 @@ export function createEarthGlobe(canvas, options = {}) {
     return { lat, lon };
   }
 
-  /** Neighbor rings to cover the close-up view (keep GPU load in check). */
-  function tileRing(level) {
-    // 3×3 is enough now that tile edges are opaque; 5×5 thrashed phones.
-    return 1;
-  }
-
   function neededTileKeys(level, lon, lat, ring) {
     let u = (lon + 180) / 360;
     u = ((u % 1) + 1) % 1;
@@ -1628,10 +1613,9 @@ export function createEarthGlobe(canvas, options = {}) {
     tileLevel = level.label;
     ensureTileGroup();
     tileGroup.visible = true;
-    const ring = tileRing(level);
-    const want = new Set(neededTileKeys(level, at.lon, at.lat, ring));
+    const want = new Set(neededTileKeys(level, at.lon, at.lat, TILE_RING));
     // Keep one extra ring so a drag doesn't flash soft 8k while neighbors load.
-    const keep = new Set(neededTileKeys(level, at.lon, at.lat, ring + 1));
+    const keep = new Set(neededTileKeys(level, at.lon, at.lat, TILE_RING + 1));
     tileWanted = want;
     for (const key of [...tileLive.keys()]) {
       if (!keep.has(key)) dropTile(key);
