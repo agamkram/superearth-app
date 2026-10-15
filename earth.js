@@ -185,7 +185,7 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e122";
+const TEX_VER = "e123";
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
@@ -532,8 +532,19 @@ export function createEarthGlobe(canvas, options = {}) {
   const sunDir = new THREE.Vector3(1, 0, 0);
   const sunDirUniform = { value: sunDir };
   const sunOnUniform = { value: 1 };
-  /** Land topo relief from the elevation normal map + sun. */
-  const reliefUniform = { value: 1 };
+  /** Temp day-look knobs (topo always on). Brighter defaults than the old 1.16 pack. */
+  const dayLook = {
+    landGain: 1.32,
+    shadeMin: 0.9,
+    shadeMax: 1.14,
+    reliefStr: 1.4,
+    slope: 1.35,
+  };
+  const uLandGain = { value: dayLook.landGain };
+  const uShadeMin = { value: dayLook.shadeMin };
+  const uShadeMax = { value: dayLook.shadeMax };
+  const uReliefStr = { value: dayLook.reliefStr };
+  const uSlope = { value: dayLook.slope };
   let nightMesh = null;
   let nightMat = null;
   let cloudMesh = null;
@@ -701,7 +712,11 @@ export function createEarthGlobe(canvas, options = {}) {
       shader.uniforms.uNormal = normalUniform;
       shader.uniforms.uSunDir = sunDirUniform;
       shader.uniforms.uSunOn = sunOnUniform;
-      shader.uniforms.uRelief = reliefUniform;
+      shader.uniforms.uLandGain = uLandGain;
+      shader.uniforms.uShadeMin = uShadeMin;
+      shader.uniforms.uShadeMax = uShadeMax;
+      shader.uniforms.uReliefStr = uReliefStr;
+      shader.uniforms.uSlope = uSlope;
       shader.vertexShader = shader.vertexShader.replace(
         "#include <common>",
         "#include <common>\nvarying vec3 vWorldN;\nvarying vec3 vWorldPos;\nvarying vec3 vWorldT;\nvarying vec3 vWorldB;"
@@ -725,7 +740,11 @@ export function createEarthGlobe(canvas, options = {}) {
         uniform sampler2D uNormal;
         uniform vec3 uSunDir;
         uniform float uSunOn;
-        uniform float uRelief;
+        uniform float uLandGain;
+        uniform float uShadeMin;
+        uniform float uShadeMax;
+        uniform float uReliefStr;
+        uniform float uSlope;
         varying vec3 vWorldN;
         varying vec3 vWorldPos;
         varying vec3 vWorldT;
@@ -748,18 +767,17 @@ export function createEarthGlobe(canvas, options = {}) {
         // Same deep navy tone as the original open ocean, applied smoothly across all dark water
         dayCol = mix(dayCol, vec3(0.0038, 0.0191, 0.0577), ocean * 0.94);
 
-        // 3D mountain relief on land from NASA elevation normal map
+        // 3D mountain relief on land from NASA elevation normal map (always on)
         vec3 nTex = texture2D(uNormal, vMapUv).xyz * 2.0 - 1.0;
-        vec2 slope = nTex.xy * (1.0 - ocean) * 1.35;
+        vec2 slope = nTex.xy * (1.0 - ocean) * uSlope;
         vec3 nPerturbed = normalize(nSphere + normalize(vWorldT) * slope.x + normalize(vWorldB) * slope.y);
         float ndlRelief = max(0.0, dot(nPerturbed, sunD));
         float ndlSmooth = max(0.0, ndl);
-        float relief = clamp(1.0 + (ndlRelief - ndlSmooth) * 1.4, 0.68, 1.34);
-        float reliefAmt = mix(1.0, relief, uRelief);
+        float relief = clamp(1.0 + (ndlRelief - ndlSmooth) * uReliefStr, 0.68, 1.34);
 
-        // Gentle day shading from noon center toward the limb + brighter land
-        float sunShade = mix(0.84, 1.06, pow(ndlSmooth, 0.42));
-        dayCol *= mix(1.16 * reliefAmt * sunShade, 1.0, ocean);
+        // Day shading from limb toward noon + land brightness
+        float sunShade = mix(uShadeMin, uShadeMax, pow(ndlSmooth, 0.42));
+        dayCol *= mix(uLandGain * relief * sunShade, 1.0, ocean);
 
         // Subtle Rayleigh atmospheric blue haze near the limb on the day side
         vec3 viewD = normalize(cameraPosition - vWorldPos);
@@ -785,7 +803,11 @@ export function createEarthGlobe(canvas, options = {}) {
       shader.uniforms.uNormal = normalUniform;
       shader.uniforms.uSunDir = sunDirUniform;
       shader.uniforms.uSunOn = sunOnUniform;
-      shader.uniforms.uRelief = reliefUniform;
+      shader.uniforms.uLandGain = uLandGain;
+      shader.uniforms.uShadeMin = uShadeMin;
+      shader.uniforms.uShadeMax = uShadeMax;
+      shader.uniforms.uReliefStr = uReliefStr;
+      shader.uniforms.uSlope = uSlope;
       shader.vertexShader = shader.vertexShader.replace(
         "#include <common>",
         "#include <common>\nvarying vec3 vWorldN;\nvarying vec3 vWorldPos;\nvarying vec3 vWorldT;\nvarying vec3 vWorldB;\nvarying vec3 vLocalN;"
@@ -810,7 +832,11 @@ export function createEarthGlobe(canvas, options = {}) {
         uniform sampler2D uNormal;
         uniform vec3 uSunDir;
         uniform float uSunOn;
-        uniform float uRelief;
+        uniform float uLandGain;
+        uniform float uShadeMin;
+        uniform float uShadeMax;
+        uniform float uReliefStr;
+        uniform float uSlope;
         varying vec3 vWorldN;
         varying vec3 vWorldPos;
         varying vec3 vWorldT;
@@ -836,14 +862,13 @@ export function createEarthGlobe(canvas, options = {}) {
           asin(clamp(vLocalN.y, -1.0, 1.0)) / 3.14159265359 + 0.5
         );
         vec3 nTex = texture2D(uNormal, planetUv).xyz * 2.0 - 1.0;
-        vec2 slope = nTex.xy * (1.0 - ocean) * 1.35;
+        vec2 slope = nTex.xy * (1.0 - ocean) * uSlope;
         vec3 nPerturbed = normalize(nSphere + normalize(vWorldT) * slope.x + normalize(vWorldB) * slope.y);
         float ndlRelief = max(0.0, dot(nPerturbed, sunD));
         float ndlSmooth = max(0.0, ndl);
-        float relief = clamp(1.0 + (ndlRelief - ndlSmooth) * 1.4, 0.68, 1.34);
-        float reliefAmt = mix(1.0, relief, uRelief);
-        float sunShade = mix(0.84, 1.06, pow(ndlSmooth, 0.42));
-        dayCol *= mix(1.16 * reliefAmt * sunShade, 1.0, ocean);
+        float relief = clamp(1.0 + (ndlRelief - ndlSmooth) * uReliefStr, 0.68, 1.34);
+        float sunShade = mix(uShadeMin, uShadeMax, pow(ndlSmooth, 0.42));
+        dayCol *= mix(uLandGain * relief * sunShade, 1.0, ocean);
         vec3 viewD = normalize(cameraPosition - vWorldPos);
         float rim = 1.0 - max(0.0, dot(nSphere, viewD));
         dayCol += vec3(0.03, 0.09, 0.22) * pow(rim, 3.2) * smoothstep(-0.05, 0.35, ndl) * uSunOn * 0.42;
@@ -1986,10 +2011,23 @@ export function createEarthGlobe(canvas, options = {}) {
     return sunOnUniform.value > 0.5;
   }
 
-  function setRelief(on) {
-    reliefUniform.value = on ? 1 : 0;
+  function getDayLook() {
+    return { ...dayLook };
+  }
+
+  function setDayLook(partial = {}) {
+    if (Number.isFinite(partial.landGain)) dayLook.landGain = partial.landGain;
+    if (Number.isFinite(partial.shadeMin)) dayLook.shadeMin = partial.shadeMin;
+    if (Number.isFinite(partial.shadeMax)) dayLook.shadeMax = partial.shadeMax;
+    if (Number.isFinite(partial.reliefStr)) dayLook.reliefStr = partial.reliefStr;
+    if (Number.isFinite(partial.slope)) dayLook.slope = partial.slope;
+    uLandGain.value = dayLook.landGain;
+    uShadeMin.value = dayLook.shadeMin;
+    uShadeMax.value = dayLook.shadeMax;
+    uReliefStr.value = dayLook.reliefStr;
+    uSlope.value = dayLook.slope;
     kick();
-    return reliefUniform.value > 0.5;
+    return getDayLook();
   }
 
   function setObserver(lat, lon) {
@@ -2448,7 +2486,7 @@ export function createEarthGlobe(canvas, options = {}) {
   // —— Touch + pointer: 2fs pans the canvas (CSS) so movement is always visible ——
 
   const UI_HIT =
-    "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#mission-sheet,#fact-sheet,.cycle,.slider-track,.cycle-controls,.m-cell-fact,.vision-btn,.geo-btn,.live-btn,.sun-btn,.relief-btn,.fact-sheet-inner,.fact-sheet-scrim";
+    "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#mission-sheet,#fact-sheet,.cycle,.slider-track,.cycle-controls,.m-cell-fact,.vision-btn,.geo-btn,.live-btn,.sun-btn,.day-look,#day-look,.fact-sheet-inner,.fact-sheet-scrim";
 
   function eventPoint(e) {
     if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
@@ -2825,7 +2863,8 @@ export function createEarthGlobe(canvas, options = {}) {
     setClouds,
     setAurora,
     setSun,
-    setRelief,
+    getDayLook,
+    setDayLook,
     setTime,
     setOrbiting,
     isOrbiting,
