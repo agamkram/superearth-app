@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e142";
+export const BUILD = "e143";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1878,13 +1878,15 @@ export function createEarthGlobe(canvas, options = {}) {
     } catch (_) {}
 
     const placeLon = orientLocked ? frozenLon : observerLon;
+    // Upright: seasons live in the sun's latitude. Tipped: seasons live in
+    // the axle. As Grid eases, hand that off so the sun does not ride the tip.
+    const sunLat = sub.lat * (1 - gridTilt);
     if (mesh) {
-      // Open upright (location-first). Grid eases to real tip: north toward
-      // today's sun by Earth's obliquity. Camera still carries user latitude.
       const yLon = -Math.PI / 2 - THREE.MathUtils.degToRad(placeLon);
       mesh.quaternion.setFromEuler(new THREE.Euler(0, yLon, 0, "XYZ"));
       if (gridTilt > 1e-5) {
-        const sunForTip = latLonToLocal(sub.lat, sub.lon, 1);
+        // Tip toward the ecliptic sun (equator at today's subsolar lon).
+        const sunForTip = latLonToLocal(0, sub.lon, 1);
         sunForTip.applyQuaternion(mesh.quaternion);
         _tipAxis.crossVectors(_yUp, sunForTip);
         if (_tipAxis.lengthSq() > 1e-8) {
@@ -1898,7 +1900,7 @@ export function createEarthGlobe(canvas, options = {}) {
     moonGroup.rotation.set(0, 0, 0);
     moonGroup.position.copy(target);
 
-    const sunLocal = latLonToLocal(sub.lat, sub.lon, 12);
+    const sunLocal = latLonToLocal(sunLat, sub.lon, 12);
     if (mesh) sunLocal.applyQuaternion(mesh.quaternion);
     key.position.copy(target).add(sunLocal);
     key.target.position.copy(target);
