@@ -185,7 +185,7 @@ function createStarfield() {
   return points;
 }
 
-const TEX_VER = "e118";
+const TEX_VER = "e119";
 const LOD = {
   low: {
     map: `earth-2k.jpg?v=${TEX_VER}`,
@@ -849,8 +849,9 @@ export function createEarthGlobe(canvas, options = {}) {
         dayCol += vec3(0.03, 0.09, 0.22) * pow(rim, 3.2) * smoothstep(-0.05, 0.35, ndl) * uSunOn * 0.42;
         vec3 nightCol = pow(texture2D(uNight, planetUv).rgb, vec3(2.2));
         diffuseColor.rgb = mix(nightCol * 2.1, dayCol, day);
-        float edge = min(min(vMapUv.x, 1.0 - vMapUv.x), min(vMapUv.y, 1.0 - vMapUv.y));
-        diffuseColor.a *= smoothstep(0.0, 0.18, edge) * mix(0.0, 1.0, day);`
+        // No soft edge fade — a wide UV feather left soft 8k bands between
+        // sharp tile centers (clear → blurry → clear when dragging).
+        diffuseColor.a *= mix(0.0, 1.0, day);`
       );
     };
     return mat;
