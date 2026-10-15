@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e132";
+export const BUILD = "e133";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1142,7 +1142,9 @@ export function createEarthGlobe(canvas, options = {}) {
 
   /** Classic globe grid: polar axis, equator, 15° lat/lon lines. */
   const GRID_R = RADIUS * 1.0018;
-  const AXIS_EXT = RADIUS * 1.07;
+  /** Stub past each pole was 0.07R; height ×3. Diameter was a hairline; now a rod ×2 of a fine axle. */
+  const AXIS_EXT = RADIUS * (1 + 0.07 * 3);
+  const AXIS_RADIUS = 0.004 * 2;
   const GRID_STEP = 15;
   const GRID_SEGS = 128;
   let gridGroup = null;
@@ -1197,16 +1199,28 @@ export function createEarthGlobe(canvas, options = {}) {
       }
       pushArc(lon === 0 ? strong : fine, pts);
     }
-    // Polar axis (geographic), slightly past the surface like a globe axle
-    const axis = [
-      0, -AXIS_EXT, 0,
-      0, AXIS_EXT, 0,
-    ];
+    // Polar axle (geographic): thin rod through the poles, stubs past the surface
+    const axisGeo = new THREE.CylinderGeometry(
+      AXIS_RADIUS,
+      AXIS_RADIUS,
+      AXIS_EXT * 2,
+      12
+    );
+    const axisMat = new THREE.MeshBasicMaterial({
+      color: 0xd4deec,
+      transparent: true,
+      opacity: 0.82,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const axis = new THREE.Mesh(axisGeo, axisMat);
+    axis.name = "grid-axis";
+    axis.renderOrder = 2;
     gridGroup = new THREE.Group();
     gridGroup.name = "globe-grid";
     gridGroup.add(makeLineObj(fine, 0.28, "grid-fine"));
     gridGroup.add(makeLineObj(strong, 0.55, "grid-strong"));
-    gridGroup.add(makeLineObj(axis, 0.82, "grid-axis"));
+    gridGroup.add(axis);
     gridGroup.visible = gridOn;
     if (mesh) mesh.add(gridGroup);
   }
