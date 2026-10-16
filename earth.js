@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e159";
+export const BUILD = "e160";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -661,6 +661,8 @@ export function createEarthGlobe(canvas, options = {}) {
   let frozenSouthern = false;
   /** Extra Earth spin (Orbit / drag). Sun stays fixed; this turns the planet. */
   let userSpin = 0;
+  /** Day-slider: Earth yaw frozen at scrub start (excludes userSpin). */
+  let scrubYaw = 0;
 
   function configureColor(tex) {
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -1881,12 +1883,21 @@ export function createEarthGlobe(canvas, options = {}) {
       sub = subsolarPoint(when);
     } catch (_) {}
 
-    // Fixed sun in world (declination only). Spin Earth so the subsolar
-    // point faces it: Three.js Y rotation needs the opposite longitude.
     const dec = THREE.MathUtils.degToRad(sub.lat);
-    sunDir.set(Math.cos(dec), Math.sin(dec), 0).normalize();
-    const yLon = -THREE.MathUtils.degToRad(sub.lon) + userSpin;
-    if (mesh) mesh.rotation.set(0, yLon, 0);
+    if (orientLocked) {
+      // Day slider: keep Earth pose on screen; walk the sun around it.
+      // Camera zoom / aim stay put — no snap back to the opening view.
+      if (mesh) mesh.rotation.set(0, scrubYaw + userSpin, 0);
+      const p = latLonToLocal(sub.lat, sub.lon, 1);
+      if (mesh) p.applyEuler(mesh.rotation);
+      p.applyQuaternion(earthTilt.quaternion);
+      sunDir.copy(p).normalize();
+    } else {
+      // Live: fixed sun in world; Earth turns under it.
+      sunDir.set(Math.cos(dec), Math.sin(dec), 0).normalize();
+      const yLon = -THREE.MathUtils.degToRad(sub.lon) + userSpin;
+      if (mesh) mesh.rotation.set(0, yLon, 0);
+    }
     if (gridTilt > 1e-5) {
       _sunFlat.set(sunDir.x, 0, sunDir.z);
       if (_sunFlat.lengthSq() < 1e-8) _sunFlat.set(1, 0, 0);
@@ -2260,12 +2271,11 @@ export function createEarthGlobe(canvas, options = {}) {
       orientLocked = false;
     } else if (opts.lockOrient === true && !orientLocked) {
       captureSkyPose(opts.orientDate || new Date());
+      // Freeze the Earth pose now; scrub only moves the sun.
+      scrubYaw = (mesh ? mesh.rotation.y : 0) - userSpin;
       orientLocked = true;
     }
     applyEphemeris();
-    // Scrub: keep your place fixed on screen so the day line walks (sun moves).
-    // Keep the current zoom; Live resets aim and zoom.
-    if (orientLocked) frameCameraToObserver(camDist());
     return getPhaseInfo();
   }
 
