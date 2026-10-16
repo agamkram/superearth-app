@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e151";
+export const BUILD = "e152";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -526,8 +526,8 @@ export function createEarthGlobe(canvas, options = {}) {
   let animId = 0;
   let orbiting = false;
   let lastOrbitMs = 0;
-  /** Real Earth spin (sidereal): one turn per 86164.0905 s. */
-  const ORBIT_RAD_PER_SEC = (2 * Math.PI) / 86164.0905;
+  /** Slow visible spin: one full turn about every 100s. */
+  const ORBIT_RAD_PER_SEC = (2 * Math.PI) / 100;
   let missionMode = "off"; // "off" | "famous" | "landings" | "all"
   let missionGroup = null;
   const missionPins = [];
@@ -2492,6 +2492,7 @@ export function createEarthGlobe(canvas, options = {}) {
     camera.up.copy(_yUp);
     camera.lookAt(target);
     readSpherical();
+    writeCamera();
     syncMoon();
   }
 
