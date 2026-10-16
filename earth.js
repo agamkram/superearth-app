@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e160";
+export const BUILD = "e161";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -584,8 +584,6 @@ export function createEarthGlobe(canvas, options = {}) {
   let auroraTex = null;
   let auroraShown = true;
   let auroraHas = false;
-  let frozenLat = 0;
-  let frozenLon = 0;
   const raycaster = new THREE.Raycaster();
   const _ndc = new THREE.Vector2();
   const _pinWorld = new THREE.Vector3();
@@ -657,9 +655,7 @@ export function createEarthGlobe(canvas, options = {}) {
   let when = new Date();
   let lastPhaseInfo = null;
   let orientLocked = false;
-  let frozenRoll = 0;
-  let frozenSouthern = false;
-  /** Extra Earth spin (Orbit / drag). Sun stays fixed; this turns the planet. */
+  /** Extra Earth spin (drag). Live: turns the planet under a fixed sun. */
   let userSpin = 0;
   /** Day-slider: Earth yaw frozen at scrub start (excludes userSpin). */
   let scrubYaw = 0;
@@ -1857,12 +1853,6 @@ export function createEarthGlobe(canvas, options = {}) {
     for (const key of want) loadTile(level, key);
   }
 
-  function captureSkyPose() {
-    frozenLat = observerLat;
-    frozenLon = observerLon;
-    frozenSouthern = observerLat < 0;
-  }
-
   function subsolarPoint(date) {
     const A = globalThis.Astronomy;
     const time = A.MakeTime(date);
@@ -2259,7 +2249,6 @@ export function createEarthGlobe(canvas, options = {}) {
     while (lo > 180) lo -= 360;
     while (lo < -180) lo += 360;
     observerLon = lo;
-    if (orientLocked) captureSkyPose(new Date());
     applyEphemeris();
     frameCameraToObserver();
     return getPhaseInfo();
@@ -2270,7 +2259,6 @@ export function createEarthGlobe(canvas, options = {}) {
     if (opts.lockOrient === false) {
       orientLocked = false;
     } else if (opts.lockOrient === true && !orientLocked) {
-      captureSkyPose(opts.orientDate || new Date());
       // Freeze the Earth pose now; scrub only moves the sun.
       scrubYaw = (mesh ? mesh.rotation.y : 0) - userSpin;
       orientLocked = true;
