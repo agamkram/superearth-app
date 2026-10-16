@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e161";
+export const BUILD = "e162";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1875,12 +1875,12 @@ export function createEarthGlobe(canvas, options = {}) {
 
     const dec = THREE.MathUtils.degToRad(sub.lat);
     if (orientLocked) {
-      // Day slider: keep Earth pose on screen; walk the sun around it.
-      // Camera zoom / aim stay put — no snap back to the opening view.
+      // Day slider: Earth pose stays (plus drag); sun walks with scrubbed time.
+      // Sun uses scrubYaw only — swipe turns Earth under a fixed sun.
       if (mesh) mesh.rotation.set(0, scrubYaw + userSpin, 0);
       const p = latLonToLocal(sub.lat, sub.lon, 1);
-      if (mesh) p.applyEuler(mesh.rotation);
-      p.applyQuaternion(earthTilt.quaternion);
+      _lonEuler.set(0, scrubYaw, 0);
+      p.applyEuler(_lonEuler);
       sunDir.copy(p).normalize();
     } else {
       // Live: fixed sun in world; Earth turns under it.
