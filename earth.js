@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e154";
+export const BUILD = "e155";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -2263,8 +2263,7 @@ export function createEarthGlobe(canvas, options = {}) {
       orientLocked = true;
     }
     applyEphemeris();
-    // Scrubbing: keep your location centered while Earth turns under the sun.
-    if (orientLocked) frameCameraToObserver();
+    // Scrubbing turns Earth under the sun. Leave the camera where it is.
     return getPhaseInfo();
   }
 
@@ -2684,11 +2683,8 @@ export function createEarthGlobe(canvas, options = {}) {
     applyCanvasPanTransform();
 
     homeDist = computeHomeDistance(w, h);
-    // Live spin keeps the turned view. Only a frozen day-slider time snaps home.
-    if (atOpening && orientLocked) {
-      applyHomeFraming();
-    } else if (centered) {
-      // Keep outer / opening zoom fraction; stay centered
+    // Keep the current aim. Live / home reset recenters; the day slider does not.
+    if (centered) {
       homeLiftY = homeScreenOffsetY();
       applyCanvasPanTransform();
       readSpherical();
