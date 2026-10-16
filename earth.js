@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e157";
+export const BUILD = "e158";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -2262,10 +2262,12 @@ export function createEarthGlobe(canvas, options = {}) {
       captureSkyPose(opts.orientDate || new Date());
       orientLocked = true;
     }
+    // Decide before Earth turns — after applyEphemeris the aim no longer matches.
+    const keepPlace = orientLocked && isOpeningFraming();
     applyEphemeris();
-    // Opening view only: keep place centered while the day line walks.
-    // If you zoomed or spun the view, leave the camera alone.
-    if (orientLocked && isOpeningFraming()) frameCameraToObserver(camDist());
+    // Opening view: keep place centered while the day line walks.
+    // Zoomed or spun: leave the camera alone.
+    if (keepPlace) frameCameraToObserver(camDist());
     return getPhaseInfo();
   }
 
