@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e153";
+export const BUILD = "e154";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -524,10 +524,6 @@ export function createEarthGlobe(canvas, options = {}) {
   let hqStarted = false;
   let disposed = false;
   let animId = 0;
-  let orbiting = false;
-  let lastOrbitMs = 0;
-  /** Slow visible spin: one full turn about every 100s. */
-  const ORBIT_RAD_PER_SEC = (2 * Math.PI) / 100;
   let missionMode = "off"; // "off" | "famous" | "landings" | "all"
   let missionGroup = null;
   const missionPins = [];
@@ -1876,7 +1872,7 @@ export function createEarthGlobe(canvas, options = {}) {
     return { lat: sun.dec, lon };
   }
 
-  function applyEphemeris() {
+  function applyEphemeris(opts = {}) {
     const A = globalThis.Astronomy;
     if (!A) return;
 
@@ -1926,7 +1922,7 @@ export function createEarthGlobe(canvas, options = {}) {
       southern: observerLat < 0,
       orientLocked,
     };
-    if (typeof onPhase === "function") onPhase(lastPhaseInfo);
+    if (!opts.quiet && typeof onPhase === "function") onPhase(lastPhaseInfo);
   }
 
   function setClouds(on) {
@@ -2688,7 +2684,8 @@ export function createEarthGlobe(canvas, options = {}) {
     applyCanvasPanTransform();
 
     homeDist = computeHomeDistance(w, h);
-    if (atOpening && !orbiting) {
+    // Live spin keeps the turned view. Only a frozen day-slider time snaps home.
+    if (atOpening && orientLocked) {
       applyHomeFraming();
     } else if (centered) {
       // Keep outer / opening zoom fraction; stay centered
@@ -3035,17 +3032,6 @@ export function createEarthGlobe(canvas, options = {}) {
   document.documentElement.style.touchAction = "none";
   document.body.style.touchAction = "none";
 
-  function setOrbiting(on) {
-    orbiting = !!on;
-    if (!orbiting) lastOrbitMs = 0;
-    kick();
-    return orbiting;
-  }
-
-  function isOrbiting() {
-    return orbiting;
-  }
-
   function kick() {
     if (disposed || animId) return;
     if (typeof document !== "undefined" && document.hidden) return;
@@ -3056,7 +3042,6 @@ export function createEarthGlobe(canvas, options = {}) {
     if (document.hidden) {
       if (animId) cancelAnimationFrame(animId);
       animId = 0;
-      lastOrbitMs = 0;
       return;
     }
     kick();
@@ -3067,6 +3052,7 @@ export function createEarthGlobe(canvas, options = {}) {
     animId = 0;
     if (typeof document !== "undefined" && document.hidden) return;
     const t = typeof now === "number" ? now : performance.now();
+    if (!orientLocked) when = new Date();
     let tilting = false;
     if (gridTilt !== gridTiltTarget) {
       const u = THREE.MathUtils.clamp(
@@ -3080,22 +3066,15 @@ export function createEarthGlobe(canvas, options = {}) {
       // Tip Earth only — leave camera alone so the sun stays put on screen.
       applyEphemeris();
       tilting = gridTilt !== gridTiltTarget;
-    }
-    if (orbiting) {
-      if (!lastOrbitMs) lastOrbitMs = t;
-      const dt = Math.min(0.05, (t - lastOrbitMs) / 1000);
-      lastOrbitMs = t;
-      if (dt > 0) {
-        // Spin Earth under the fixed sun (camera stays put).
-        userSpin += ORBIT_RAD_PER_SEC * dt;
-        applyEphemeris();
-      }
+    } else if (!orientLocked) {
+      // Live clock already stored above. Day slider leaves `when` frozen.
+      applyEphemeris({ quiet: true });
     }
     syncMoon();
     if (missionMode !== "off") updateMissionPinFacing();
     updateTiles();
     renderer.render(scene, camera);
-    if (orbiting || oneFinger || twoFinger || tilting) kick();
+    if (!orientLocked || oneFinger || twoFinger || tilting) kick();
   }
 
   applyEphemeris();
@@ -3118,8 +3097,6 @@ export function createEarthGlobe(canvas, options = {}) {
     setAuroraShown,
     setSun,
     setTime,
-    setOrbiting,
-    isOrbiting,
     setMissionsMode,
     setSites,
     getMissionsMode,
@@ -3129,7 +3106,6 @@ export function createEarthGlobe(canvas, options = {}) {
     isReady: () => ready,
     dispose() {
       disposed = true;
-      orbiting = false;
       missionMode = "off";
       disposeMissionPins();
       cancelAnimationFrame(animId);
