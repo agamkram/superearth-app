@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e157";
+export const BUILD = "e159";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -2263,9 +2263,9 @@ export function createEarthGlobe(canvas, options = {}) {
       orientLocked = true;
     }
     applyEphemeris();
-    // Opening view only: keep place centered while the day line walks.
-    // If you zoomed or spun the view, leave the camera alone.
-    if (orientLocked && isOpeningFraming()) frameCameraToObserver(camDist());
+    // Scrub: keep your place fixed on screen so the day line walks (sun moves).
+    // Keep the current zoom; Live resets aim and zoom.
+    if (orientLocked) frameCameraToObserver(camDist());
     return getPhaseInfo();
   }
 
@@ -2481,18 +2481,6 @@ export function createEarthGlobe(canvas, options = {}) {
     return out.copy(p).normalize();
   }
 
-  /** True when still on the home aim: centered, opening zoom, looking at your place. */
-  function isOpeningFraming() {
-    if (target.lengthSq() >= 1e-4) return false;
-    const dist = camDist();
-    if (Math.abs(dist - homeDist) / Math.max(homeDist, 0.01) >= 0.03) return false;
-    observerWorldDir(_offset);
-    _camDir.copy(camera.position).sub(target);
-    if (_camDir.lengthSq() < 1e-12) return false;
-    _camDir.normalize();
-    return _camDir.dot(_offset) > 0.995;
-  }
-
   /** Put the camera on the observer's radial (location-centered). */
   function frameCameraToObserver(dist) {
     const r = Number.isFinite(dist) ? dist : Math.max(camDist(), MIN_DIST);
@@ -2697,11 +2685,8 @@ export function createEarthGlobe(canvas, options = {}) {
     applyCanvasPanTransform();
 
     homeDist = computeHomeDistance(w, h);
-    // Live spin keeps the turned view. Only a frozen day-slider time snaps home.
-    if (atOpening && orientLocked) {
-      applyHomeFraming();
-    } else if (centered) {
-      // Keep outer / opening zoom fraction; stay centered
+    // Keep the current aim and zoom fraction. Live / home reset recenters.
+    if (centered) {
       homeLiftY = homeScreenOffsetY();
       applyCanvasPanTransform();
       readSpherical();
