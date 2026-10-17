@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e165";
+export const BUILD = "e166";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1273,7 +1273,11 @@ export function createEarthGlobe(canvas, options = {}) {
     gridOn = !!on;
     if (gridGroup) gridGroup.visible = gridOn;
     if (gridOn) {
-      // On: ease to real axial tip from wherever Earth is. Spin / camera stay.
+      // On: drop any finger tip-down (that stacks with the axle), keep zoom,
+      // re-aim at your place with north up, then ease to real axial tip.
+      const dist = camDist();
+      applyEphemeris({ skipKick: true });
+      frameCameraToObserver(dist);
       gridTiltFrom = gridTilt;
       gridTiltTarget = 1;
       gridTiltAnimStart = performance.now();
