@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e164";
+export const BUILD = "e165";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1250,7 +1250,7 @@ export function createEarthGlobe(canvas, options = {}) {
     axisMesh = null;
   }
 
-  /** 0 = upright open; 1 = real axial tilt (Grid on). */
+  /** 0 = upright; 1 = real axial tip. Stays tipped after Grid is hidden. */
   let gridTilt = 0;
   let gridTiltFrom = 0;
   let gridTiltTarget = 0;
@@ -1272,10 +1272,13 @@ export function createEarthGlobe(canvas, options = {}) {
   function setGrid(on) {
     gridOn = !!on;
     if (gridGroup) gridGroup.visible = gridOn;
-    gridTiltFrom = gridTilt;
-    gridTiltTarget = gridOn ? 1 : 0;
-    gridTiltAnimStart = performance.now();
-    // Tip only — keep spin, zoom, and camera aim wherever they are.
+    if (gridOn) {
+      // On: ease to real axial tip from wherever Earth is. Spin / camera stay.
+      gridTiltFrom = gridTilt;
+      gridTiltTarget = 1;
+      gridTiltAnimStart = performance.now();
+    }
+    // Off: hide lines only — do not untip or reorient.
     applyEphemeris();
     kick();
     return gridOn;
