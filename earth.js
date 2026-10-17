@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e163";
+export const BUILD = "e164";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1917,7 +1917,7 @@ export function createEarthGlobe(canvas, options = {}) {
     key.position.copy(target).addScaledVector(sunDir, 12);
     key.target.position.copy(target);
     updateViewLighting();
-    kick();
+    if (!opts.skipKick) kick();
 
     const hours =
       when.getHours() + when.getMinutes() / 60 + when.getSeconds() / 3600;
@@ -3051,6 +3051,7 @@ export function createEarthGlobe(canvas, options = {}) {
       animId = 0;
       return;
     }
+    // One fresh frame when returning; Live clock catch-up is tickLive in the page.
     kick();
   }
 
@@ -3059,7 +3060,6 @@ export function createEarthGlobe(canvas, options = {}) {
     animId = 0;
     if (typeof document !== "undefined" && document.hidden) return;
     const t = typeof now === "number" ? now : performance.now();
-    if (!orientLocked) when = new Date();
     let tilting = false;
     if (gridTilt !== gridTiltTarget) {
       const u = THREE.MathUtils.clamp(
@@ -3071,17 +3071,16 @@ export function createEarthGlobe(canvas, options = {}) {
       gridTilt = gridTiltFrom + (gridTiltTarget - gridTiltFrom) * s;
       if (u >= 1) gridTilt = gridTiltTarget;
       // Tip Earth only — leave camera alone so the sun stays put on screen.
-      applyEphemeris();
+      applyEphemeris({ skipKick: true });
       tilting = gridTilt !== gridTiltTarget;
-    } else if (!orientLocked) {
-      // Live clock already stored above. Day slider leaves `when` frozen.
-      applyEphemeris({ quiet: true });
     }
     syncMoon();
     if (missionMode !== "off") updateMissionPinFacing();
     updateTiles();
     renderer.render(scene, camera);
-    if (!orientLocked || oneFinger || twoFinger || tilting) kick();
+    // Idle when still. Real Earth spin is invisible frame-to-frame; the page
+    // refreshes Live on a timer. Keep looping only while dragging or tipping.
+    if (oneFinger || twoFinger || tilting) kick();
   }
 
   applyEphemeris();
