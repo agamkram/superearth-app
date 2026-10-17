@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e167";
+export const BUILD = "e170";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1256,6 +1256,8 @@ export function createEarthGlobe(canvas, options = {}) {
   let gridTiltTarget = 0;
   let gridTiltAnimStart = 0;
   const GRID_TILT_MS = 1000;
+  /** Replay tip from an already-tipped Off: keep season in the axle (no sun jump). */
+  let tipHoldSun = false;
 
   function earthObliquityRad() {
     const A = globalThis.Astronomy;
@@ -1269,15 +1271,31 @@ export function createEarthGlobe(canvas, options = {}) {
     return THREE.MathUtils.degToRad(23.44);
   }
 
+  /** Undo finger tip-down only — keep spin (theta) and zoom. */
+  function clearFingerTipDown(dist) {
+    readSpherical();
+    // Untilted observer Y is sin(lat); north-up camera phi matches that elevation.
+    const phi = Math.PI / 2 - THREE.MathUtils.degToRad(observerLat);
+    spherical.phi = THREE.MathUtils.clamp(phi, MIN_POLAR, MAX_POLAR);
+    if (Number.isFinite(dist)) spherical.radius = dist;
+    writeCamera();
+    syncMoon();
+  }
+
   function setGrid(on) {
     gridOn = !!on;
     if (gridGroup) gridGroup.visible = gridOn;
     if (gridOn) {
-      // Always ease 0→1 so every On gets the same 1s tip. Camera stays put.
+      // Always ease 0→1 over 1s. Drop finger tip-down (phi only) so it does not
+      // stack on the axle — do not re-aim spin/theta (that looked random).
+      const dist = camDist();
+      tipHoldSun = gridTilt > 0.5;
       gridTilt = 0;
       gridTiltFrom = 0;
       gridTiltTarget = 1;
       gridTiltAnimStart = performance.now();
+      applyEphemeris({ skipKick: true });
+      clearFingerTipDown(dist);
     }
     // Off: hide lines only — do not untip or reorient.
     applyEphemeris();
@@ -1881,7 +1899,9 @@ export function createEarthGlobe(canvas, options = {}) {
 
     // Upright: seasons live in the sun's latitude. Grid on: seasons live in
     // the axle — hand sunLat → 0 as we tip so we don't double the lean.
-    const sunLat = sub.lat * (1 - gridTilt);
+    // tipHoldSun: replaying tip after Off kept the lean — don't dump season
+    // back into the sun for the untilt→tip flash.
+    const sunLat = tipHoldSun ? 0 : sub.lat * (1 - gridTilt);
     const dec = THREE.MathUtils.degToRad(sunLat);
     if (orientLocked) {
       // Day slider: Earth pose stays (plus drag); sun walks with scrubbed time.
@@ -3081,7 +3101,10 @@ export function createEarthGlobe(canvas, options = {}) {
       );
       const s = u * u * (3 - 2 * u);
       gridTilt = gridTiltFrom + (gridTiltTarget - gridTiltFrom) * s;
-      if (u >= 1) gridTilt = gridTiltTarget;
+      if (u >= 1) {
+        gridTilt = gridTiltTarget;
+        tipHoldSun = false;
+      }
       // Tip Earth only — leave camera alone so the sun stays put on screen.
       applyEphemeris({ skipKick: true });
       tilting = gridTilt !== gridTiltTarget;
