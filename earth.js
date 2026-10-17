@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e162";
+export const BUILD = "e163";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1275,6 +1275,8 @@ export function createEarthGlobe(canvas, options = {}) {
     gridTiltFrom = gridTilt;
     gridTiltTarget = gridOn ? 1 : 0;
     gridTiltAnimStart = performance.now();
+    // Tip only — keep spin, zoom, and camera aim wherever they are.
+    applyEphemeris();
     kick();
     return gridOn;
   }
@@ -1873,12 +1875,15 @@ export function createEarthGlobe(canvas, options = {}) {
       sub = subsolarPoint(when);
     } catch (_) {}
 
-    const dec = THREE.MathUtils.degToRad(sub.lat);
+    // Upright: seasons live in the sun's latitude. Grid on: seasons live in
+    // the axle — hand sunLat → 0 as we tip so we don't double the lean.
+    const sunLat = sub.lat * (1 - gridTilt);
+    const dec = THREE.MathUtils.degToRad(sunLat);
     if (orientLocked) {
       // Day slider: Earth pose stays (plus drag); sun walks with scrubbed time.
       // Sun uses scrubYaw only — swipe turns Earth under a fixed sun.
       if (mesh) mesh.rotation.set(0, scrubYaw + userSpin, 0);
-      const p = latLonToLocal(sub.lat, sub.lon, 1);
+      const p = latLonToLocal(sunLat, sub.lon, 1);
       _lonEuler.set(0, scrubYaw, 0);
       p.applyEuler(_lonEuler);
       sunDir.copy(p).normalize();
@@ -1889,14 +1894,20 @@ export function createEarthGlobe(canvas, options = {}) {
       if (mesh) mesh.rotation.set(0, yLon, 0);
     }
     if (gridTilt > 1e-5) {
+      // Tip toward today's sun on the equator (untilted frame).
       _sunFlat.set(sunDir.x, 0, sunDir.z);
       if (_sunFlat.lengthSq() < 1e-8) _sunFlat.set(1, 0, 0);
       _sunFlat.normalize();
-      _tipAxis.crossVectors(_yUp, _sunFlat).normalize();
-      earthTilt.quaternion.setFromAxisAngle(
-        _tipAxis,
-        earthObliquityRad() * gridTilt
-      );
+      _tipAxis.crossVectors(_yUp, _sunFlat);
+      if (_tipAxis.lengthSq() > 1e-8) {
+        _tipAxis.normalize();
+        earthTilt.quaternion.setFromAxisAngle(
+          _tipAxis,
+          earthObliquityRad() * gridTilt
+        );
+      } else {
+        earthTilt.quaternion.identity();
+      }
     } else {
       earthTilt.quaternion.identity();
     }
