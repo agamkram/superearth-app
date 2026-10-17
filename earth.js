@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e166";
+export const BUILD = "e167";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1273,12 +1273,9 @@ export function createEarthGlobe(canvas, options = {}) {
     gridOn = !!on;
     if (gridGroup) gridGroup.visible = gridOn;
     if (gridOn) {
-      // On: drop any finger tip-down (that stacks with the axle), keep zoom,
-      // re-aim at your place with north up, then ease to real axial tip.
-      const dist = camDist();
-      applyEphemeris({ skipKick: true });
-      frameCameraToObserver(dist);
-      gridTiltFrom = gridTilt;
+      // Always ease 0→1 so every On gets the same 1s tip. Camera stays put.
+      gridTilt = 0;
+      gridTiltFrom = 0;
       gridTiltTarget = 1;
       gridTiltAnimStart = performance.now();
     }
@@ -1901,8 +1898,16 @@ export function createEarthGlobe(canvas, options = {}) {
       if (mesh) mesh.rotation.set(0, yLon, 0);
     }
     if (gridTilt > 1e-5) {
-      // Tip toward today's sun on the equator (untilted frame).
-      _sunFlat.set(sunDir.x, 0, sunDir.z);
+      // Tip axis locked to equator-sun so it does not twist while gridTilt eases.
+      if (orientLocked) {
+        _offset.copy(latLonToLocal(0, sub.lon, 1));
+        _lonEuler.set(0, scrubYaw, 0);
+        _offset.applyEuler(_lonEuler);
+        _sunFlat.set(_offset.x, 0, _offset.z);
+      } else {
+        // Live sun sits on +X; tip north toward it.
+        _sunFlat.set(1, 0, 0);
+      }
       if (_sunFlat.lengthSq() < 1e-8) _sunFlat.set(1, 0, 0);
       _sunFlat.normalize();
       _tipAxis.crossVectors(_yUp, _sunFlat);
