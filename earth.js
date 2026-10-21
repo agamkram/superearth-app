@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e172";
+export const BUILD = "e173";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -2833,21 +2833,34 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function uiControlAt(pt) {
     if (!pt) return null;
+    // Only real controls — not .cycle / .slider-track wrappers (those steal Sun + slider).
     const roots = ["fact-sheet", "loc-dialog", "mission-sheet", "loc-bar"];
+    let best = null;
+    let bestArea = Infinity;
     for (const id of roots) {
       const root = document.getElementById(id);
       if (!root || root.hasAttribute("hidden")) continue;
       const ctrls = root.querySelectorAll(
-        "button,input,select,textarea,a,.cycle,.slider-track,.cycle-controls,.leaflet-container,.fact-sheet-scrim"
+        "button,input,select,textarea,a,.leaflet-container,.fact-sheet-scrim"
       );
       for (const ctrl of ctrls) {
         const r = ctrl.getBoundingClientRect();
-        if (pt.x >= r.left && pt.x <= r.right && pt.y >= r.top && pt.y <= r.bottom) {
-          return ctrl;
+        if (
+          pt.x < r.left ||
+          pt.x > r.right ||
+          pt.y < r.top ||
+          pt.y > r.bottom
+        ) {
+          continue;
+        }
+        const area = Math.max(r.width, 0) * Math.max(r.height, 0);
+        if (area > 0 && area < bestArea) {
+          bestArea = area;
+          best = ctrl;
         }
       }
     }
-    return null;
+    return best;
   }
 
   function isFormControl(el, e) {
@@ -2865,11 +2878,14 @@ export function createEarthGlobe(canvas, options = {}) {
   function passToUi(e) {
     const ctrl = uiControlAt(eventPoint(e));
     if (!ctrl && !isFormControl(e.target, e)) return false;
-    // Range scrub needs native touch move — don't steal it.
-    if (ctrl && ctrl.type === "range") return true;
+    // Range scrub needs native touch — never preventDefault / fake-click it.
+    const rangeEl =
+      (ctrl && ctrl.type === "range" && ctrl) ||
+      (e.target && e.target.type === "range" && e.target) ||
+      null;
+    if (rangeEl) return true;
     if (!ctrl) return true;
     // iOS PWA often never synthesizes click when html/body are touch-action:none.
-    // Always fire the control ourselves (debounce covers touch + pointer doubles).
     e.preventDefault();
     e.stopPropagation();
     const now = Date.now();
