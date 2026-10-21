@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e170";
+export const BUILD = "e171";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -199,15 +199,17 @@ const LOD = {
 };
 
 /**
- * Zoom tiles (Next Gen day @ JPEG 85). Never a full high-k wrap.
+ * Zoom tiles (Next Gen day + Black Marble night @ JPEG 85). Never a full high-k wrap.
  * Ladder by camera distance: 8k wrap → tiles-16 @≤2.5 → tiles-32 @≤1.5 → floor 1.15.
  * Each level loads a 3×3 under the screen center (plus one keep-ring while loading).
+ * Day and night tiles share the same grid; patches stay opaque so sharp night covers soft 8k.
  */
 const TILE_RING = 1;
 const TILE_LEVELS = {
   16: {
     label: "16",
     folder: "tiles-16",
+    nightFolder: "night-tiles-16",
     cols: 8,
     rows: 4,
     onDist: 2.5,
@@ -216,6 +218,7 @@ const TILE_LEVELS = {
   32: {
     label: "32",
     folder: "tiles-32",
+    nightFolder: "night-tiles-32",
     cols: 16,
     rows: 8,
     onDist: 1.5,
@@ -681,6 +684,17 @@ export function createEarthGlobe(canvas, options = {}) {
     tex.needsUpdate = true;
   }
 
+  /** Night zoom tiles: linear lights, no mips — same crisp rule as day tiles. */
+  function configureTileNight(tex) {
+    tex.colorSpace = THREE.NoColorSpace;
+    tex.flipY = true;
+    tex.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    tex.needsUpdate = true;
+  }
+
   function configureNormal(tex) {
     tex.colorSpace = THREE.NoColorSpace;
     tex.flipY = true;
@@ -785,7 +799,7 @@ export function createEarthGlobe(canvas, options = {}) {
         dayCol += vec3(0.03, 0.09, 0.22) * pow(rim, 3.2) * smoothstep(-0.05, 0.35, ndl) * uSunOn * 0.42;
 
         vec3 nightCol = pow(texture2D(uNight, vMapUv).rgb, vec3(2.2));
-        diffuseColor.rgb = mix(nightCol * 2.1, dayCol, day);`
+        diffuseColor.rgb = mix(nightCol * 2.45, dayCol, day);`
       );
     };
     return material;
@@ -872,10 +886,11 @@ export function createEarthGlobe(canvas, options = {}) {
         vec3 viewD = normalize(cameraPosition - vWorldPos);
         float rim = 1.0 - max(0.0, dot(nSphere, viewD));
         dayCol += vec3(0.03, 0.09, 0.22) * pow(rim, 3.2) * smoothstep(-0.05, 0.35, ndl) * uSunOn * 0.42;
-        vec3 nightCol = pow(texture2D(uNight, planetUv).rgb, vec3(2.2));
-        diffuseColor.rgb = mix(nightCol * 2.1, dayCol, day);
-        // Opaque on the day side so sharp tiles fully cover the soft 8k under them.
-        diffuseColor.a = mix(0.0, 1.0, day);`
+        // Sharp night from the matching zoom tile (same UVs as day), not the soft 8k wrap.
+        vec3 nightCol = pow(texture2D(uNight, vMapUv).rgb, vec3(2.2));
+        diffuseColor.rgb = mix(nightCol * 2.45, dayCol, day);
+        // Always opaque so day and night both cover the soft wrap underneath.
+        diffuseColor.a = 1.0;`
       );
     };
     return mat;
@@ -1768,6 +1783,8 @@ export function createEarthGlobe(canvas, options = {}) {
     if (piece.parent) piece.parent.remove(piece);
     piece.geometry.dispose();
     disposeMap(piece.material.map);
+    const nightTex = piece.material.userData?.nightUniform?.value;
+    if (nightTex) disposeMap(nightTex);
     piece.material.dispose();
   }
 
@@ -1785,7 +1802,11 @@ export function createEarthGlobe(canvas, options = {}) {
     return `${level.folder}/c${c}r${r}.jpg?v=${TEX_VER}`;
   }
 
-  function makeTilePatch(level, c, r, tex) {
+  function nightTileUrl(level, c, r) {
+    return `${level.nightFolder}/c${c}r${r}.jpg?v=${TEX_VER}`;
+  }
+
+  function makeTilePatch(level, c, r, dayTex, nightTex) {
     const phiStart = (c / level.cols) * Math.PI * 2;
     const phiLength = (1 / level.cols) * Math.PI * 2;
     const thetaStart = (r / level.rows) * Math.PI;
@@ -1799,9 +1820,10 @@ export function createEarthGlobe(canvas, options = {}) {
       thetaStart,
       thetaLength
     );
-    const nightU = material.userData.nightUniform;
+    const nightU = { value: nightTex };
     const normalU = material.userData.normalUniform;
-    const mat = makeTileMaterial(tex, nightU, normalU);
+    const mat = makeTileMaterial(dayTex, nightU, normalU);
+    mat.userData.nightUniform = nightU;
     const piece = new THREE.Mesh(geo, mat);
     piece.renderOrder = 1;
     piece.userData.tileKey = `${level.label}:${c}:${r}`;
@@ -1814,36 +1836,76 @@ export function createEarthGlobe(canvas, options = {}) {
     const parts = key.split(":");
     const c = Number(parts[1]);
     const r = Number(parts[2]);
+    let dayTex = null;
+    let nightTex = null;
+    let pending = 2;
+    let failed = false;
+
+    const abort = () => {
+      if (dayTex) {
+        dayTex.dispose();
+        dayTex = null;
+      }
+      if (nightTex) {
+        nightTex.dispose();
+        nightTex = null;
+      }
+    };
+
+    const finish = () => {
+      pending -= 1;
+      if (pending > 0) return;
+      tileLoading.delete(key);
+      if (
+        failed ||
+        disposed ||
+        !tilesEnabled ||
+        !tileGroup ||
+        !tileGroup.visible ||
+        !tileWanted.has(key) ||
+        tileLevel !== level.label ||
+        tileLive.has(key) ||
+        !dayTex ||
+        !nightTex
+      ) {
+        abort();
+        return;
+      }
+      configureTileColor(dayTex);
+      configureTileNight(nightTex);
+      releaseDecodedImage(dayTex);
+      releaseDecodedImage(nightTex);
+      ensureTileGroup();
+      const piece = makeTilePatch(level, c, r, dayTex, nightTex);
+      tileGroup.add(piece);
+      tileLive.set(key, piece);
+      reportQuality(level.label);
+      kick();
+    };
+
     loader.load(
       tileUrl(level, c, r),
       (tex) => {
-        tileLoading.delete(key);
-        if (
-          disposed ||
-          !tilesEnabled ||
-          !tileGroup ||
-          !tileGroup.visible ||
-          !tileWanted.has(key) ||
-          tileLevel !== level.label
-        ) {
-          tex.dispose();
-          return;
-        }
-        if (tileLive.has(key)) {
-          tex.dispose();
-          return;
-        }
-        configureTileColor(tex);
-        releaseDecodedImage(tex);
-        ensureTileGroup();
-        const piece = makeTilePatch(level, c, r, tex);
-        tileGroup.add(piece);
-        tileLive.set(key, piece);
-        reportQuality(level.label);
-        kick();
+        dayTex = tex;
+        finish();
       },
       undefined,
-      () => tileLoading.delete(key)
+      () => {
+        failed = true;
+        finish();
+      }
+    );
+    loader.load(
+      nightTileUrl(level, c, r),
+      (tex) => {
+        nightTex = tex;
+        finish();
+      },
+      undefined,
+      () => {
+        failed = true;
+        finish();
+      }
     );
   }
 
