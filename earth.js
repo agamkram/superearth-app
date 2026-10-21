@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e171";
+export const BUILD = "e172";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -2864,15 +2864,18 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function passToUi(e) {
     const ctrl = uiControlAt(eventPoint(e));
-    if (!isFormControl(e.target, e) && !ctrl) return false;
-    if (ctrl && e.target !== ctrl && !(typeof ctrl.contains === "function" && ctrl.contains(e.target))) {
-      e.preventDefault();
-      e.stopPropagation();
-      const now = Date.now();
-      if (now - uiClickAt > 400 && typeof ctrl.click === "function" && ctrl.type !== "range") {
-        uiClickAt = now;
-        ctrl.click();
-      }
+    if (!ctrl && !isFormControl(e.target, e)) return false;
+    // Range scrub needs native touch move — don't steal it.
+    if (ctrl && ctrl.type === "range") return true;
+    if (!ctrl) return true;
+    // iOS PWA often never synthesizes click when html/body are touch-action:none.
+    // Always fire the control ourselves (debounce covers touch + pointer doubles).
+    e.preventDefault();
+    e.stopPropagation();
+    const now = Date.now();
+    if (now - uiClickAt > 350 && typeof ctrl.click === "function") {
+      uiClickAt = now;
+      ctrl.click();
     }
     return true;
   }
