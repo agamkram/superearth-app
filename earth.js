@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e181";
+export const BUILD = "e182";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -904,12 +904,12 @@ export function createEarthGlobe(canvas, options = {}) {
     ctx.strokeStyle = "rgba(12, 14, 18, 0.92)";
     ctx.lineWidth = 7;
     drawMark();
-    ctx.strokeStyle = "rgba(232, 56, 48, 0.96)";
+    ctx.strokeStyle = "rgba(255, 48, 40, 0.98)";
     ctx.lineWidth = 3;
     drawMark();
     ctx.fillStyle = "rgba(12, 14, 18, 0.92)";
     ctx.fillRect(m - 4, m - 4, 8, 8);
-    ctx.fillStyle = "rgba(255, 72, 62, 0.96)";
+    ctx.fillStyle = "rgba(255, 70, 58, 1)";
     ctx.fillRect(m - 2, m - 2, 4, 4);
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
