@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e178";
+export const BUILD = "e179";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -759,9 +759,9 @@ export function createEarthGlobe(canvas, options = {}) {
   const POLE_GEO_R = 0.006;
   const POLE_PX_FAR = 1;
   const POLE_PX_NEAR = 5;
-  const PIN_GEO_R = 0.007;
-  const PIN_PX_FAR = 8;
-  const PIN_PX_NEAR = 14;
+  const PIN_GEO_R = 0.012;
+  const PIN_PX_FAR = 11;
+  const PIN_PX_NEAR = 17;
   const _poleOut = new THREE.Vector3();
   const _pinOut = new THREE.Vector3();
   let locPin = null;
@@ -873,8 +873,64 @@ export function createEarthGlobe(canvas, options = {}) {
     }
   }
 
+  function makeLocReticle() {
+    const size = 128;
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, size, size);
+    const m = size / 2;
+    ctx.strokeStyle = "rgba(220, 236, 255, 0.95)";
+    ctx.lineCap = "butt";
+    ctx.lineJoin = "miter";
+    ctx.shadowColor = "rgba(0, 0, 0, 0.85)";
+    ctx.shadowBlur = 4;
+    // Outer ring
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(m, m, 54, 0, Math.PI * 2);
+    ctx.stroke();
+    // Cardinal ticks, gap at the center
+    ctx.lineWidth = 3;
+    const inner = 16;
+    const outer = 42;
+    ctx.beginPath();
+    ctx.moveTo(m, m - outer);
+    ctx.lineTo(m, m - inner);
+    ctx.moveTo(m, m + inner);
+    ctx.lineTo(m, m + outer);
+    ctx.moveTo(m - outer, m);
+    ctx.lineTo(m - inner, m);
+    ctx.moveTo(m + inner, m);
+    ctx.lineTo(m + outer, m);
+    ctx.stroke();
+    // Center pip
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(232, 244, 252, 0.95)";
+    ctx.fillRect(m - 2, m - 2, 4, 4);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      depthTest: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+      toneMapped: false,
+    });
+    const mark = new THREE.Mesh(locPinGeo, mat);
+    mark.renderOrder = 7;
+    mark.userData.pinTex = tex;
+    return mark;
+  }
+
   function disposeLocPin() {
     if (!locPin) return;
+    locPin.userData.pinTex?.dispose();
     locPin.material?.dispose();
     locPinGeo?.dispose();
     locPinGeo = null;
@@ -885,26 +941,19 @@ export function createEarthGlobe(canvas, options = {}) {
   function attachLocPin(parentMesh) {
     disposeLocPin();
     if (!parentMesh) return;
-    locPinGeo = new THREE.SphereGeometry(PIN_GEO_R, 16, 12);
-    locPin = new THREE.Mesh(
-      locPinGeo,
-      new THREE.MeshBasicMaterial({
-        color: 0x7ec8ff,
-        toneMapped: false,
-        depthTest: true,
-      })
-    );
+    locPinGeo = new THREE.CircleGeometry(PIN_GEO_R, 32);
+    locPin = makeLocReticle();
     locPin.name = "loc-pin";
-    locPin.renderOrder = 7;
     parentMesh.add(locPin);
     placeLocPin();
   }
 
   function placeLocPin() {
     if (!locPin) return;
-    locPin.position.copy(
-      latLonToLocal(observerLat, observerLon, RADIUS * 1.016)
-    );
+    const p = latLonToLocal(observerLat, observerLon, RADIUS * 1.004);
+    locPin.position.copy(p);
+    _pinOut.copy(p).normalize();
+    locPin.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), _pinOut);
     updateLocPinFacing();
   }
 
