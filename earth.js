@@ -10,7 +10,7 @@ const HOME_FILL = 0.9;
 /** Closest zoom (camera distance to Earth center; Earth radius = 1). */
 const MIN_DIST = 1.15;
 /** Furthest zoom as a multiple of the opening (home) distance. */
-const MAX_OUT_FACTOR = 1.85;
+const MAX_OUT_FACTOR = 3.7;
 const MIN_POLAR = 0.15;
 const MAX_POLAR = Math.PI - 0.15;
 const MAX_PAN = RADIUS * 20;
@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e184";
+export const BUILD = "e185";
 const TEX_VER = BUILD;
 
 const LOD = {
