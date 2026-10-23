@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e185";
+export const BUILD = "e186";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -702,6 +702,7 @@ export function createEarthGlobe(canvas, options = {}) {
     if (auroraMesh) mesh.add(auroraMesh);
     if (tileGroup) mesh.add(tileGroup);
     if (borderLines) mesh.add(borderLines);
+    if (stateLines) mesh.add(stateLines);
     if (gridGroup) mesh.add(gridGroup);
     earthTilt.add(mesh);
     ensureAtmosphere();
@@ -1000,75 +1001,103 @@ export function createEarthGlobe(canvas, options = {}) {
 
   /** Natural Earth 50m land borders + coastlines — hairline shell just above the surface. */
   const BORDER_R = RADIUS * 1.0012;
+  const STATE_R = RADIUS * 1.0015;
   let borderLines = null;
+  let stateLines = null;
   let bordersOn = false;
 
-  function disposeBorders() {
-    if (!borderLines) return;
-    if (borderLines.parent) borderLines.parent.remove(borderLines);
-    borderLines.geometry?.dispose();
-    borderLines.material?.dispose();
-    borderLines = null;
+  function disposeLineMesh(obj) {
+    if (!obj) return;
+    if (obj.parent) obj.parent.remove(obj);
+    obj.geometry?.dispose();
+    obj.material?.dispose();
   }
 
-  function loadBorders() {
-    fetch(new URL(`./borders-50m.bin?v=${TEX_VER}`, import.meta.url))
+  function disposeBorders() {
+    disposeLineMesh(borderLines);
+    borderLines = null;
+    disposeLineMesh(stateLines);
+    stateLines = null;
+  }
+
+  function positionsFromBorderBin(buf, radius) {
+    const view = new DataView(buf);
+    let o = 0;
+    const nLines = view.getUint32(o, true);
+    o += 4;
+    const positions = [];
+    for (let i = 0; i < nLines; i++) {
+      const n = view.getUint32(o, true);
+      o += 4;
+      let prevLon = NaN;
+      let prevLat = NaN;
+      for (let j = 0; j < n; j++) {
+        const lon = view.getFloat32(o, true);
+        o += 4;
+        const lat = view.getFloat32(o, true);
+        o += 4;
+        if (Number.isFinite(prevLon) && Math.abs(lon - prevLon) < 180) {
+          const a = latLonToLocal(prevLat, prevLon, radius);
+          const b = latLonToLocal(lat, lon, radius);
+          positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+        }
+        prevLon = lon;
+        prevLat = lat;
+      }
+    }
+    return positions;
+  }
+
+  function attachBorderMesh(positions, name, opacity) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(new Float32Array(positions), 3)
+    );
+    const mat = new THREE.LineBasicMaterial({
+      color: 0xd4deec,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const lines = new THREE.LineSegments(geo, mat);
+    lines.name = name;
+    lines.renderOrder = 3;
+    lines.visible = bordersOn;
+    if (mesh) mesh.add(lines);
+    return lines;
+  }
+
+  function loadBorderBin(file, radius, name, opacity, apply) {
+    fetch(new URL(`./${file}?v=${TEX_VER}`, import.meta.url))
       .then((res) => {
-        if (!res.ok) throw new Error("borders " + res.status);
+        if (!res.ok) throw new Error(file + " " + res.status);
         return res.arrayBuffer();
       })
       .then((buf) => {
         if (disposed) return;
-        const view = new DataView(buf);
-        let o = 0;
-        const nLines = view.getUint32(o, true);
-        o += 4;
-        const positions = [];
-        for (let i = 0; i < nLines; i++) {
-          const n = view.getUint32(o, true);
-          o += 4;
-          let prevLon = NaN;
-          let prevLat = NaN;
-          for (let j = 0; j < n; j++) {
-            const lon = view.getFloat32(o, true);
-            o += 4;
-            const lat = view.getFloat32(o, true);
-            o += 4;
-            if (Number.isFinite(prevLon) && Math.abs(lon - prevLon) < 180) {
-              const a = latLonToLocal(prevLat, prevLon, BORDER_R);
-              const b = latLonToLocal(lat, lon, BORDER_R);
-              positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
-            }
-            prevLon = lon;
-            prevLat = lat;
-          }
-        }
-        disposeBorders();
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute(
-          "position",
-          new THREE.Float32BufferAttribute(new Float32Array(positions), 3)
-        );
-        const mat = new THREE.LineBasicMaterial({
-          color: 0xd4deec,
-          transparent: true,
-          opacity: 0.7,
-          depthWrite: false,
-          toneMapped: false,
-        });
-        borderLines = new THREE.LineSegments(geo, mat);
-        borderLines.name = "country-borders";
-        borderLines.renderOrder = 3;
-        borderLines.visible = bordersOn;
-        if (mesh) mesh.add(borderLines);
+        apply(attachBorderMesh(positionsFromBorderBin(buf, radius), name, opacity));
         kick();
       })
       .catch(() => {});
   }
 
+  function loadBorders() {
+    loadBorderBin("borders-50m.bin", BORDER_R, "country-borders", 0.7, (lines) => {
+      disposeLineMesh(borderLines);
+      borderLines = lines;
+    });
+    loadBorderBin("states-50m.bin", STATE_R, "state-borders", 0.48, (lines) => {
+      disposeLineMesh(stateLines);
+      stateLines = lines;
+    });
+  }
+
   function setBorders(on) {
     bordersOn = !!on;
     if (borderLines) borderLines.visible = bordersOn;
+    if (stateLines) stateLines.visible = bordersOn;
     kick();
     return bordersOn;
   }
