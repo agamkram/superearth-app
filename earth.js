@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e180";
+export const BUILD = "e181";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -761,8 +761,8 @@ export function createEarthGlobe(canvas, options = {}) {
   const POLE_PX_NEAR = 5;
   const PIN_GEO_R = 0.012;
   /** Screen px: findable at home, smaller in tight so it does not sit on the city. */
-  const PIN_PX_HOME = 13;
-  const PIN_PX_CLOSE = 7;
+  const PIN_PX_HOME = 9;
+  const PIN_PX_CLOSE = 5;
   const _poleOut = new THREE.Vector3();
   const _pinOut = new THREE.Vector3();
   let locPin = null;
@@ -904,12 +904,12 @@ export function createEarthGlobe(canvas, options = {}) {
     ctx.strokeStyle = "rgba(12, 14, 18, 0.92)";
     ctx.lineWidth = 7;
     drawMark();
-    ctx.strokeStyle = "rgba(232, 176, 64, 0.96)";
+    ctx.strokeStyle = "rgba(232, 56, 48, 0.96)";
     ctx.lineWidth = 3;
     drawMark();
     ctx.fillStyle = "rgba(12, 14, 18, 0.92)";
     ctx.fillRect(m - 4, m - 4, 8, 8);
-    ctx.fillStyle = "rgba(255, 214, 110, 0.96)";
+    ctx.fillStyle = "rgba(255, 72, 62, 0.96)";
     ctx.fillRect(m - 2, m - 2, 4, 4);
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
