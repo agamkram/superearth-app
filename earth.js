@@ -83,9 +83,11 @@ const PAN_MARGIN = 0.35;
 
 const NEAR_SIDE_Y = -Math.PI / 2;
 
-/** Starfield (ported from satellite-app) — fixed sphere behind the globe */
+/** Starfield (ported from satellite-app) — behind the real Moon (~60 Earth radii). */
 const STAR_COUNT = 5000;
-const STAR_RADIUS = 55;
+const STAR_RADIUS = 160;
+/** Mean lunar radius in Earth radii. Distance comes from GeoVector. */
+const MOON_RADIUS = 1737.4 / 6371;
 
 function mulberry32(seed) {
   return () => {
@@ -177,7 +179,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e175";
+export const BUILD = "e176";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -362,6 +364,14 @@ export function createEarthGlobe(canvas, options = {}) {
   let auroraTex = null;
   let auroraShown = true;
   let auroraHas = false;
+  let moonMesh = null;
+  let moonMat = null;
+  let moonDist = 60.3;
+  const _moonDir = new THREE.Vector3(0, 0, -1);
+  const _towardEarth = new THREE.Vector3();
+  const _xPlus = new THREE.Vector3(1, 0, 0);
+  const _libEuler = new THREE.Euler(0, 0, 0, "YXZ");
+  const _libQ = new THREE.Quaternion();
   let width = 0; // CSS viewport width (window)
   let height = 0;
   let bufferW = 0; // drawing buffer / canvas CSS (includes pan margin)
@@ -1573,25 +1583,182 @@ export function createEarthGlobe(canvas, options = {}) {
     for (const key of want) loadTile(level, key);
   }
 
+  function wrapLonDeg(lon) {
+    while (lon > 180) lon -= 360;
+    while (lon < -180) lon += 360;
+    return lon;
+  }
+
   function subsolarPoint(date) {
     const A = globalThis.Astronomy;
     const time = A.MakeTime(date);
     const sun = A.Equator(A.Body.Sun, time, new A.Observer(0, 0, 0), true, true);
     const gast = A.SiderealTime(time);
-    let lon = (sun.ra - gast) * 15;
-    while (lon > 180) lon -= 360;
-    while (lon < -180) lon += 360;
-    return { lat: sun.dec, lon };
+    return { lat: sun.dec, lon: wrapLonDeg((sun.ra - gast) * 15) };
+  }
+
+  /**
+   * Sun + Moon in the same equatorial frame SuperEarth already uses for the sun.
+   * Live: sun at lon 0 → +X via latLonToLocal. Moon east of the sun is +(moon.ra − sun.ra)×15°.
+   * Full moon (elongation ~180°) ⇒ moonDir · sunDir < 0.
+   */
+  function skyBodies(date) {
+    const A = globalThis.Astronomy;
+    const time = A.MakeTime(date);
+    const obs = new A.Observer(0, 0, 0);
+    const sun = A.Equator(A.Body.Sun, time, obs, true, true);
+    const moon = A.Equator(A.Body.Moon, time, obs, true, true);
+    const gast = A.SiderealTime(time);
+    const moonVec = A.GeoVector(A.Body.Moon, time, false);
+    const distKm =
+      Math.hypot(moonVec.x, moonVec.y, moonVec.z) * A.KM_PER_AU;
+    let elat = 0;
+    let elon = 0;
+    try {
+      const lib = A.Libration(time);
+      elat = Number(lib.elat) || 0;
+      elon = Number(lib.elon) || 0;
+    } catch (_) {}
+    return {
+      sunLat: sun.dec,
+      sunLon: wrapLonDeg((sun.ra - gast) * 15),
+      moonLat: moon.dec,
+      moonLon: wrapLonDeg((moon.ra - gast) * 15),
+      moonDist: THREE.MathUtils.clamp(distKm / 6371, 50, 70),
+      elat,
+      elon,
+    };
+  }
+
+  function makeMoonMaterial(map) {
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        uMap: { value: map },
+        uSunDir: sunDirUniform,
+        uSunOn: sunOnUniform,
+        uHasMap: { value: map ? 1 : 0 },
+        uEarthCenter: { value: target },
+      },
+      vertexShader: /* glsl */ `
+        varying vec3 vWorldN;
+        varying vec3 vWorldPos;
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          vec3 nLocal = normalize(position);
+          vWorldN = normalize(mat3(modelMatrix) * nLocal);
+          vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D uMap;
+        uniform vec3 uSunDir;
+        uniform float uSunOn;
+        uniform float uHasMap;
+        uniform vec3 uEarthCenter;
+        varying vec3 vWorldN;
+        varying vec3 vWorldPos;
+        varying vec2 vUv;
+        void main() {
+          vec3 n = normalize(vWorldN);
+          vec3 sunD = normalize(uSunDir);
+          float ndl = dot(n, sunD);
+          float day = uSunOn * smoothstep(-0.03, 0.16, ndl);
+          vec3 albedo = uHasMap > 0.5
+            ? texture2D(uMap, vUv).rgb
+            : vec3(0.52, 0.50, 0.46);
+          vec3 col = albedo * mix(0.04, 1.18, day);
+          vec3 toEarth = normalize(uEarthCenter - vWorldPos);
+          float earthLit = max(0.0, dot(n, toEarth));
+          col += albedo * vec3(0.22, 0.32, 0.48) * earthLit * 0.16 * uSunOn * (1.0 - day);
+          gl_FragColor = vec4(col, 1.0);
+        }
+      `,
+      toneMapped: false,
+    });
+  }
+
+  function loadSkyMoon() {
+    if (moonMesh) return;
+    moonMat = makeMoonMaterial(null);
+    moonMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(MOON_RADIUS, 48, 32),
+      moonMat
+    );
+    moonMesh.frustumCulled = true;
+    moonMesh.renderOrder = -5;
+    moonMesh.visible = false;
+    scene.add(moonMesh);
+    applyEphemeris({ skipKick: true });
+    loader.load(
+      `moon-2k.jpg?v=${TEX_VER}`,
+      (tex) => {
+        if (disposed || !moonMat) {
+          tex.dispose();
+          return;
+        }
+        configureColor(tex);
+        releaseDecodedImage(tex);
+        moonMat.uniforms.uMap.value = tex;
+        moonMat.uniforms.uHasMap.value = 1;
+        kick();
+      },
+      undefined,
+      () => {}
+    );
+  }
+
+  function placeSkyMoon(sky) {
+    if (!moonMesh) return;
+    const dLon = wrapLonDeg(sky.moonLon - sky.sunLon);
+    if (orientLocked) {
+      _moonDir.copy(latLonToLocal(sky.moonLat, sky.moonLon, 1));
+      _lonEuler.set(0, scrubYaw, 0);
+      _moonDir.applyEuler(_lonEuler);
+    } else {
+      _moonDir.copy(latLonToLocal(sky.moonLat, dLon, 1));
+    }
+    if (_moonDir.lengthSq() < 1e-10) _moonDir.set(-1, 0, 0);
+    _moonDir.normalize();
+    moonDist = sky.moonDist;
+    moonMesh.position.copy(target).addScaledVector(_moonDir, moonDist);
+    _towardEarth.copy(_moonDir).negate();
+    moonMesh.quaternion.setFromUnitVectors(_xPlus, _towardEarth);
+    _libEuler.set(
+      THREE.MathUtils.degToRad(-sky.elat),
+      THREE.MathUtils.degToRad(sky.elon),
+      0,
+      "YXZ"
+    );
+    _libQ.setFromEuler(_libEuler);
+    moonMesh.quaternion.multiply(_libQ);
+    moonMesh.visible = true;
   }
 
   function applyEphemeris(opts = {}) {
     const A = globalThis.Astronomy;
     if (!A) return;
 
-    let sub = { lat: 0, lon: 0 };
+    let sky = {
+      sunLat: 0,
+      sunLon: 0,
+      moonLat: 0,
+      moonLon: 0,
+      moonDist: 60.3,
+      elat: 0,
+      elon: 0,
+    };
     try {
-      sub = subsolarPoint(when);
-    } catch (_) {}
+      sky = skyBodies(when);
+    } catch (_) {
+      try {
+        const s = subsolarPoint(when);
+        sky.sunLat = s.lat;
+        sky.sunLon = s.lon;
+      } catch (__) {}
+    }
+    const sub = { lat: sky.sunLat, lon: sky.sunLon };
 
     // Upright: seasons live in the sun's latitude. Grid on: seasons live in
     // the axle — hand sunLat → 0 as we tip so we don't double the lean.
@@ -1641,6 +1808,7 @@ export function createEarthGlobe(canvas, options = {}) {
     }
     earthGroup.rotation.set(0, 0, 0);
     earthGroup.position.copy(target);
+    placeSkyMoon(sky);
 
     key.position.copy(target).addScaledVector(sunDir, 12);
     key.target.position.copy(target);
@@ -2117,7 +2285,7 @@ export function createEarthGlobe(canvas, options = {}) {
     const dist = spherical.radius;
     const frontGap = dist - RADIUS; // distance camera → front of disk
     camera.near = Math.max(0.001, frontGap * 0.35);
-    camera.far = Math.max(200, dist + 40);
+    camera.far = Math.max(STAR_RADIUS + 40, dist + 40);
     camera.updateProjectionMatrix();
     updatePoleScale();
     if (typeof onZoom === "function") onZoom(spherical.radius);
@@ -2130,6 +2298,9 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function syncEarth() {
     earthGroup.position.copy(target);
+    if (moonMesh) {
+      moonMesh.position.copy(target).addScaledVector(_moonDir, moonDist);
+    }
     key.target.position.copy(target);
     updateAtmosphereLight();
   }
@@ -2820,6 +2991,7 @@ export function createEarthGlobe(canvas, options = {}) {
 
   applyEphemeris();
   loadLow();
+  loadSkyMoon();
   loadBorders();
   buildGrid();
   fitToHost();
@@ -2894,6 +3066,14 @@ export function createEarthGlobe(canvas, options = {}) {
         atmosphereMat?.dispose();
         atmosphere = null;
         atmosphereMat = null;
+      }
+      if (moonMesh) {
+        scene.remove(moonMesh);
+        moonMesh.geometry.dispose();
+        moonMat?.uniforms?.uMap?.value?.dispose?.();
+        moonMat?.dispose();
+        moonMesh = null;
+        moonMat = null;
       }
       if (starfield) {
         starfield.geometry?.dispose();
