@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e177";
+export const BUILD = "e178";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -706,6 +706,7 @@ export function createEarthGlobe(canvas, options = {}) {
     earthTilt.add(mesh);
     ensureAtmosphere();
     attachPoleMarks(mesh);
+    attachLocPin(mesh);
     applyEphemeris();
   }
 
@@ -758,7 +759,13 @@ export function createEarthGlobe(canvas, options = {}) {
   const POLE_GEO_R = 0.006;
   const POLE_PX_FAR = 1;
   const POLE_PX_NEAR = 5;
+  const PIN_GEO_R = 0.007;
+  const PIN_PX_FAR = 8;
+  const PIN_PX_NEAR = 14;
   const _poleOut = new THREE.Vector3();
+  const _pinOut = new THREE.Vector3();
+  let locPin = null;
+  let locPinGeo = null;
   /** WMM2025.0 magnetic dip poles (where the field is vertical). */
   const MAG_POLES = [
     { letter: "MN", lat: 85.76, lon: 139.3, stroke: "rgba(110, 220, 255, 0.95)" },
@@ -857,6 +864,56 @@ export function createEarthGlobe(canvas, options = {}) {
       const s = (AXIS_PX * worldPerPx) / (AXIS_RADIUS * 2);
       axisMesh.scale.set(s, 1, s);
     }
+    if (locPin) {
+      const span = Math.max(homeDist - MIN_DIST, 0.01);
+      const zoomIn = 1 - THREE.MathUtils.clamp((dist - MIN_DIST) / span, 0, 1);
+      const px = THREE.MathUtils.lerp(PIN_PX_FAR, PIN_PX_NEAR, zoomIn);
+      locPin.scale.setScalar((px * worldPerPx) / (PIN_GEO_R * 2));
+      updateLocPinFacing();
+    }
+  }
+
+  function disposeLocPin() {
+    if (!locPin) return;
+    locPin.material?.dispose();
+    locPinGeo?.dispose();
+    locPinGeo = null;
+    if (locPin.parent) locPin.parent.remove(locPin);
+    locPin = null;
+  }
+
+  function attachLocPin(parentMesh) {
+    disposeLocPin();
+    if (!parentMesh) return;
+    locPinGeo = new THREE.SphereGeometry(PIN_GEO_R, 16, 12);
+    locPin = new THREE.Mesh(
+      locPinGeo,
+      new THREE.MeshBasicMaterial({
+        color: 0x7ec8ff,
+        toneMapped: false,
+        depthTest: true,
+      })
+    );
+    locPin.name = "loc-pin";
+    locPin.renderOrder = 7;
+    parentMesh.add(locPin);
+    placeLocPin();
+  }
+
+  function placeLocPin() {
+    if (!locPin) return;
+    locPin.position.copy(
+      latLonToLocal(observerLat, observerLon, RADIUS * 1.016)
+    );
+    updateLocPinFacing();
+  }
+
+  function updateLocPinFacing() {
+    if (!locPin) return;
+    locPin.getWorldPosition(_pinOut);
+    _pinOut.sub(target).normalize();
+    _offset.copy(camera.position).sub(target).normalize();
+    locPin.visible = _pinOut.dot(_offset) > 0.06;
   }
 
   /**
@@ -2158,7 +2215,8 @@ export function createEarthGlobe(canvas, options = {}) {
     while (lo < -180) lo += 360;
     observerLon = lo;
     applyEphemeris();
-    frameCameraToObserver();
+    placeLocPin();
+    frameCameraHome();
     return getPhaseInfo();
   }
 
@@ -2377,18 +2435,21 @@ export function createEarthGlobe(canvas, options = {}) {
     return (pads.top - pads.bottom) / 2 - homeExtraUpPx() + homeLowerBiasPx();
   }
 
-  /** World direction of the observer on the spun / tipped Earth. */
-  function observerWorldDir(out) {
-    const p = latLonToLocal(observerLat, observerLon, 1);
+  /**
+   * Home look: observer longitude, latitude 0.
+   * Keeps north up so a near-side Moon sits in the sky, not on the camera's back.
+   * The loc pin marks the real place on that meridian.
+   */
+  function homeWorldDir(out) {
+    const p = latLonToLocal(0, observerLon, 1);
     if (mesh) p.applyEuler(mesh.rotation);
     p.applyQuaternion(earthTilt.quaternion);
     return out.copy(p).normalize();
   }
 
-  /** Put the camera on the observer's radial (location-centered). */
-  function frameCameraToObserver(dist) {
+  function frameCameraHome(dist) {
     const r = Number.isFinite(dist) ? dist : Math.max(camDist(), MIN_DIST);
-    observerWorldDir(_offset);
+    homeWorldDir(_offset);
     camera.position.copy(target).addScaledVector(_offset, r);
     camera.up.copy(_yUp);
     camera.lookAt(target);
@@ -2404,7 +2465,7 @@ export function createEarthGlobe(canvas, options = {}) {
     homeLiftY = homeScreenOffsetY();
     applyCanvasPanTransform();
     applyEphemeris();
-    frameCameraToObserver(homeDist);
+    frameCameraHome(homeDist);
     prevCamDist = homeDist;
   }
 
@@ -3035,6 +3096,7 @@ export function createEarthGlobe(canvas, options = {}) {
       window.removeEventListener("contextmenu", onContextMenu, true);
       hideTiles();
       disposePoleMarks();
+      disposeLocPin();
       disposeBorders();
       disposeGrid();
       if (mesh) {
