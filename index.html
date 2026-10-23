@@ -48,6 +48,15 @@
       root.style.setProperty("--pwa-fill-h", fillH + "px");
       root.style.setProperty("--pwa-extra-b", extra + "px");
     })();
+    /* Tablet class before first paint so the bottom lift does not flash in. */
+    (function () {
+      var minSide = Math.min(window.innerWidth || 0, window.innerHeight || 0);
+      if (minSide < 600) return;
+      var touch = (navigator.maxTouchPoints || 0) > 1;
+      var coarse = window.matchMedia("(pointer: coarse)").matches;
+      var noHover = window.matchMedia("(hover: none)").matches;
+      if (touch || coarse || noHover) document.documentElement.classList.add("is-tablet");
+    })();
   </script>
   <link rel="manifest" href="manifest.webmanifest?v=7" />
   <link rel="icon" href="favicon.ico?v=6" sizes="32x32" />
@@ -240,6 +249,11 @@
       display: flex;
       flex-direction: column;
       gap: 0.12rem;
+    }
+
+    /* iPad: sit the slider just above the app-switch swipe. 0.2in extra. */
+    html.is-tablet .loc-bar {
+      padding-bottom: calc(max(0.3rem, env(safe-area-inset-bottom, 0px)) + 0.2in);
     }
 
     .loc-bar input,
