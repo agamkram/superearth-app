@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e187";
+export const BUILD = "e188";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1199,7 +1199,7 @@ export function createEarthGlobe(canvas, options = {}) {
     axisMesh = null;
   }
 
-  /** 0 = upright (poles up); 1 = real axial tip (~23.4°). */
+  /** 0 = upright (poles up); 1 = season in the axle (tip = today's sun declination). */
   let gridTilt = 0;
   let gridTiltFrom = 0;
   let gridTiltTarget = 0;
@@ -1207,18 +1207,6 @@ export function createEarthGlobe(canvas, options = {}) {
   const GRID_TILT_MS = 1000;
   /** Replay tip from an already-tipped Off: keep season in the axle (no sun jump). */
   let tipHoldSun = false;
-
-  function earthObliquityRad() {
-    const A = globalThis.Astronomy;
-    try {
-      if (A?.e_tilt) {
-        const t = A.e_tilt(when);
-        const deg = Number(t?.tobl);
-        if (Number.isFinite(deg)) return THREE.MathUtils.degToRad(deg);
-      }
-    } catch (_) {}
-    return THREE.MathUtils.degToRad(23.44);
-  }
 
   /** Poles-up camera (equator, world +Y). Keep spin (theta) and zoom. */
   function clearFingerTipDown(dist) {
@@ -1236,8 +1224,8 @@ export function createEarthGlobe(canvas, options = {}) {
     if (gridGroup) gridGroup.visible = gridOn;
     const dist = camDist();
     if (gridOn) {
-      // Always ease 0→1 over 1s. Camera stays poles-up so the 23.4° is the
-      // only lean — do not re-aim spin/theta (that looked random).
+      // Always ease 0→1 over 1s. Camera stays poles-up so the only lean is
+      // today's declination on the axle — do not re-aim spin/theta.
       tipHoldSun = gridTilt > 0.5;
       gridTilt = 0;
       gridTiltFrom = 0;
@@ -1956,9 +1944,12 @@ export function createEarthGlobe(canvas, options = {}) {
       _tipAxis.crossVectors(_yUp, _sunFlat);
       if (_tipAxis.lengthSq() > 1e-8) {
         _tipAxis.normalize();
+        // Tip by today's declination, not the full 23.4°. October is ~11°
+        // away from the sun; June is +23.4° toward it. Using obliquity every
+        // day painted June lighting (north pole in sun) year-round.
         earthTilt.quaternion.setFromAxisAngle(
           _tipAxis,
-          earthObliquityRad() * gridTilt
+          THREE.MathUtils.degToRad(sub.lat) * gridTilt
         );
       } else {
         earthTilt.quaternion.identity();
