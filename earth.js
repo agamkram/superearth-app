@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e186";
+export const BUILD = "e187";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1199,7 +1199,7 @@ export function createEarthGlobe(canvas, options = {}) {
     axisMesh = null;
   }
 
-  /** 0 = upright; 1 = real axial tip. Stays tipped after Grid is hidden. */
+  /** 0 = upright (poles up); 1 = real axial tip (~23.4°). */
   let gridTilt = 0;
   let gridTiltFrom = 0;
   let gridTiltTarget = 0;
@@ -1220,12 +1220,12 @@ export function createEarthGlobe(canvas, options = {}) {
     return THREE.MathUtils.degToRad(23.44);
   }
 
-  /** Undo finger tip-down only — keep spin (theta) and zoom. */
+  /** Poles-up camera (equator, world +Y). Keep spin (theta) and zoom. */
   function clearFingerTipDown(dist) {
     readSpherical();
-    // Untilted observer Y is sin(lat); north-up camera phi matches that elevation.
-    const phi = Math.PI / 2 - THREE.MathUtils.degToRad(observerLat);
-    spherical.phi = THREE.MathUtils.clamp(phi, MIN_POLAR, MAX_POLAR);
+    // Home is lat 0. Do not aim phi at observerLat — that stacked ~35° on the
+    // 23.4° axle and made Grid look too steep.
+    spherical.phi = THREE.MathUtils.clamp(Math.PI / 2, MIN_POLAR, MAX_POLAR);
     if (Number.isFinite(dist)) spherical.radius = dist;
     writeCamera();
     syncEarth();
@@ -1234,10 +1234,10 @@ export function createEarthGlobe(canvas, options = {}) {
   function setGrid(on) {
     gridOn = !!on;
     if (gridGroup) gridGroup.visible = gridOn;
+    const dist = camDist();
     if (gridOn) {
-      // Always ease 0→1 over 1s. Drop finger tip-down (phi only) so it does not
-      // stack on the axle — do not re-aim spin/theta (that looked random).
-      const dist = camDist();
+      // Always ease 0→1 over 1s. Camera stays poles-up so the 23.4° is the
+      // only lean — do not re-aim spin/theta (that looked random).
       tipHoldSun = gridTilt > 0.5;
       gridTilt = 0;
       gridTiltFrom = 0;
@@ -1245,8 +1245,13 @@ export function createEarthGlobe(canvas, options = {}) {
       gridTiltAnimStart = performance.now();
       applyEphemeris({ skipKick: true });
       clearFingerTipDown(dist);
+    } else if (gridTilt > 1e-5 || gridTiltTarget > 0) {
+      gridTiltFrom = gridTilt;
+      gridTiltTarget = 0;
+      gridTiltAnimStart = performance.now();
+      tipHoldSun = false;
+      clearFingerTipDown(dist);
     }
-    // Off: hide lines only — do not untip or reorient.
     applyEphemeris();
     kick();
     return gridOn;
@@ -2558,6 +2563,11 @@ export function createEarthGlobe(canvas, options = {}) {
   function applyHomeFraming() {
     target.set(0, 0, 0);
     userSpin = 0;
+    gridTilt = 0;
+    gridTiltFrom = 0;
+    gridTiltTarget = 0;
+    tipHoldSun = false;
+    earthTilt.quaternion.identity();
     clearScreenPan();
     homeLiftY = homeScreenOffsetY();
     applyCanvasPanTransform();
