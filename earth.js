@@ -5,9 +5,6 @@
 import * as THREE from "three";
 import { loadOvationPrime, makeAuroraColor } from "./ovation.js?v=e54";
 
-/** Quake / storm pins. Replaced at runtime. */
-let SURFACE_SITES = [];
-
 const RADIUS = 1;
 const HOME_FILL = 0.9;
 /** Closest zoom (camera distance to Earth center; Earth radius = 1). */
@@ -180,7 +177,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e173";
+export const BUILD = "e174";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -478,7 +475,6 @@ export function createEarthGlobe(canvas, options = {}) {
     onPhase = null,
     onZoom = null,
     onTap = null,
-    onMissionTap = null,
   } = options;
   const surface =
     (typeof document !== "undefined" && document.getElementById("touch-plane")) ||
@@ -527,9 +523,6 @@ export function createEarthGlobe(canvas, options = {}) {
   let hqStarted = false;
   let disposed = false;
   let animId = 0;
-  let missionMode = "off"; // "off" | "famous" | "landings" | "all"
-  let missionGroup = null;
-  const missionPins = [];
   const sunDir = new THREE.Vector3(1, 0, 0);
   const sunDirUniform = { value: sunDir };
   const sunOnUniform = { value: 1 };
@@ -587,11 +580,6 @@ export function createEarthGlobe(canvas, options = {}) {
   let auroraTex = null;
   let auroraShown = true;
   let auroraHas = false;
-  const raycaster = new THREE.Raycaster();
-  const _ndc = new THREE.Vector2();
-  const _pinWorld = new THREE.Vector3();
-  const _camFromMoon = new THREE.Vector3();
-  const _pinFromMoon = new THREE.Vector3();
   let width = 0; // CSS viewport width (window)
   let height = 0;
   let bufferW = 0; // drawing buffer / canvas CSS (includes pan margin)
@@ -924,7 +912,6 @@ export function createEarthGlobe(canvas, options = {}) {
     if (gridGroup) mesh.add(gridGroup);
     earthTilt.add(mesh);
     ensureAtmosphere();
-    attachMissionPins(mesh);
     attachPoleMarks(mesh);
     applyEphemeris();
   }
@@ -1316,141 +1303,6 @@ export function createEarthGlobe(canvas, options = {}) {
     applyEphemeris();
     kick();
     return gridOn;
-  }
-
-  function disposeMissionPins() {
-    if (!missionGroup) return;
-    const geos = new Set();
-    missionGroup.traverse((obj) => {
-      if (obj.geometry) geos.add(obj.geometry);
-      if (obj.material) obj.material.dispose();
-    });
-    geos.forEach((g) => g.dispose());
-    if (missionGroup.parent) missionGroup.parent.remove(missionGroup);
-    missionGroup = null;
-    missionPins.length = 0;
-  }
-
-  function attachMissionPins(parentMesh) {
-    disposeMissionPins();
-    missionGroup = new THREE.Group();
-    missionGroup.name = "mission-pins";
-    missionGroup.visible = missionMode !== "off";
-
-    const geo = new THREE.SphereGeometry(0.0125, 10, 10);
-    for (const site of SURFACE_SITES) {
-      const tier = site.tier || (site.famous ? "quake" : "event");
-      const style =
-        typeof site.pinColor === "number"
-          ? { color: site.pinColor, opacity: 0.98, renderOrder: 5 }
-          : tier === "famous"
-            ? { color: 0xf0d78c, opacity: 0.98, renderOrder: 5 }
-            : tier === "landing"
-              ? { color: 0x68bce8, opacity: 0.9, renderOrder: 4 }
-              : { color: 0x6bbf8a, opacity: 0.95, renderOrder: 3 };
-      const mat = new THREE.MeshBasicMaterial({
-        color: style.color,
-        transparent: true,
-        opacity: style.opacity,
-        depthTest: true,
-        toneMapped: false,
-      });
-      const pin = new THREE.Mesh(geo, mat);
-      pin.position.copy(latLonToLocal(site.lat, site.lon));
-      pin.userData.mission = site;
-      pin.userData.tier = tier;
-      pin.userData.baseOpacity = style.opacity;
-      pin.renderOrder = style.renderOrder;
-      missionGroup.add(pin);
-      missionPins.push(pin);
-    }
-    parentMesh.add(missionGroup);
-    updateMissionPinFacing();
-  }
-
-  function pinInMode(pin) {
-    const tier = pin.userData.tier;
-    if (missionMode === "all") return true;
-    if (missionMode === "famous") return tier === "quake";
-    if (missionMode === "landings") return tier === "event";
-    return false;
-  }
-
-  function setSites(list) {
-    SURFACE_SITES = Array.isArray(list) ? list : [];
-    if (mesh) attachMissionPins(mesh);
-    kick();
-    return SURFACE_SITES.length;
-  }
-
-  function updateMissionPinFacing() {
-    if (missionMode === "off" || !missionPins.length) return;
-    _camFromMoon.copy(camera.position).sub(target).normalize();
-    for (const pin of missionPins) {
-      if (!pinInMode(pin)) {
-        pin.visible = false;
-        continue;
-      }
-      pin.getWorldPosition(_pinWorld);
-      _pinFromMoon.copy(_pinWorld).sub(target).normalize();
-      const facing = _pinFromMoon.dot(_camFromMoon);
-      // Hide far side / deep limb; soft-fade near edge
-      if (facing < 0.05) {
-        pin.visible = false;
-      } else {
-        pin.visible = true;
-        const base = pin.userData.baseOpacity || 0.9;
-        pin.material.opacity = THREE.MathUtils.clamp(base * (0.35 + facing * 0.7), base * 0.35, base);
-      }
-    }
-  }
-
-  function clientToNdc(clientX, clientY) {
-    const rect = canvas.getBoundingClientRect();
-    const w = Math.max(rect.width, 1);
-    const h = Math.max(rect.height, 1);
-    _ndc.x = ((clientX - rect.left) / w) * 2 - 1;
-    _ndc.y = -((clientY - rect.top) / h) * 2 + 1;
-  }
-
-  function pickMissionAt(clientX, clientY) {
-    if (missionMode === "off" || !missionPins.length) return null;
-    clientToNdc(clientX, clientY);
-    raycaster.setFromCamera(_ndc, camera);
-    const visiblePins = missionPins.filter((p) => p.visible);
-    const hits = raycaster.intersectObjects(visiblePins, false);
-    if (hits.length) return hits[0].object.userData.mission || null;
-    // Fallback: nearest pin in screen space within ~28px
-    let best = null;
-    let bestD = 28;
-    const rect = canvas.getBoundingClientRect();
-    for (const pin of missionPins) {
-      if (!pin.visible) continue;
-      pin.getWorldPosition(_pinWorld);
-      _pinWorld.project(camera);
-      if (_pinWorld.z > 1) continue;
-      const sx = (_pinWorld.x * 0.5 + 0.5) * rect.width + rect.left;
-      const sy = (-_pinWorld.y * 0.5 + 0.5) * rect.height + rect.top;
-      const d = Math.hypot(clientX - sx, clientY - sy);
-      if (d < bestD) {
-        bestD = d;
-        best = pin.userData.mission;
-      }
-    }
-    return best;
-  }
-
-  /** mode: "off" | "famous" | "landings" | "all" */
-  function setMissionsMode(mode) {
-    missionMode =
-      mode === "famous" || mode === "landings" || mode === "all" ? mode : "off";
-    if (missionGroup) missionGroup.visible = missionMode !== "off";
-    updateMissionPinFacing();
-    return missionMode;
-  }
-
-  function getMissionsMode() {
-    return missionMode;
   }
 
   function scheduleHigh() {
@@ -2816,7 +2668,7 @@ export function createEarthGlobe(canvas, options = {}) {
   // —— Touch + pointer: 2fs pans the canvas (CSS) so movement is always visible ——
 
   const UI_HIT =
-    "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#mission-sheet,#fact-sheet,.cycle,.slider-track,.cycle-controls,.m-cell-fact,.vision-btn,.geo-btn,.live-btn,.sun-btn,.fact-sheet-inner,.fact-sheet-scrim";
+    "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#fact-sheet,.cycle,.slider-track,.cycle-controls,.m-cell-fact,.vision-btn,.geo-btn,.live-btn,.sun-btn,.fact-sheet-inner,.fact-sheet-scrim";
 
   function eventPoint(e) {
     if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
@@ -2834,7 +2686,7 @@ export function createEarthGlobe(canvas, options = {}) {
   function uiControlAt(pt) {
     if (!pt) return null;
     // Only real controls — not .cycle / .slider-track wrappers (those steal Sun + slider).
-    const roots = ["fact-sheet", "loc-dialog", "mission-sheet", "loc-bar"];
+    const roots = ["fact-sheet", "loc-dialog", "loc-bar"];
     let best = null;
     let bestArea = Infinity;
     for (const id of roots) {
@@ -2913,15 +2765,6 @@ export function createEarthGlobe(canvas, options = {}) {
   function fireTapIfAny(gesture) {
     if (!gesture || gesture.moved) return;
     if (Date.now() - gesture.t0 > TAP_MAX_MS) return;
-    const x = Number.isFinite(gesture.sx) ? gesture.sx : gesture.x;
-    const y = Number.isFinite(gesture.sy) ? gesture.sy : gesture.y;
-    if (missionMode !== "off" && Number.isFinite(x) && Number.isFinite(y)) {
-      const site = pickMissionAt(x, y);
-      if (site && typeof onMissionTap === "function") {
-        onMissionTap(site);
-        return;
-      }
-    }
     if (typeof onTap === "function") onTap();
   }
 
@@ -3191,7 +3034,6 @@ export function createEarthGlobe(canvas, options = {}) {
       tilting = gridTilt !== gridTiltTarget;
     }
     syncMoon();
-    if (missionMode !== "off") updateMissionPinFacing();
     updateTiles();
     renderer.render(scene, camera);
     // Idle when still. Real Earth spin is invisible frame-to-frame; the page
@@ -3219,17 +3061,12 @@ export function createEarthGlobe(canvas, options = {}) {
     setAuroraShown,
     setSun,
     setTime,
-    setMissionsMode,
-    setSites,
-    getMissionsMode,
     getPhaseInfo,
     getObserver,
     getCamDist: () => camDist(),
     isReady: () => ready,
     dispose() {
       disposed = true;
-      missionMode = "off";
-      disposeMissionPins();
       cancelAnimationFrame(animId);
       animId = 0;
       document.removeEventListener("visibilitychange", onVisibility);

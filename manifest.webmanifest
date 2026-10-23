@@ -1,7 +1,7 @@
 {
   "name": "SuperEarth",
   "short_name": "SuperEarth",
-  "description": "A hi-res 3D Earth you can rotate, zoom, and explore.",
+  "description": "Hi-res 3D Earth with live sun, clouds, aurora, and space weather.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#020308",
