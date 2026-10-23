@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e179";
+export const BUILD = "e180";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -760,8 +760,9 @@ export function createEarthGlobe(canvas, options = {}) {
   const POLE_PX_FAR = 1;
   const POLE_PX_NEAR = 5;
   const PIN_GEO_R = 0.012;
-  const PIN_PX_FAR = 11;
-  const PIN_PX_NEAR = 17;
+  /** Screen px: findable at home, smaller in tight so it does not sit on the city. */
+  const PIN_PX_HOME = 13;
+  const PIN_PX_CLOSE = 7;
   const _poleOut = new THREE.Vector3();
   const _pinOut = new THREE.Vector3();
   let locPin = null;
@@ -866,8 +867,8 @@ export function createEarthGlobe(canvas, options = {}) {
     }
     if (locPin) {
       const span = Math.max(homeDist - MIN_DIST, 0.01);
-      const zoomIn = 1 - THREE.MathUtils.clamp((dist - MIN_DIST) / span, 0, 1);
-      const px = THREE.MathUtils.lerp(PIN_PX_FAR, PIN_PX_NEAR, zoomIn);
+      const zoomIn = THREE.MathUtils.clamp((homeDist - dist) / span, 0, 1);
+      const px = THREE.MathUtils.lerp(PIN_PX_HOME, PIN_PX_CLOSE, zoomIn);
       locPin.scale.setScalar((px * worldPerPx) / (PIN_GEO_R * 2));
       updateLocPinFacing();
     }
@@ -881,33 +882,34 @@ export function createEarthGlobe(canvas, options = {}) {
     const ctx = c.getContext("2d");
     ctx.clearRect(0, 0, size, size);
     const m = size / 2;
-    ctx.strokeStyle = "rgba(220, 236, 255, 0.95)";
-    ctx.lineCap = "butt";
-    ctx.lineJoin = "miter";
-    ctx.shadowColor = "rgba(0, 0, 0, 0.85)";
-    ctx.shadowBlur = 4;
-    // Outer ring
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(m, m, 54, 0, Math.PI * 2);
-    ctx.stroke();
-    // Cardinal ticks, gap at the center
-    ctx.lineWidth = 3;
     const inner = 16;
     const outer = 42;
-    ctx.beginPath();
-    ctx.moveTo(m, m - outer);
-    ctx.lineTo(m, m - inner);
-    ctx.moveTo(m, m + inner);
-    ctx.lineTo(m, m + outer);
-    ctx.moveTo(m - outer, m);
-    ctx.lineTo(m - inner, m);
-    ctx.moveTo(m + inner, m);
-    ctx.lineTo(m + outer, m);
-    ctx.stroke();
-    // Center pip
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = "rgba(232, 244, 252, 0.95)";
+    const drawMark = () => {
+      ctx.beginPath();
+      ctx.arc(m, m, 54, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(m, m - outer);
+      ctx.lineTo(m, m - inner);
+      ctx.moveTo(m, m + inner);
+      ctx.lineTo(m, m + outer);
+      ctx.moveTo(m - outer, m);
+      ctx.lineTo(m - inner, m);
+      ctx.moveTo(m + inner, m);
+      ctx.lineTo(m + outer, m);
+      ctx.stroke();
+    };
+    ctx.lineCap = "butt";
+    ctx.lineJoin = "miter";
+    ctx.strokeStyle = "rgba(12, 14, 18, 0.92)";
+    ctx.lineWidth = 7;
+    drawMark();
+    ctx.strokeStyle = "rgba(232, 176, 64, 0.96)";
+    ctx.lineWidth = 3;
+    drawMark();
+    ctx.fillStyle = "rgba(12, 14, 18, 0.92)";
+    ctx.fillRect(m - 4, m - 4, 8, 8);
+    ctx.fillStyle = "rgba(255, 214, 110, 0.96)";
     ctx.fillRect(m - 2, m - 2, 4, 4);
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
