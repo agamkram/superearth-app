@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e183";
+export const BUILD = "e184";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -765,6 +765,10 @@ export function createEarthGlobe(canvas, options = {}) {
   const PIN_PX_CLOSE = 5;
   const _poleOut = new THREE.Vector3();
   const _pinOut = new THREE.Vector3();
+  const _pinEast = new THREE.Vector3();
+  const _pinNorth = new THREE.Vector3();
+  const _pinMat = new THREE.Matrix4();
+  const _zPlus = new THREE.Vector3(0, 0, 1);
   let locPin = null;
   let locPinGeo = null;
   /** WMM2025.0 magnetic dip poles (where the field is vertical). */
@@ -958,7 +962,17 @@ export function createEarthGlobe(canvas, options = {}) {
     const p = latLonToLocal(observerLat, observerLon, RADIUS * 1.004);
     locPin.position.copy(p);
     _pinOut.copy(p).normalize();
-    locPin.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), _pinOut);
+    // X = east, Y = north, Z = out — ticks are geographic NSEW.
+    _pinEast.crossVectors(_yUp, _pinOut);
+    if (_pinEast.lengthSq() < 1e-8) {
+      locPin.quaternion.setFromUnitVectors(_zPlus, _pinOut);
+    } else {
+      _pinEast.normalize();
+      _pinNorth.crossVectors(_pinOut, _pinEast).normalize();
+      locPin.quaternion.setFromRotationMatrix(
+        _pinMat.makeBasis(_pinEast, _pinNorth, _pinOut)
+      );
+    }
     updateLocPinFacing();
   }
 
