@@ -685,7 +685,7 @@
       }
     }
 
-    /* Location + Aurora · Clear · Borders · Grid */
+    /* Location + Aurora · Clouds · Borders · Grid */
     .loc-strip {
       display: grid;
       grid-template-columns: minmax(0, 1fr) max-content;
@@ -1223,7 +1223,7 @@
             title="Hide the live cloud layer"
             aria-pressed="true"
           >
-            Clear
+            Clouds
           </button>
           <button
             type="button"
@@ -2211,8 +2211,7 @@
 
     function setClouds(on) {
       cloudsOn = !!on;
-      // Label = next action
-      cloudsBtn.textContent = cloudsOn ? "Clear" : "Clouds";
+      cloudsBtn.textContent = "Clouds";
       cloudsBtn.setAttribute("aria-pressed", cloudsOn ? "true" : "false");
       cloudsBtn.title = cloudsOn
         ? "Hide the live cloud layer"
