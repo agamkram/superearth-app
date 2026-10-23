@@ -86,8 +86,9 @@ const NEAR_SIDE_Y = -Math.PI / 2;
 /** Starfield (ported from satellite-app) — behind the real Moon (~60 Earth radii). */
 const STAR_COUNT = 5000;
 const STAR_RADIUS = 160;
-/** Mean lunar radius in Earth radii. Distance comes from GeoVector. */
-const MOON_RADIUS = 1737.4 / 6371;
+/** Mean lunar radius in Earth radii. Distance comes from GeoVector.
+ *  2× true scale so the crescent reads; distance stays real (~60). */
+const MOON_RADIUS = (1737.4 / 6371) * 2;
 
 function mulberry32(seed) {
   return () => {
@@ -179,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e176";
+export const BUILD = "e177";
 const TEX_VER = BUILD;
 
 const LOD = {
