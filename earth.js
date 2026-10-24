@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e188";
+export const BUILD = "e189";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1812,14 +1812,16 @@ export function createEarthGlobe(canvas, options = {}) {
           vec3 n = normalize(vWorldN);
           vec3 sunD = normalize(uSunDir);
           float ndl = dot(n, sunD);
-          float day = uSunOn * smoothstep(-0.03, 0.16, ndl);
+          float day = smoothstep(-0.03, 0.16, ndl);
           vec3 albedo = uHasMap > 0.5
             ? texture2D(uMap, vUv).rgb
             : vec3(0.52, 0.50, 0.46);
-          vec3 col = albedo * mix(0.04, 1.18, day);
+          vec3 lit = albedo * mix(0.06, 1.65, day);
           vec3 toEarth = normalize(uEarthCenter - vWorldPos);
           float earthLit = max(0.0, dot(n, toEarth));
-          col += albedo * vec3(0.22, 0.32, 0.48) * earthLit * 0.16 * uSunOn * (1.0 - day);
+          lit += albedo * vec3(0.22, 0.32, 0.48) * earthLit * 0.16 * (1.0 - day);
+          vec3 dim = albedo * 0.28;
+          vec3 col = mix(dim, lit, uSunOn);
           gl_FragColor = vec4(col, 1.0);
         }
       `,
