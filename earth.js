@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e190";
+export const BUILD = "e191";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1084,11 +1084,11 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function loadBorders() {
-    loadBorderBin("borders-50m.bin", BORDER_R, "country-borders", 0.7, (lines) => {
+    loadBorderBin("borders-50m.bin", BORDER_R, "country-borders", 0.8, (lines) => {
       disposeLineMesh(borderLines);
       borderLines = lines;
     });
-    loadBorderBin("states-50m.bin", STATE_R, "state-borders", 0.48, (lines) => {
+    loadBorderBin("states-50m.bin", STATE_R, "state-borders", 0.8, (lines) => {
       disposeLineMesh(stateLines);
       stateLines = lines;
     });
