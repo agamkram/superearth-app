@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e192";
+export const BUILD = "e213";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -320,7 +320,7 @@ export function createEarthGlobe(canvas, options = {}) {
   let nightMesh = null;
   let nightMat = null;
   let cloudMesh = null;
-  let cloudsOn = true;
+  let cloudsOn = false;
   let tileGroup = null;
   const tileLive = new Map();
   const tileLoading = new Set();

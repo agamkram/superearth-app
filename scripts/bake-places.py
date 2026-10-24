@@ -25,6 +25,22 @@ OUT_BIN = ROOT / "places-polys.bin"
 # lon/lat stored as int16 × 100 → 0.01° (~1 km)
 Q = 100
 
+# States the wikidata file left blank. Cities that are their own capital
+# are listed as themselves. Jervis Bay has no capital of its own.
+STATE_CAPITALS = {
+    ("British Columbia", "Canada"): "Victoria",
+    ("New Brunswick", "Canada"): "Fredericton",
+    ("Prince Edward Island", "Canada"): "Charlottetown",
+    ("Alaska", "United States"): "Juneau",
+    ("Washington", "United States"): "Olympia",
+    ("Jakarta", "Indonesia"): "Jakarta",
+    ("Delhi", "India"): "New Delhi",
+    ("Chandigarh", "India"): "Chandigarh",
+    ("Moscow", "Russia"): "Moscow",
+    ("Saint Petersburg", "Russia"): "Saint Petersburg",
+    ("Sevastopol", "Russia"): "Sevastopol",
+}
+
 
 def ring_area_km2(ring):
     if len(ring) < 3:
@@ -86,6 +102,16 @@ def load_capitals():
         name = (d.get("NAME") or "").strip()
         if a3 and name:
             caps[a3] = name
+    # 110m places only marks sovereign capitals. These polygons are
+    # still in the country list, and each has a clear capital.
+    caps.setdefault("GRL", "Nuuk")
+    caps.setdefault("FLK", "Stanley")
+    caps.setdefault("PRI", "San Juan")
+    caps.setdefault("NCL", "Nouméa")
+    caps.setdefault("SSD", "Juba")
+    caps.setdefault("SAH", "Laayoune")
+    caps.setdefault("PSX", "East Jerusalem")
+    caps.setdefault("CYN", "North Nicosia")
     return caps
 
 
@@ -154,6 +180,8 @@ def main():
         admin = (d.get("admin") or "").strip() or None
         if admin == "United States of America":
             admin = "United States"
+        if not capital:
+            capital = STATE_CAPITALS.get((name, admin))
         places.append(
             {
                 "kind": "state",
