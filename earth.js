@@ -8,7 +8,7 @@ import { loadOvationPrime, makeAuroraColor } from "./ovation.js?v=e54";
 const RADIUS = 1;
 const HOME_FILL = 0.9;
 /** Closest zoom (camera distance to Earth center; Earth radius = 1). */
-const MIN_DIST = 1.15;
+const MIN_DIST = 1.2;
 /** Furthest zoom as a multiple of the opening (home) distance. */
 const MAX_OUT_FACTOR = 3.7;
 const MIN_POLAR = 0.15;
@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e221";
+export const BUILD = "e222";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -200,7 +200,7 @@ const LOD = {
 
 /**
  * Zoom tiles (Next Gen day + Black Marble night @ JPEG 85). Never a full high-k wrap.
- * Ladder by camera distance: 8k wrap → tiles-16 @≤2.5 → tiles-32 @≤1.75 → floor 1.15.
+ * Ladder by camera distance: 8k wrap → tiles-16 @≤2.5 → tiles-32 @≤1.75 → floor 1.2.
  * Each level loads a 3×3 under the screen center (plus one keep-ring while loading).
  * The tiles already on screen stay up until the next size covers that center,
  * so the view does not fall back to the soft 8k map in between.
