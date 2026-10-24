@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e213";
+export const BUILD = "e219";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -202,6 +202,8 @@ const LOD = {
  * Zoom tiles (Next Gen day + Black Marble night @ JPEG 85). Never a full high-k wrap.
  * Ladder by camera distance: 8k wrap → tiles-16 @≤2.5 → tiles-32 @≤1.5 → floor 1.15.
  * Each level loads a 3×3 under the screen center (plus one keep-ring while loading).
+ * The tiles already on screen stay up until the next size covers that center,
+ * so the view does not fall back to the soft 8k map in between.
  * Day and night tiles share the same grid; patches stay opaque so sharp night covers soft 8k.
  */
 const TILE_RING = 1;
@@ -328,6 +330,8 @@ export function createEarthGlobe(canvas, options = {}) {
   let tilesEnabled = false;
   /** @type {null | "16" | "32"} */
   let tileLevel = null;
+  /** Previous size kept on screen until the new size's center tiles are ready. */
+  let holdLevel = null;
   let qualityLevel = "";
   const _tileLocal = new THREE.Vector3();
   const _tileHit = new THREE.Vector3();
@@ -1604,6 +1608,7 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function hideTiles() {
     tileWanted = new Set();
+    holdLevel = null;
     if (tileGroup) tileGroup.visible = false;
     for (const key of [...tileLive.keys()]) dropTile(key);
     if (tileLevel) {
@@ -1639,7 +1644,8 @@ export function createEarthGlobe(canvas, options = {}) {
     const mat = makeTileMaterial(dayTex, nightU, normalU);
     mat.userData.nightUniform = nightU;
     const piece = new THREE.Mesh(geo, mat);
-    piece.renderOrder = 1;
+    // 32 sits just outside 16 so the sharper patch covers the coarser one.
+    piece.renderOrder = level.label === "32" ? 1.5 : 1;
     piece.userData.tileKey = `${level.label}:${c}:${r}`;
     return piece;
   }
@@ -1693,7 +1699,6 @@ export function createEarthGlobe(canvas, options = {}) {
       const piece = makeTilePatch(level, c, r, dayTex, nightTex);
       tileGroup.add(piece);
       tileLive.set(key, piece);
-      reportQuality(level.label);
       kick();
     };
 
@@ -1736,10 +1741,7 @@ export function createEarthGlobe(canvas, options = {}) {
       hideTiles();
       return;
     }
-    if (tileLevel && tileLevel !== level.label) {
-      for (const key of [...tileLive.keys()]) dropTile(key);
-      tileWanted = new Set();
-    }
+    if (tileLevel && tileLevel !== level.label) holdLevel = tileLevel;
     tileLevel = level.label;
     ensureTileGroup();
     tileGroup.visible = true;
@@ -1747,10 +1749,24 @@ export function createEarthGlobe(canvas, options = {}) {
     // Keep one extra ring so a drag doesn't flash soft 8k while neighbors load.
     const keep = new Set(neededTileKeys(level, at.lon, at.lat, TILE_RING + 1));
     tileWanted = want;
+    const incomingReady = [...want].every((k) => tileLive.has(k));
+    if (incomingReady) holdLevel = null;
+    // Only the center of the old size stays up. Keeping its whole drag ring
+    // plus the new tiles is enough to make Safari kill the tab.
+    const holdKeep =
+      holdLevel && TILE_LEVELS[holdLevel]
+        ? new Set(neededTileKeys(TILE_LEVELS[holdLevel], at.lon, at.lat, TILE_RING))
+        : null;
     for (const key of [...tileLive.keys()]) {
+      if (holdKeep && key.split(":")[0] === holdLevel) {
+        if (!holdKeep.has(key)) dropTile(key);
+        continue;
+      }
       if (!keep.has(key)) dropTile(key);
     }
     for (const key of want) loadTile(level, key);
+    if (incomingReady) reportQuality(level.label);
+    else if (holdLevel) reportQuality(holdLevel);
   }
 
   function wrapLonDeg(lon) {
