@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e219";
+export const BUILD = "e220";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -204,6 +204,7 @@ const LOD = {
  * Each level loads a 3×3 under the screen center (plus one keep-ring while loading).
  * The tiles already on screen stay up until the next size covers that center,
  * so the view does not fall back to the soft 8k map in between.
+ * A new block decodes one tile at a time, center first, so the zoom doesn't freeze.
  * Day and night tiles share the same grid; patches stay opaque so sharp night covers soft 8k.
  */
 const TILE_RING = 1;
@@ -1689,6 +1690,7 @@ export function createEarthGlobe(canvas, options = {}) {
         !nightTex
       ) {
         abort();
+        kick();
         return;
       }
       configureTileColor(dayTex);
@@ -1746,6 +1748,11 @@ export function createEarthGlobe(canvas, options = {}) {
     ensureTileGroup();
     tileGroup.visible = true;
     const want = new Set(neededTileKeys(level, at.lon, at.lat, TILE_RING));
+    let u = (at.lon + 180) / 360;
+    u = ((u % 1) + 1) % 1;
+    const v = THREE.MathUtils.clamp((90 - at.lat) / 180, 0, 0.9999);
+    const c0 = Math.floor(u * level.cols);
+    const r0 = Math.min(level.rows - 1, Math.floor(v * level.rows));
     // Keep one extra ring so a drag doesn't flash soft 8k while neighbors load.
     const keep = new Set(neededTileKeys(level, at.lon, at.lat, TILE_RING + 1));
     tileWanted = want;
@@ -1764,7 +1771,27 @@ export function createEarthGlobe(canvas, options = {}) {
       }
       if (!keep.has(key)) dropTile(key);
     }
-    for (const key of want) loadTile(level, key);
+    // One tile at a time. Starting the whole 3×3 at once decodes eighteen
+    // pictures on the same turn and the pinch freezes.
+    const ordered = [...want].sort((a, b) => {
+      const pa = a.split(":");
+      const pb = b.split(":");
+      const da =
+        Math.min(Math.abs(Number(pa[1]) - c0), level.cols - Math.abs(Number(pa[1]) - c0)) +
+        Math.abs(Number(pa[2]) - r0);
+      const db =
+        Math.min(Math.abs(Number(pb[1]) - c0), level.cols - Math.abs(Number(pb[1]) - c0)) +
+        Math.abs(Number(pb[2]) - r0);
+      return da - db;
+    });
+    if (tileLoading.size === 0) {
+      for (const key of ordered) {
+        if (!tileLive.has(key)) {
+          loadTile(level, key);
+          break;
+        }
+      }
+    }
     if (incomingReady) reportQuality(level.label);
     else if (holdLevel) reportQuality(holdLevel);
   }
