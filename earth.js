@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e189";
+export const BUILD = "e190";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1816,7 +1816,7 @@ export function createEarthGlobe(canvas, options = {}) {
           vec3 albedo = uHasMap > 0.5
             ? texture2D(uMap, vUv).rgb
             : vec3(0.52, 0.50, 0.46);
-          vec3 lit = albedo * mix(0.06, 1.65, day);
+          vec3 lit = albedo * mix(0.06, 2.35, day);
           vec3 toEarth = normalize(uEarthCenter - vWorldPos);
           float earthLit = max(0.0, dot(n, toEarth));
           lit += albedo * vec3(0.22, 0.32, 0.48) * earthLit * 0.16 * (1.0 - day);
