@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e220";
+export const BUILD = "e221";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -200,7 +200,7 @@ const LOD = {
 
 /**
  * Zoom tiles (Next Gen day + Black Marble night @ JPEG 85). Never a full high-k wrap.
- * Ladder by camera distance: 8k wrap → tiles-16 @≤2.5 → tiles-32 @≤1.5 → floor 1.15.
+ * Ladder by camera distance: 8k wrap → tiles-16 @≤2.5 → tiles-32 @≤1.75 → floor 1.15.
  * Each level loads a 3×3 under the screen center (plus one keep-ring while loading).
  * The tiles already on screen stay up until the next size covers that center,
  * so the view does not fall back to the soft 8k map in between.
@@ -224,7 +224,7 @@ const TILE_LEVELS = {
     nightFolder: "night-tiles-32",
     cols: 16,
     rows: 8,
-    onDist: 1.5,
+    onDist: 1.75,
     radius: 1.0022,
   },
 };
