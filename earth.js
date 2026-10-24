@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e191";
+export const BUILD = "e192";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1508,8 +1508,30 @@ export function createEarthGlobe(canvas, options = {}) {
    * — a sphere at the origin misses after any pan and 32 never lands on
    * what you're looking at.
    */
-  function viewLonLat() {
+  function localLonLatFromHit(mustHit) {
+    mesh.worldToLocal(_tileLocal);
+    _tileLocal.normalize();
+    const lat = THREE.MathUtils.radToDeg(
+      Math.asin(THREE.MathUtils.clamp(_tileLocal.y, -1, 1))
+    );
+    const lon = THREE.MathUtils.radToDeg(Math.atan2(-_tileLocal.z, _tileLocal.x));
+    return { lat, lon, hit: !!mustHit };
+  }
+
+  /**
+   * Lon/lat under a screen point. If the ray misses the globe (space),
+   * returns null when requireHit is true; otherwise aims at the nearest
+   * surface point (used for tile paging under the view center).
+   */
+  function lonLatAt(clientX, clientY, requireHit = false) {
     if (!mesh) return null;
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(rect.width, 1);
+    const h = Math.max(rect.height, 1);
+    _tileNdc.set(
+      ((clientX - rect.left) / w) * 2 - 1,
+      -((clientY - rect.top) / h) * 2 + 1
+    );
     camera.updateMatrixWorld(true);
     mesh.updateMatrixWorld(true);
     mesh.getWorldPosition(_earthSphere.center);
@@ -1518,25 +1540,25 @@ export function createEarthGlobe(canvas, options = {}) {
     const hit = _tileRay.ray.intersectSphere(_earthSphere, _tileHit);
     if (hit) {
       _tileLocal.copy(hit);
-    } else {
-      _tileRay.ray.closestPointToPoint(_earthSphere.center, _tileHit);
-      if (_tileHit.distanceToSquared(_earthSphere.center) < 1e-12) {
-        _tileHit.copy(camera.position);
-      }
-      _tileLocal
-        .copy(_tileHit)
-        .sub(_earthSphere.center)
-        .normalize()
-        .multiplyScalar(RADIUS)
-        .add(_earthSphere.center);
+      return localLonLatFromHit(true);
     }
-    mesh.worldToLocal(_tileLocal);
-    _tileLocal.normalize();
-    const lat = THREE.MathUtils.radToDeg(
-      Math.asin(THREE.MathUtils.clamp(_tileLocal.y, -1, 1))
-    );
-    const lon = THREE.MathUtils.radToDeg(Math.atan2(-_tileLocal.z, _tileLocal.x));
-    return { lat, lon };
+    if (requireHit) return null;
+    _tileRay.ray.closestPointToPoint(_earthSphere.center, _tileHit);
+    if (_tileHit.distanceToSquared(_earthSphere.center) < 1e-12) {
+      _tileHit.copy(camera.position);
+    }
+    _tileLocal
+      .copy(_tileHit)
+      .sub(_earthSphere.center)
+      .normalize()
+      .multiplyScalar(RADIUS)
+      .add(_earthSphere.center);
+    return localLonLatFromHit(false);
+  }
+
+  function viewLonLat() {
+    const rect = canvas.getBoundingClientRect();
+    return lonLatAt(rect.left + rect.width / 2, rect.top + rect.height / 2, false);
   }
 
   function neededTileKeys(level, lon, lat, ring) {
@@ -2778,7 +2800,7 @@ export function createEarthGlobe(canvas, options = {}) {
   // —— Touch + pointer: 2fs pans the canvas (CSS) so movement is always visible ——
 
   const UI_HIT =
-    "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#fact-sheet,.cycle,.slider-track,.cycle-controls,.m-cell-fact,.vision-btn,.geo-btn,.live-btn,.sun-btn,.fact-sheet-inner,.fact-sheet-scrim";
+    "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#fact-sheet,#place-sheet,.cycle,.slider-track,.cycle-controls,.m-cell-fact,.vision-btn,.geo-btn,.live-btn,.sun-btn,.fact-sheet-inner,.fact-sheet-scrim";
 
   function eventPoint(e) {
     if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
@@ -2796,7 +2818,7 @@ export function createEarthGlobe(canvas, options = {}) {
   function uiControlAt(pt) {
     if (!pt) return null;
     // Only real controls — not .cycle / .slider-track wrappers (those steal Sun + slider).
-    const roots = ["fact-sheet", "loc-dialog", "loc-bar"];
+    const roots = ["fact-sheet", "place-sheet", "loc-dialog", "loc-bar"];
     let best = null;
     let bestArea = Infinity;
     for (const id of roots) {
@@ -2875,7 +2897,9 @@ export function createEarthGlobe(canvas, options = {}) {
   function fireTapIfAny(gesture) {
     if (!gesture || gesture.moved) return;
     if (Date.now() - gesture.t0 > TAP_MAX_MS) return;
-    if (typeof onTap === "function") onTap();
+    if (typeof onTap !== "function") return;
+    const ll = lonLatAt(gesture.sx, gesture.sy, true);
+    onTap(ll);
   }
 
   function onTouchStart(e) {
