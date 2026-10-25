@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e226";
+export const BUILD = "e227";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -506,12 +506,27 @@ export function createEarthGlobe(canvas, options = {}) {
     tex.needsUpdate = true;
   }
 
+  function texelOf(tex, fallbackW, fallbackH) {
+    const img = tex && tex.image;
+    const w = (img && img.width) || fallbackW;
+    const h = (img && img.height) || fallbackH;
+    return new THREE.Vector2(1 / w, 1 / h);
+  }
+
+  function syncSurfaceTexel() {
+    const u = material && material.userData.mapTexel;
+    if (!u || !material.map) return;
+    u.value.copy(texelOf(material.map, 2048, 1024));
+  }
+
   function makeSurfaceMaterial(map, night, normal) {
     const nightUniform = { value: night };
     const normalUniform = { value: normal };
+    const mapTexelUniform = { value: texelOf(map, 2048, 1024) };
     const material = new THREE.MeshBasicMaterial({ map, color: 0xffffff });
     material.userData.nightUniform = nightUniform;
     material.userData.normalUniform = normalUniform;
+    material.userData.mapTexel = mapTexelUniform;
     material.onBeforeCompile = (shader) => {
       shader.uniforms.uNight = nightUniform;
       shader.uniforms.uNormal = normalUniform;
@@ -522,6 +537,7 @@ export function createEarthGlobe(canvas, options = {}) {
       shader.uniforms.uShadeMax = uShadeMax;
       shader.uniforms.uReliefStr = uReliefStr;
       shader.uniforms.uSlope = uSlope;
+      shader.uniforms.uMapTexel = mapTexelUniform;
       shader.vertexShader = shader.vertexShader.replace(
         "#include <common>",
         "#include <common>\nvarying vec3 vWorldN;\nvarying vec3 vWorldPos;\nvarying vec3 vWorldT;\nvarying vec3 vWorldB;"
@@ -550,6 +566,7 @@ export function createEarthGlobe(canvas, options = {}) {
         uniform float uShadeMax;
         uniform float uReliefStr;
         uniform float uSlope;
+        uniform vec2 uMapTexel;
         varying vec3 vWorldN;
         varying vec3 vWorldPos;
         varying vec3 vWorldT;
@@ -565,11 +582,18 @@ export function createEarthGlobe(canvas, options = {}) {
         vec3 dayCol = diffuseColor.rgb;
         float lum = dot(dayCol, vec3(0.2126, 0.7152, 0.0722));
         float blue = dayCol.b - max(dayCol.r, dayCol.g);
-        // Linear-space water mask: catches all deep & coastal water uniformly without amplifying 8x8 JPEG steps
         float dark = smoothstep(0.016, 0.0035, lum);
         float blu = smoothstep(0.0004, 0.0028, blue);
-        float ocean = dark * blu;
-        // Same deep navy tone as the original open ocean, applied smoothly across all dark water
+        // Big lakes in this photo are nearly black. A blue test on one pixel
+        // flips between JPEG blocks, so the lake draws as squares. Average the
+        // darkness across a few texels, then treat that dark water as ocean.
+        float lumBlur = lum;
+        lumBlur += dot(texture2D(map, vMapUv + vec2(uMapTexel.x, 0.0) * 4.0).rgb, vec3(0.2126, 0.7152, 0.0722));
+        lumBlur += dot(texture2D(map, vMapUv - vec2(uMapTexel.x, 0.0) * 4.0).rgb, vec3(0.2126, 0.7152, 0.0722));
+        lumBlur += dot(texture2D(map, vMapUv + vec2(0.0, uMapTexel.y) * 4.0).rgb, vec3(0.2126, 0.7152, 0.0722));
+        lumBlur += dot(texture2D(map, vMapUv - vec2(0.0, uMapTexel.y) * 4.0).rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lake = smoothstep(0.008, 0.0025, lumBlur * 0.2);
+        float ocean = max(dark * blu, lake);
         dayCol = mix(dayCol, vec3(0.0038, 0.0191, 0.0577), ocean * 0.94);
 
         // 3D mountain relief on land from NASA elevation normal map (always on)
@@ -597,6 +621,7 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function makeTileMaterial(map, nightUniform, normalUniform) {
+    const mapTexelUniform = { value: texelOf(map, 2048, 2048) };
     const mat = new THREE.MeshBasicMaterial({
       map,
       color: 0xffffff,
@@ -611,6 +636,7 @@ export function createEarthGlobe(canvas, options = {}) {
       shader.uniforms.uShadeMax = uShadeMax;
       shader.uniforms.uReliefStr = uReliefStr;
       shader.uniforms.uSlope = uSlope;
+      shader.uniforms.uMapTexel = mapTexelUniform;
       shader.vertexShader = shader.vertexShader.replace(
         "#include <common>",
         "#include <common>\nvarying vec3 vWorldN;\nvarying vec3 vWorldPos;\nvarying vec3 vWorldT;\nvarying vec3 vWorldB;\nvarying vec3 vLocalN;"
@@ -640,6 +666,7 @@ export function createEarthGlobe(canvas, options = {}) {
         uniform float uShadeMax;
         uniform float uReliefStr;
         uniform float uSlope;
+        uniform vec2 uMapTexel;
         varying vec3 vWorldN;
         varying vec3 vWorldPos;
         varying vec3 vWorldT;
@@ -658,7 +685,13 @@ export function createEarthGlobe(canvas, options = {}) {
         float blue = dayCol.b - max(dayCol.r, dayCol.g);
         float dark = smoothstep(0.016, 0.0035, lum);
         float blu = smoothstep(0.0004, 0.0028, blue);
-        float ocean = dark * blu;
+        float lumBlur = lum;
+        lumBlur += dot(texture2D(map, vMapUv + vec2(uMapTexel.x, 0.0) * 4.0).rgb, vec3(0.2126, 0.7152, 0.0722));
+        lumBlur += dot(texture2D(map, vMapUv - vec2(uMapTexel.x, 0.0) * 4.0).rgb, vec3(0.2126, 0.7152, 0.0722));
+        lumBlur += dot(texture2D(map, vMapUv + vec2(0.0, uMapTexel.y) * 4.0).rgb, vec3(0.2126, 0.7152, 0.0722));
+        lumBlur += dot(texture2D(map, vMapUv - vec2(0.0, uMapTexel.y) * 4.0).rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lake = smoothstep(0.008, 0.0025, lumBlur * 0.2);
+        float ocean = max(dark * blu, lake);
         dayCol = mix(dayCol, vec3(0.0038, 0.0191, 0.0577), ocean * 0.94);
         vec2 planetUv = vec2(
           atan(-vLocalN.z, vLocalN.x) / 6.28318530718 + 0.5,
@@ -1310,6 +1343,7 @@ export function createEarthGlobe(canvas, options = {}) {
       cfg.map,
       (tex) => {
         configureColor(tex);
+        syncSurfaceTexel();
         ready = true;
         if (typeof onReady === "function") onReady();
         reportQuality("2k");
@@ -1432,6 +1466,7 @@ export function createEarthGlobe(canvas, options = {}) {
         releaseDecodedImage(tex);
         const oldMap = material.map;
         material.map = tex;
+        syncSurfaceTexel();
         material.needsUpdate = true;
         if (oldMap && oldMap !== tex) disposeMap(oldMap);
         dayApplied = true;
