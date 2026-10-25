@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e282";
+export const BUILD = "e283";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1664,6 +1664,8 @@ export function createEarthGlobe(canvas, options = {}) {
   let grid30 = null;
   let grid15 = null;
   let grid5 = null;
+  let grid2 = null;
+  let grid1 = null;
   let geoLineMesh = null;
   let geoLinePos = null;
   let gridLabels = [];
@@ -1758,6 +1760,16 @@ export function createEarthGlobe(canvas, options = {}) {
     gridGroup.visible = gridOn;
     if (mesh) mesh.add(gridGroup);
     updatePoleScale();
+  }
+
+  function ensureFineGrid() {
+    if (!gridGroup || grid2) return;
+    grid2 = makeLineObj(collectGridLines(2, 5), 0.15, "grid-2");
+    grid1 = makeLineObj(collectGridLines(1, 2), 0.11, "grid-1");
+    grid2.visible = false;
+    grid1.visible = false;
+    gridGroup.add(grid2);
+    gridGroup.add(grid1);
   }
 
   function makeGridLabel(text) {
@@ -1857,8 +1869,11 @@ export function createEarthGlobe(canvas, options = {}) {
     dist = dist == null ? Math.max(camDist(), MIN_DIST) : dist;
     const span = Math.max(homeDist - MIN_DIST, 0.01);
     const zoomIn = 1 - THREE.MathUtils.clamp((dist - MIN_DIST) / span, 0, 1);
-    if (grid15) grid15.visible = gridOn && zoomIn > 0.22;
-    if (grid5) grid5.visible = gridOn && zoomIn > 0.55;
+    if (gridOn && zoomIn > 0.5) ensureFineGrid();
+    if (grid15) grid15.visible = gridOn && zoomIn > 0.16;
+    if (grid5) grid5.visible = gridOn && zoomIn > 0.36;
+    if (grid2) grid2.visible = gridOn && zoomIn > 0.56;
+    if (grid1) grid1.visible = gridOn && zoomIn > 0.76;
     if (!gridLabels.length) return;
     const h = Math.max(height || window.innerHeight || 1, 1);
     const vFov = THREE.MathUtils.degToRad(camera.fov);
@@ -1913,6 +1928,8 @@ export function createEarthGlobe(canvas, options = {}) {
     grid30 = null;
     grid15 = null;
     grid5 = null;
+    grid2 = null;
+    grid1 = null;
     geoLineMesh = null;
     gridLabels = [];
   }
@@ -3583,7 +3600,7 @@ export function createEarthGlobe(canvas, options = {}) {
   // —— Touch + pointer: 2fs pans the canvas (CSS) so movement is always visible ——
 
   const UI_HIT =
-    "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#fact-sheet,#place-sheet,#pole-sheet,.cycle,.slider-track,.cycle-controls,.m-cell-fact,.vision-btn,.geo-btn,.live-btn,.sun-btn,.fact-sheet-inner,.fact-sheet-scrim";
+    "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#fact-sheet,#place-sheet,#pole-sheet,#grid-tap,.cycle,.slider-track,.cycle-controls,.m-cell-fact,.vision-btn,.geo-btn,.live-btn,.sun-btn,.fact-sheet-inner,.fact-sheet-scrim";
 
   function eventPoint(e) {
     if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
@@ -3601,7 +3618,14 @@ export function createEarthGlobe(canvas, options = {}) {
   function uiControlAt(pt) {
     if (!pt) return null;
     // Only real controls — not .cycle / .slider-track wrappers (those steal Sun + slider).
-    const roots = ["fact-sheet", "place-sheet", "pole-sheet", "loc-dialog", "loc-bar"];
+    const roots = [
+      "fact-sheet",
+      "place-sheet",
+      "pole-sheet",
+      "grid-tap",
+      "loc-dialog",
+      "loc-bar",
+    ];
     let best = null;
     let bestArea = Infinity;
     for (const id of roots) {
@@ -3715,11 +3739,21 @@ export function createEarthGlobe(canvas, options = {}) {
     if (typeof onTap !== "function") return;
     const pole = poleUnderTap(gesture.sx, gesture.sy);
     if (pole) {
-      onTap({ lat: pole.lat, lon: pole.lon, pole });
+      onTap({
+        lat: pole.lat,
+        lon: pole.lon,
+        pole,
+        sx: gesture.sx,
+        sy: gesture.sy,
+      });
       return;
     }
     const ll = lonLatAt(gesture.sx, gesture.sy, true);
-    onTap(ll);
+    if (!ll) {
+      onTap(null);
+      return;
+    }
+    onTap({ ...ll, sx: gesture.sx, sy: gesture.sy });
   }
 
   function onTouchStart(e) {

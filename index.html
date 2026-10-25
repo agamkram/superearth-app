@@ -1050,6 +1050,29 @@
       text-align: right;
     }
 
+    .grid-tap {
+      position: fixed;
+      z-index: 18;
+      left: 0;
+      top: 0;
+      width: max-content;
+      max-width: min(240px, calc(100% - 20px));
+      pointer-events: auto;
+      touch-action: manipulation;
+    }
+
+    .grid-tap[hidden] {
+      display: none !important;
+    }
+
+    .grid-tap .fact-sheet-inner {
+      padding: 8px 10px 9px;
+    }
+
+    .grid-tap .place-stats {
+      margin: 0;
+    }
+
     .cycle {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -1208,7 +1231,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e281</span>
+    <span class="build-mark" id="build-mark">e283</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1403,6 +1426,19 @@
     </div>
   </div>
 
+  <div id="grid-tap" class="grid-tap" hidden>
+    <div class="fact-sheet-inner">
+      <dl class="place-stats">
+        <dt>Latitude</dt>
+        <dd id="grid-tap-lat">—</dd>
+        <dt>Longitude</dt>
+        <dd id="grid-tap-lon">—</dd>
+        <dt>Elevation</dt>
+        <dd id="grid-tap-elev">—</dd>
+      </dl>
+    </div>
+  </div>
+
   <div id="pole-sheet" class="fact-sheet place-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="pole-title">
     <button type="button" class="fact-sheet-scrim" id="pole-scrim" aria-label="Dismiss pole"></button>
     <div class="fact-sheet-inner">
@@ -1421,7 +1457,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe, BUILD } from "./earth.js?v=e282";
+    import { createEarthGlobe, BUILD } from "./earth.js?v=e283";
     import {
       loadPlaces,
       placeAt,
@@ -1580,6 +1616,11 @@
     const poleLon = document.getElementById("pole-lon");
     const poleWhere = document.getElementById("pole-where");
     const poleScrim = document.getElementById("pole-scrim");
+    const gridTap = document.getElementById("grid-tap");
+    const gridTapLat = document.getElementById("grid-tap-lat");
+    const gridTapLon = document.getElementById("grid-tap-lon");
+    const gridTapElev = document.getElementById("grid-tap-elev");
+    let gridTapElevSeq = 0;
 
     const POLE_CARDS = {
       MN: {
@@ -1620,6 +1661,7 @@
       if (!f || !factSheet) return;
       closePlaceSheet();
       closePoleSheet();
+      closeGridTap();
       factTitle.textContent = f.title;
       factBody.textContent = factText(key, f.body);
       factSheet.hidden = false;
@@ -1633,6 +1675,7 @@
       if (!place || !placeSheet) return;
       closeFactSheet();
       closePoleSheet();
+      closeGridTap();
       placeTitle.textContent = place.name || "—";
       if (place.region) {
         placeSub.textContent = place.region;
@@ -1667,6 +1710,7 @@
       if (!card || !poleSheet) return;
       closeFactSheet();
       closePlaceSheet();
+      closeGridTap();
       poleTitle.textContent = card.title;
       poleSub.textContent = card.sub;
       poleLat.textContent = fmtCoord(pole.lat, "N", "S");
@@ -1677,6 +1721,67 @@
 
     function closePoleSheet() {
       if (poleSheet) poleSheet.hidden = true;
+    }
+
+    function closeGridTap() {
+      gridTapElevSeq += 1;
+      if (gridTap) gridTap.hidden = true;
+    }
+
+    function fmtElev(m) {
+      if (!Number.isFinite(m)) return "—";
+      if (Math.abs(m) < 0.5) return "sea level";
+      const ft = Math.round(m * 3.28084);
+      const meters = Math.round(m);
+      return `${meters.toLocaleString()} m · ${ft.toLocaleString()} ft`;
+    }
+
+    function placeGridTapBox(x, y) {
+      if (!gridTap) return;
+      const pad = 10;
+      const w = gridTap.offsetWidth || 160;
+      const h = gridTap.offsetHeight || 80;
+      const maxX = Math.max(pad, window.innerWidth - w - pad);
+      const maxY = Math.max(pad, window.innerHeight - h - pad);
+      let left = x + 14;
+      let top = y - h - 12;
+      if (top < pad) top = y + 16;
+      if (left > maxX) left = x - w - 14;
+      left = Math.min(maxX, Math.max(pad, left));
+      top = Math.min(maxY, Math.max(pad, top));
+      gridTap.style.left = `${left}px`;
+      gridTap.style.top = `${top}px`;
+    }
+
+    function openGridTap(ll) {
+      if (!gridTap || !ll) return;
+      closeFactSheet();
+      closePlaceSheet();
+      closePoleSheet();
+      gridTapLat.textContent = fmtCoord(ll.lat, "N", "S");
+      gridTapLon.textContent = fmtCoord(ll.lon, "E", "W");
+      gridTapElev.textContent = "…";
+      gridTap.hidden = false;
+      placeGridTapBox(ll.sx || window.innerWidth / 2, ll.sy || window.innerHeight / 2);
+      const seq = ++gridTapElevSeq;
+      const lat = Number(ll.lat).toFixed(4);
+      const lon = Number(ll.lon).toFixed(4);
+      fetch(
+        `https://api.open-meteo.com/v1/elevation?latitude=${lat}&longitude=${lon}`
+      )
+        .then((res) => {
+          if (!res.ok) throw new Error("elev");
+          return res.json();
+        })
+        .then((data) => {
+          if (seq !== gridTapElevSeq) return;
+          const m = Array.isArray(data.elevation) ? data.elevation[0] : data.elevation;
+          gridTapElev.textContent = fmtElev(m);
+        })
+        .catch(() => {
+          if (seq !== gridTapElevSeq) return;
+          gridTapElev.textContent = "—";
+        });
     }
 
     document.querySelectorAll(".m-cell-fact").forEach((btn) => {
@@ -2458,6 +2563,10 @@
 
     window.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
+      if (gridTap && !gridTap.hidden) {
+        closeGridTap();
+        return;
+      }
       if (poleSheet && !poleSheet.hidden) {
         closePoleSheet();
         return;
@@ -2499,6 +2608,15 @@
           return;
         }
         closePoleSheet();
+        if (gridOn) {
+          if (!ll) {
+            closeGridTap();
+            return;
+          }
+          openGridTap(ll);
+          return;
+        }
+        closeGridTap();
         if (!bordersOn) return;
         if (!ll) {
           closePlaceSheet();
@@ -2609,6 +2727,7 @@
       if (globeRef.current && typeof globeRef.current.setGrid === "function") {
         globeRef.current.setGrid(gridOn);
       }
+      if (!gridOn) closeGridTap();
     }
     if (gridBtn) {
       gridBtn.addEventListener("click", (e) => {
