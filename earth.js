@@ -30,8 +30,13 @@ const ATMO_COLOR = new THREE.Color(0x4da6ff);
 const AURORA_HEIGHT = 1.022;
 const AURORA_TEX_W = 360;
 const AURORA_TEX_H = 721;
-/** Drop NOAA cells under 4%. Chance above that is drawn as that percent. */
+/**
+ * NOAA chance is 0…100, but quiet days often peak in the teens and
+ * moderate storms around the high 20s. Scaling by 90 left today's oval
+ * at ~8% opacity, then the feather pass wiped it. Map ~28% → full.
+ */
 const AURORA_MIN = 4;
+const AURORA_PEAK_REF = 28;
 
 const ATMO_VERTEX = /* glsl */ `
 varying vec3 vWorldPos;
@@ -175,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e225";
+export const BUILD = "e226";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -2064,27 +2069,65 @@ export function createEarthGlobe(canvas, options = {}) {
     return cloudsOn;
   }
 
+  /** Contiguous oval on one longitude. Stops at a gap or the equator. */
+  function auroraBand(col, southern) {
+    let peakLat = 0;
+    let peakA = -1;
+    for (const [lat, cell] of col) {
+      if ((lat < 0) !== southern) continue;
+      if (cell.a > peakA) {
+        peakA = cell.a;
+        peakLat = lat;
+      }
+    }
+    if (peakA < AURORA_MIN) return null;
+    const latMin = southern ? -90 : 0;
+    const latMax = southern ? -1 : 90;
+    let lo = peakLat;
+    let hi = peakLat;
+    while (lo > latMin && col.has(lo - 1)) lo--;
+    while (hi < latMax && col.has(hi + 1)) hi++;
+    return { lo, hi };
+  }
+
+  /** Chance at a fractional latitude, blended between the two NOAA samples. */
+  function chanceAt(col, lo, hi, lat) {
+    if (lat < lo || lat > hi) return null;
+    const a0 = Math.floor(lat);
+    const a1 = Math.ceil(lat);
+    if (a0 === a1) return col.has(a0) ? col.get(a0).a : null;
+    const c0 = col.get(a0);
+    const c1 = col.get(a1);
+    if (!c0 && !c1) return null;
+    if (!c0) return Math.abs(lat - a1) <= 0.5 ? c1.a : null;
+    if (!c1) return Math.abs(lat - a0) <= 0.5 ? c0.a : null;
+    const f = lat - a0;
+    return c0.a * (1 - f) + c1.a * f;
+  }
+
   /**
-   * Each NOAA cell is one degree. Brightness is that chance, 0–100.
-   * Color, when the tables have loaded, is the electron energy there.
-   * Until then the cell stays green.
+   * NOAA chance sets where the oval is and how bright. Color, when the
+   * tables have loaded, is the electron energy at that geographic point.
+   * Until then the oval stays the green that reads cleanly.
    */
-  function paintAuroraColumn(data, w, h, x, col, colorAt) {
+  function paintAuroraColumn(data, w, h, x, col, southern, colorAt) {
+    const raw = auroraBand(col, southern);
+    if (!raw) return;
     const sub = (h - 1) / 180;
+    const steps = Math.round((raw.hi - raw.lo) * sub);
     const lon = (((x - 180) % 360) + 360) % 360;
-    for (const [latR, cell] of col) {
-      const a = cell.a;
+    for (let i = 0; i <= steps; i++) {
+      const lat = raw.lo + i / sub;
+      const a = chanceAt(col, raw.lo, raw.hi, lat);
       if (!(a >= AURORA_MIN)) continue;
-      const t = Math.min(1, a / 100);
-      const rgb = colorAt ? colorAt(latR, lon) : [36, 200, 34];
-      const alpha = Math.round(255 * t);
-      const y0 = Math.round((90 - (latR + 0.5)) * sub);
-      const y1 = Math.round((90 - (latR - 0.5)) * sub);
-      const lo = Math.max(0, Math.min(y0, y1));
-      const hi = Math.min(h - 1, Math.max(y0, y1));
-      for (let y = lo; y <= hi; y++) {
-        const o = (y * w + x) * 4;
-        if (alpha < data[o + 3]) continue;
+      // Quiet peaks (~15) must still read as a ribbon; storms clamp at 1.
+      const t = Math.min(1, Math.pow(a / AURORA_PEAK_REF, 0.85));
+      const rgb = colorAt ? colorAt(lat, lon) : [36, 200, 34];
+      const alpha = Math.min(255, Math.floor(255 * Math.min(1, t * 1.25)));
+      const y = Math.round((90 - lat) * sub);
+      if (y < 0 || y >= h) continue;
+      const o = (y * w + x) * 4;
+      if (alpha >= data[o + 3]) {
         data[o] = rgb[0];
         data[o + 1] = rgb[1];
         data[o + 2] = rgb[2];
@@ -2225,7 +2268,8 @@ export function createEarthGlobe(canvas, options = {}) {
     for (let x = 0; x < w; x++) {
       const col = cols[x];
       if (!col.size) continue;
-      paintAuroraColumn(data, w, h, x, col, colorAt);
+      paintAuroraColumn(data, w, h, x, col, false, colorAt);
+      paintAuroraColumn(data, w, h, x, col, true, colorAt);
     }
     smoothAurora(data, w, h);
     const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
@@ -2259,9 +2303,9 @@ export function createEarthGlobe(canvas, options = {}) {
           vec4 tex = texture2D(uMap, vUv);
           if (tex.a < 0.02) discard;
           float ndl = dot(normalize(vWorldN), normalize(uSunDir));
-          // Off in daylight. A short fade through twilight.
-          float night = smoothstep(0.25, -0.08, ndl);
-          float glow = tex.a * night;
+          // Full strength on the night side; keep a readable ribbon in daylight.
+          float wash = mix(0.4, 1.35, smoothstep(0.55, -0.45, ndl));
+          float glow = tex.a * wash;
           if (glow < 0.02) discard;
           gl_FragColor = vec4(tex.rgb * glow, 1.0);
         }
