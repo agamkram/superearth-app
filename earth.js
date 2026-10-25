@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e283";
+export const BUILD = "e284";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1650,7 +1650,7 @@ export function createEarthGlobe(canvas, options = {}) {
       .catch(() => {});
   }
 
-  /** Classic globe grid: polar axis, equator, 15° lat/lon lines. */
+  /** Classic globe grid: polar axis, lat/lon lines. Equator is the Natural Earth line. */
   const GRID_R = RADIUS * 1.0032;
   /** Natural Earth tropics, polar circles, equator. Just outside the 15° net. */
   const GEO_R = RADIUS * 1.0034;
@@ -1705,6 +1705,7 @@ export function createEarthGlobe(canvas, options = {}) {
   function collectGridLines(step, skipStep) {
     const pos = [];
     for (let lat = -90 + step; lat <= 90 - step; lat += step) {
+      if (Math.abs(lat) < 1e-9) continue;
       if (skipStep && Math.abs(lat) % skipStep === 0) continue;
       const pts = [];
       for (let i = 0; i <= GRID_SEGS; i++) {
