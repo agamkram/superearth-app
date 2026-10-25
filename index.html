@@ -690,7 +690,7 @@
       }
     }
 
-    /* Aurora · Clouds · Rivers · Borders · Globe · Tilt */
+    /* Aurora · Clouds · Rivers · Borders · Globe · Tilt · Orbit */
     .loc-strip {
       display: grid;
       grid-template-columns: minmax(0, 1fr);
@@ -1238,7 +1238,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e289</span>
+    <span class="build-mark" id="build-mark">e290</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1302,6 +1302,15 @@
             aria-pressed="false"
           >
             Tilt
+          </button>
+          <button
+            type="button"
+            class="vision-btn"
+            id="orbit-btn"
+            title="Slow continuous Earth spin"
+            aria-pressed="false"
+          >
+            Orbit
           </button>
         </div>
       </div>
@@ -1471,7 +1480,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe, BUILD } from "./earth.js?v=e289";
+    import { createEarthGlobe, BUILD } from "./earth.js?v=e290";
     import {
       loadPlaces,
       placeAt,
@@ -1519,6 +1528,7 @@
     const bordersBtn = document.getElementById("borders-btn");
     const gridBtn = document.getElementById("grid-btn");
     const tiltBtn = document.getElementById("tilt-btn");
+    const orbitBtn = document.getElementById("orbit-btn");
 
     /** @type {import("leaflet").Map | null} */
     let locationMap = null;
@@ -2769,6 +2779,26 @@
       tiltBtn.addEventListener("click", (e) => {
         e.preventDefault();
         setTiltUi(!tiltOn);
+      });
+    }
+
+    let orbitOn = false;
+    function setOrbitUi(on) {
+      orbitOn = !!on;
+      if (orbitBtn) {
+        orbitBtn.setAttribute("aria-pressed", orbitOn ? "true" : "false");
+        orbitBtn.title = orbitOn
+          ? "Stop continuous Earth spin"
+          : "Slow continuous Earth spin";
+      }
+      if (globeRef.current && typeof globeRef.current.setOrbiting === "function") {
+        globeRef.current.setOrbiting(orbitOn);
+      }
+    }
+    if (orbitBtn) {
+      orbitBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        setOrbitUi(!orbitOn);
       });
     }
 

@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e289";
+export const BUILD = "e290";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -311,6 +311,10 @@ export function createEarthGlobe(canvas, options = {}) {
   let hqStarted = false;
   let disposed = false;
   let animId = 0;
+  let orbiting = false;
+  let lastOrbitMs = 0;
+  /** Slow visible spin: one full turn about every 100s. */
+  const ORBIT_RAD_PER_SEC = (2 * Math.PI) / 100;
   const sunDir = new THREE.Vector3(1, 0, 0);
   const sunDirUniform = { value: sunDir };
   const sunOnUniform = { value: 1 };
@@ -4089,6 +4093,17 @@ export function createEarthGlobe(canvas, options = {}) {
   document.documentElement.style.touchAction = "none";
   document.body.style.touchAction = "none";
 
+  function setOrbiting(on) {
+    orbiting = !!on;
+    if (!orbiting) lastOrbitMs = 0;
+    kick();
+    return orbiting;
+  }
+
+  function isOrbiting() {
+    return orbiting;
+  }
+
   function kick() {
     if (disposed || animId) return;
     if (typeof document !== "undefined" && document.hidden) return;
@@ -4099,6 +4114,7 @@ export function createEarthGlobe(canvas, options = {}) {
     if (document.hidden) {
       if (animId) cancelAnimationFrame(animId);
       animId = 0;
+      lastOrbitMs = 0;
       return;
     }
     // One fresh frame when returning; Live clock catch-up is tickLive in the page.
@@ -4127,14 +4143,23 @@ export function createEarthGlobe(canvas, options = {}) {
       applyEphemeris({ skipKick: true });
       tilting = gridTilt !== gridTiltTarget;
     }
+    if (orbiting) {
+      if (!lastOrbitMs) lastOrbitMs = t;
+      const dt = Math.min(0.05, (t - lastOrbitMs) / 1000);
+      lastOrbitMs = t;
+      if (dt > 0) {
+        userSpin += ORBIT_RAD_PER_SEC * dt;
+        applyEphemeris({ skipKick: true });
+      }
+    }
     syncEarth();
     updateTiles();
     syncRiverPixels();
     if (gridOn) updateGridLabels();
     renderer.render(scene, camera);
     // Idle when still. Real Earth spin is invisible frame-to-frame; the page
-    // refreshes Live on a timer. Keep looping only while dragging or tipping.
-    if (oneFinger || twoFinger || tilting) kick();
+    // refreshes Live on a timer. Keep looping only while dragging, tipping, or orbiting.
+    if (oneFinger || twoFinger || tilting || orbiting) kick();
   }
 
   applyEphemeris();
@@ -4159,6 +4184,8 @@ export function createEarthGlobe(canvas, options = {}) {
     setBorders,
     setGrid,
     setTilt,
+    setOrbiting,
+    isOrbiting,
     setAurora,
     setAuroraShown,
     setSun,
@@ -4175,6 +4202,7 @@ export function createEarthGlobe(canvas, options = {}) {
       disposed = true;
       cancelAnimationFrame(animId);
       animId = 0;
+      orbiting = false;
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("touchstart", onTouchStart, true);
       window.removeEventListener("touchmove", onTouchMove, true);
