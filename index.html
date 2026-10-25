@@ -683,7 +683,7 @@
       }
     }
 
-    /* Location + Aurora · Clouds · Borders · Grid */
+    /* Location + Aurora · Clouds · Borders · Globe */
     .loc-strip {
       display: grid;
       grid-template-columns: minmax(0, 1fr) max-content;
@@ -1231,7 +1231,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e285</span>
+    <span class="build-mark" id="build-mark">e286</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1288,10 +1288,10 @@
             type="button"
             class="vision-btn"
             id="grid-btn"
-            title="Show grid and put today's season in the axle"
+            title="Show globe lines and put today's season in the axle"
             aria-pressed="false"
           >
-            Grid
+            Globe
           </button>
         </div>
       </div>
@@ -1457,7 +1457,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe, BUILD } from "./earth.js?v=e285";
+    import { createEarthGlobe, BUILD } from "./earth.js?v=e286";
     import {
       loadPlaces,
       placeAt,
@@ -2723,8 +2723,8 @@
       if (gridBtn) {
         gridBtn.setAttribute("aria-pressed", gridOn ? "true" : "false");
         gridBtn.title = gridOn
-          ? "Hide grid and stand Earth poles-up"
-          : "Show grid and put today's season in the axle";
+          ? "Hide globe lines and stand Earth poles-up"
+          : "Show globe lines and put today's season in the axle";
       }
       if (globeRef.current && typeof globeRef.current.setGrid === "function") {
         globeRef.current.setGrid(gridOn);
