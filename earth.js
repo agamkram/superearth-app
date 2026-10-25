@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e295";
+export const BUILD = "e296";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1944,14 +1944,15 @@ export function createEarthGlobe(canvas, options = {}) {
     _pinOut.copy(p).normalize();
     _pinEast.crossVectors(_yUp, _pinOut);
     if (_pinEast.lengthSq() < 1e-8) {
-      mark.quaternion.setFromUnitVectors(_zPlus, _pinOut);
-    } else {
-      _pinEast.normalize();
-      _pinNorth.crossVectors(_pinOut, _pinEast).normalize();
-      mark.quaternion.setFromRotationMatrix(
-        _pinMat.makeBasis(_pinEast, _pinNorth, _pinOut)
-      );
+      const lonR = THREE.MathUtils.degToRad(lon);
+      _pinEast.set(-Math.sin(lonR), 0, -Math.cos(lonR));
     }
+    _pinEast.normalize();
+    _pinNorth.crossVectors(_pinOut, _pinEast).normalize();
+    _pinEast.crossVectors(_pinNorth, _pinOut).normalize();
+    mark.quaternion.setFromRotationMatrix(
+      _pinMat.makeBasis(_pinEast, _pinNorth, _pinOut)
+    );
   }
 
   function attachGridLabels() {
