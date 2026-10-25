@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e223";
+export const BUILD = "e224";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -772,6 +772,8 @@ export function createEarthGlobe(canvas, options = {}) {
   const PIN_PX_HOME = 9;
   const PIN_PX_CLOSE = 5;
   const _poleOut = new THREE.Vector3();
+  const _poleProj = new THREE.Vector3();
+  const _poleCam = new THREE.Vector3();
   const _pinOut = new THREE.Vector3();
   const _pinEast = new THREE.Vector3();
   const _pinNorth = new THREE.Vector3();
@@ -853,6 +855,7 @@ export function createEarthGlobe(canvas, options = {}) {
     // Magnetic dip poles only — geographic N/S are the grid axis ends
     for (const m of MAG_POLES) {
       const mark = makePoleBadge(m.letter, m.stroke);
+      mark.userData.pole = m;
       placePoleMark(mark, m.lat, m.lon);
       poleGroup.add(mark);
       poleMarks.push(mark);
@@ -2852,7 +2855,7 @@ export function createEarthGlobe(canvas, options = {}) {
   // —— Touch + pointer: 2fs pans the canvas (CSS) so movement is always visible ——
 
   const UI_HIT =
-    "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#fact-sheet,#place-sheet,.cycle,.slider-track,.cycle-controls,.m-cell-fact,.vision-btn,.geo-btn,.live-btn,.sun-btn,.fact-sheet-inner,.fact-sheet-scrim";
+    "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#fact-sheet,#place-sheet,#pole-sheet,.cycle,.slider-track,.cycle-controls,.m-cell-fact,.vision-btn,.geo-btn,.live-btn,.sun-btn,.fact-sheet-inner,.fact-sheet-scrim";
 
   function eventPoint(e) {
     if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
@@ -2870,7 +2873,7 @@ export function createEarthGlobe(canvas, options = {}) {
   function uiControlAt(pt) {
     if (!pt) return null;
     // Only real controls — not .cycle / .slider-track wrappers (those steal Sun + slider).
-    const roots = ["fact-sheet", "place-sheet", "loc-dialog", "loc-bar"];
+    const roots = ["fact-sheet", "place-sheet", "pole-sheet", "loc-dialog", "loc-bar"];
     let best = null;
     let bestArea = Infinity;
     for (const id of roots) {
@@ -2946,10 +2949,47 @@ export function createEarthGlobe(canvas, options = {}) {
     };
   }
 
+  /** Finger pad around the MN / MS marks. The drawn badge is only a few pixels. */
+  const POLE_TAP_PX = 24;
+
+  function poleUnderTap(clientX, clientY) {
+    if (!poleMarks.length || !mesh) return null;
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(rect.width, 1);
+    const h = Math.max(rect.height, 1);
+    camera.updateMatrixWorld(true);
+    mesh.updateMatrixWorld(true);
+    mesh.getWorldPosition(_earthSphere.center);
+    let best = null;
+    let bestD = Infinity;
+    for (const mark of poleMarks) {
+      const info = mark.userData.pole;
+      if (!info) continue;
+      mark.getWorldPosition(_poleOut);
+      _poleCam.copy(camera.position).sub(_poleOut);
+      if (_tileLocal.copy(_poleOut).sub(_earthSphere.center).dot(_poleCam) <= 0) continue;
+      _poleProj.copy(_poleOut).project(camera);
+      if (_poleProj.z < -1 || _poleProj.z > 1) continue;
+      const sx = (_poleProj.x * 0.5 + 0.5) * w + rect.left;
+      const sy = (-_poleProj.y * 0.5 + 0.5) * h + rect.top;
+      const d = Math.hypot(clientX - sx, clientY - sy);
+      if (d <= POLE_TAP_PX && d < bestD) {
+        bestD = d;
+        best = info;
+      }
+    }
+    return best;
+  }
+
   function fireTapIfAny(gesture) {
     if (!gesture || gesture.moved) return;
     if (Date.now() - gesture.t0 > TAP_MAX_MS) return;
     if (typeof onTap !== "function") return;
+    const pole = poleUnderTap(gesture.sx, gesture.sy);
+    if (pole) {
+      onTap({ lat: pole.lat, lon: pole.lon, pole });
+      return;
+    }
     const ll = lonLatAt(gesture.sx, gesture.sy, true);
     onTap(ll);
   }
