@@ -350,17 +350,22 @@
       gap: 0;
     }
 
-    /* Location + sunrise, solar noon, sunset, day length */
+    /* Location takes leftover; sun cells size to their words. */
     .m-grid-rise {
-      grid-template-columns:
-        minmax(0, 1.5fr)
-        minmax(0, 0.7fr)
-        minmax(0, 0.82fr)
-        minmax(0, 0.7fr)
-        minmax(0, 0.78fr);
-      grid-auto-rows: var(--m-row-h);
+      display: flex;
       align-items: stretch;
       gap: 0;
+    }
+
+    .m-grid-rise .loc-cell {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .m-grid-rise > .m-cell-fact {
+      flex: 0 0 auto;
+      width: max-content;
+      min-width: max-content;
     }
 
     .tool-strip {
@@ -442,7 +447,7 @@
 
     .m-grid > .m-cell + .m-cell,
     .m-grid-3 > .m-cell + .m-cell,
-    .m-grid-rise > .m-cell + .m-cell {
+    .m-grid-rise > * + * {
       box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.05);
     }
 
@@ -536,14 +541,6 @@
           minmax(4.1rem, 0.38fr);
       }
 
-      .m-grid-rise {
-        grid-template-columns:
-          minmax(0, 1.5fr)
-          minmax(0, 0.7fr)
-          minmax(0, 0.82fr)
-          minmax(0, 0.7fr)
-          minmax(0, 0.78fr);
-      }
 
       .m-cell .k {
         letter-spacing: 0.03em;
@@ -1241,7 +1238,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e288</span>
+    <span class="build-mark" id="build-mark">e289</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1474,7 +1471,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe, BUILD } from "./earth.js?v=e288";
+    import { createEarthGlobe, BUILD } from "./earth.js?v=e289";
     import {
       loadPlaces,
       placeAt,
