@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e294";
+export const BUILD = "e295";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1968,15 +1968,16 @@ export function createEarthGlobe(canvas, options = {}) {
       [0, 90, "90°E"],
       [0, 180, "180°"],
       [0, -90, "90°W"],
-      [0, nameLon, "Equator"],
-      [23.44, nameLon, "Cancer"],
-      [-23.44, nameLon, "Capricorn"],
-      [66.56, nameLon, "Arctic"],
-      [-66.56, nameLon, "Antarctic"],
+      [0, nameLon, "Equator", "equator"],
+      [23.44, nameLon, "Cancer", "cancer"],
+      [-23.44, nameLon, "Capricorn", "capricorn"],
+      [66.56, nameLon, "Arctic", "arctic"],
+      [-66.56, nameLon, "Antarctic", "antarctic"],
     ];
-    for (const [lat, lon, text] of spots) {
+    for (const [lat, lon, text, lineId] of spots) {
       const spr = makeGridLabel(text);
       placeGridLabel(spr, lat, lon);
+      if (lineId) spr.userData.line = { id: lineId, lat, lon };
       gridGroup.add(spr);
       gridLabels.push(spr);
     }
@@ -3720,7 +3721,7 @@ export function createEarthGlobe(canvas, options = {}) {
   // —— Touch + pointer: 2fs pans the canvas (CSS) so movement is always visible ——
 
   const UI_HIT =
-    "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#fact-sheet,#place-sheet,#pole-sheet,#grid-tap,.cycle,.slider-track,.cycle-controls,.m-cell-fact,.vision-btn,.geo-btn,.live-btn,.sun-btn,.fact-sheet-inner,.fact-sheet-scrim";
+    "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#fact-sheet,#place-sheet,#pole-sheet,#line-sheet,#grid-tap,.cycle,.slider-track,.cycle-controls,.m-cell-fact,.vision-btn,.geo-btn,.live-btn,.sun-btn,.fact-sheet-inner,.fact-sheet-scrim";
 
   function eventPoint(e) {
     if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
@@ -3742,6 +3743,7 @@ export function createEarthGlobe(canvas, options = {}) {
       "fact-sheet",
       "place-sheet",
       "pole-sheet",
+      "line-sheet",
       "grid-tap",
       "loc-dialog",
       "loc-bar",
@@ -3823,6 +3825,7 @@ export function createEarthGlobe(canvas, options = {}) {
 
   /** Finger pad around the MN / MS marks. The drawn badge is only a few pixels. */
   const POLE_TAP_PX = 24;
+  const LINE_TAP_PX = 32;
 
   function poleUnderTap(clientX, clientY) {
     if (!poleMarks.length || !mesh) return null;
@@ -3853,6 +3856,37 @@ export function createEarthGlobe(canvas, options = {}) {
     return best;
   }
 
+  function lineUnderTap(clientX, clientY) {
+    if (!gridOn || !gridLabels.length || !mesh) return null;
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(rect.width, 1);
+    const h = Math.max(rect.height, 1);
+    camera.updateMatrixWorld(true);
+    mesh.updateMatrixWorld(true);
+    mesh.getWorldPosition(_earthSphere.center);
+    let best = null;
+    let bestD = Infinity;
+    for (const mark of gridLabels) {
+      const info = mark.userData.line;
+      if (!info || !mark.visible) continue;
+      mark.getWorldPosition(_poleOut);
+      _poleCam.copy(camera.position).sub(_poleOut);
+      if (_tileLocal.copy(_poleOut).sub(_earthSphere.center).dot(_poleCam) <= 0) {
+        continue;
+      }
+      _poleProj.copy(_poleOut).project(camera);
+      if (_poleProj.z < -1 || _poleProj.z > 1) continue;
+      const sx = (_poleProj.x * 0.5 + 0.5) * w + rect.left;
+      const sy = (-_poleProj.y * 0.5 + 0.5) * h + rect.top;
+      const d = Math.hypot(clientX - sx, clientY - sy);
+      if (d <= LINE_TAP_PX && d < bestD) {
+        bestD = d;
+        best = info;
+      }
+    }
+    return best;
+  }
+
   function fireTapIfAny(gesture) {
     if (!gesture || gesture.moved) return;
     if (Date.now() - gesture.t0 > TAP_MAX_MS) return;
@@ -3863,6 +3897,17 @@ export function createEarthGlobe(canvas, options = {}) {
         lat: pole.lat,
         lon: pole.lon,
         pole,
+        sx: gesture.sx,
+        sy: gesture.sy,
+      });
+      return;
+    }
+    const line = lineUnderTap(gesture.sx, gesture.sy);
+    if (line) {
+      onTap({
+        lat: line.lat,
+        lon: line.lon,
+        line,
         sx: gesture.sx,
         sy: gesture.sy,
       });

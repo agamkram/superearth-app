@@ -1030,6 +1030,14 @@
       text-shadow: 0 1px 6px #000;
     }
 
+    .line-sheet .fact-sheet-inner {
+      max-width: min(300px, 100%);
+    }
+
+    .line-sheet #line-body {
+      margin: 6px 0 0;
+    }
+
     .place-stats {
       display: grid;
       grid-template-columns: max-content max-content;
@@ -1239,7 +1247,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e294</span>
+    <span class="build-mark" id="build-mark">e295</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1463,6 +1471,15 @@
     </div>
   </div>
 
+  <div id="line-sheet" class="fact-sheet place-sheet line-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="line-title">
+    <button type="button" class="fact-sheet-scrim" id="line-scrim" aria-label="Dismiss line"></button>
+    <div class="fact-sheet-inner">
+      <h2 id="line-title">—</h2>
+      <p class="place-sub" id="line-sub"></p>
+      <p id="line-body"></p>
+    </div>
+  </div>
+
   <div id="pole-sheet" class="fact-sheet place-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="pole-title">
     <button type="button" class="fact-sheet-scrim" id="pole-scrim" aria-label="Dismiss pole"></button>
     <div class="fact-sheet-inner">
@@ -1481,7 +1498,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe, BUILD } from "./earth.js?v=e294";
+    import { createEarthGlobe, BUILD } from "./earth.js?v=e295";
     import {
       loadPlaces,
       placeAt,
@@ -1642,11 +1659,49 @@
     const poleLon = document.getElementById("pole-lon");
     const poleWhere = document.getElementById("pole-where");
     const poleScrim = document.getElementById("pole-scrim");
+    const lineSheet = document.getElementById("line-sheet");
+    const lineTitle = document.getElementById("line-title");
+    const lineSub = document.getElementById("line-sub");
+    const lineBody = document.getElementById("line-body");
+    const lineScrim = document.getElementById("line-scrim");
     const gridTap = document.getElementById("grid-tap");
     const gridTapLat = document.getElementById("grid-tap-lat");
     const gridTapLon = document.getElementById("grid-tap-lon");
     const gridTapElev = document.getElementById("grid-tap-elev");
     let gridTapElevSeq = 0;
+
+    const LINE_CARDS = {
+      equator: {
+        title: "Equator",
+        sub: "0° latitude",
+        body:
+          "The circle around Earth's middle, equally far from both poles. Days and nights are about 12 hours here all year. The sun stands straight overhead at the equinoxes.",
+      },
+      cancer: {
+        title: "Tropic of Cancer",
+        sub: "23.44°N",
+        body:
+          "The farthest north the sun stands straight overhead, around June 21. Earth's tilt sets this line. It is named for the constellation Cancer, where the sun sat at that solstice long ago.",
+      },
+      capricorn: {
+        title: "Tropic of Capricorn",
+        sub: "23.44°S",
+        body:
+          "The farthest south the sun stands straight overhead, around December 21. Earth's tilt sets this line too. It is named for Capricorn, where the sun sat at that solstice long ago.",
+      },
+      arctic: {
+        title: "Arctic Circle",
+        sub: "66.56°N",
+        body:
+          "North of this line the sun can stay up all day in June and stay down all day in December. It sits 90° minus Earth's tilt.",
+      },
+      antarctic: {
+        title: "Antarctic Circle",
+        sub: "66.56°S",
+        body:
+          "South of this line the sun can stay up all day in December and stay down all day in June. It sits 90° minus Earth's tilt.",
+      },
+    };
 
     const POLE_CARDS = {
       MN: {
@@ -1687,6 +1742,7 @@
       if (!f || !factSheet) return;
       closePlaceSheet();
       closePoleSheet();
+      closeLineSheet();
       closeGridTap();
       factTitle.textContent = f.title;
       factBody.textContent = factText(key, f.body);
@@ -1701,6 +1757,7 @@
       if (!place || !placeSheet) return;
       closeFactSheet();
       closePoleSheet();
+      closeLineSheet();
       closeGridTap();
       placeTitle.textContent = place.name || "—";
       if (place.region) {
@@ -1736,6 +1793,7 @@
       if (!card || !poleSheet) return;
       closeFactSheet();
       closePlaceSheet();
+      closeLineSheet();
       closeGridTap();
       poleTitle.textContent = card.title;
       poleSub.textContent = card.sub;
@@ -1747,6 +1805,23 @@
 
     function closePoleSheet() {
       if (poleSheet) poleSheet.hidden = true;
+    }
+
+    function openLineSheet(line) {
+      const card = line && LINE_CARDS[line.id];
+      if (!card || !lineSheet) return;
+      closeFactSheet();
+      closePlaceSheet();
+      closePoleSheet();
+      closeGridTap();
+      lineTitle.textContent = card.title;
+      lineSub.textContent = card.sub;
+      lineBody.textContent = card.body;
+      lineSheet.hidden = false;
+    }
+
+    function closeLineSheet() {
+      if (lineSheet) lineSheet.hidden = true;
     }
 
     function closeGridTap() {
@@ -1785,6 +1860,7 @@
       closeFactSheet();
       closePlaceSheet();
       closePoleSheet();
+      closeLineSheet();
       gridTapLat.textContent = fmtCoord(ll.lat, "N", "S");
       gridTapLon.textContent = fmtCoord(ll.lon, "E", "W");
       gridTapElev.textContent = "…";
@@ -1838,8 +1914,15 @@
       closePoleSheet();
     }
 
+    function onLineDismiss(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeLineSheet();
+    }
+
     placeScrim?.addEventListener("click", onPlaceDismiss);
     poleScrim?.addEventListener("click", onPoleDismiss);
+    lineScrim?.addEventListener("click", onLineDismiss);
     factScrim?.addEventListener("click", onFactDismiss);
 
     let previewMode = false;
@@ -2596,6 +2679,10 @@
         closeGridTap();
         return;
       }
+      if (lineSheet && !lineSheet.hidden) {
+        closeLineSheet();
+        return;
+      }
       if (poleSheet && !poleSheet.hidden) {
         closePoleSheet();
         return;
@@ -2636,7 +2723,12 @@
           openPoleSheet(ll.pole);
           return;
         }
+        if (ll && ll.line) {
+          openLineSheet(ll.line);
+          return;
+        }
         closePoleSheet();
+        closeLineSheet();
         if (gridOn) {
           if (!ll) {
             closeGridTap();
@@ -2754,7 +2846,10 @@
       if (globeRef.current && typeof globeRef.current.setGrid === "function") {
         globeRef.current.setGrid(gridOn);
       }
-      if (!gridOn) closeGridTap();
+      if (!gridOn) {
+        closeGridTap();
+        closeLineSheet();
+      }
     }
     if (gridBtn) {
       gridBtn.addEventListener("click", (e) => {
