@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e229";
+export const BUILD = "e230";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -322,8 +322,8 @@ export function createEarthGlobe(canvas, options = {}) {
   const uSlope = { value: 1.35 };
   // Night lights. Brightness multiplies the photo. Curve fades the dim glow
   // between cities; higher keeps the centers and drops the haze.
-  const uNightGain = { value: 2.45 };
-  const uNightCurve = { value: 2.2 };
+  const uNightGain = { value: 1 };
+  const uNightCurve = { value: 2.6 };
   let nightMesh = null;
   let nightMat = null;
   let cloudMesh = null;
