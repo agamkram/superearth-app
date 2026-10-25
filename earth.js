@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e238";
+export const BUILD = "e239";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1341,12 +1341,31 @@ export function createEarthGlobe(canvas, options = {}) {
       uniforms: {
         uSunDir: sunDirUniform,
         uSunOn: sunOnUniform,
+        uPixelToWorld: { value: 0.001 },
       },
       vertexShader: /* glsl */ `
+        attribute vec3 aTan;
+        attribute float aSide;
+        attribute float aRank;
+        uniform float uPixelToWorld;
         varying vec3 vWorldN;
+        varying float vRank;
         void main() {
           vWorldN = normalize(mat3(modelMatrix) * normalize(position));
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          vRank = aRank;
+          float t = clamp((aRank - 1.0) / 11.0, 0.0, 1.0);
+          float worldHalf = 0.000045 * (13.0 - aRank) * (13.0 - aRank) / 12.0;
+          float minPx = mix(2.2, 0.75, t);
+          vec3 n = normalize(position);
+          vec3 tan = aTan - n * dot(aTan, n);
+          float tanLen = length(tan);
+          tan = tanLen > 1e-8 ? tan / tanLen : vec3(0.0, 0.0, 1.0);
+          vec3 side = normalize(cross(n, tan));
+          vec4 viewPos = modelViewMatrix * vec4(position, 1.0);
+          float pixelWorld = uPixelToWorld * abs(viewPos.z);
+          float halfW = max(worldHalf, minPx * 0.5 * pixelWorld);
+          viewPos.xyz += (modelViewMatrix * vec4(side * aSide * halfW, 0.0)).xyz;
+          gl_Position = projectionMatrix * viewPos;
         }
       `,
       fragmentShader: /* glsl */ `
@@ -1354,28 +1373,122 @@ export function createEarthGlobe(canvas, options = {}) {
         uniform vec3 uSunDir;
         uniform float uSunOn;
         varying vec3 vWorldN;
+        varying float vRank;
         void main() {
           float ndl = dot(normalize(vWorldN), normalize(uSunDir));
           float day = uSunOn * smoothstep(-0.04, 0.20, ndl);
-          vec3 water = vec3(0.015, 0.07, 0.18);
-          gl_FragColor = vec4(mix(water * 0.15, water, day), 1.0);
+          float t = clamp((vRank - 1.0) / 11.0, 0.0, 1.0);
+          vec3 water = vec3(0.015, 0.07, 0.18) * mix(1.45, 0.55, t);
+          gl_FragColor = vec4(mix(water * 0.18, water, day), 1.0);
           #include <colorspace_fragment>
         }
       `,
       toneMapped: false,
       depthWrite: false,
+      side: THREE.DoubleSide,
     });
   }
 
+  function syncRiverPixels() {
+    const u = riverLines?.material?.uniforms?.uPixelToWorld;
+    if (!u) return;
+    const h = Math.max(1, renderer.drawingBufferHeight || 1);
+    const fovRad = THREE.MathUtils.degToRad(camera.fov);
+    u.value = (2 * Math.tan(fovRad / 2)) / h;
+  }
+
   function attachRiverLines(buf) {
-    const positions = positionsFromBorderBin(buf, RIVER_R);
-    if (!positions.length) return null;
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(new Float32Array(positions), 3)
+    const view = new DataView(buf);
+    if (view.byteLength < 8) return null;
+    const mag = String.fromCharCode(
+      view.getUint8(0),
+      view.getUint8(1),
+      view.getUint8(2),
+      view.getUint8(3)
     );
-    const lines = new THREE.LineSegments(geo, makeRiverMaterial());
+    if (mag !== "RV10") return null;
+    let o = 4;
+    const nLines = view.getUint32(o, true);
+    o += 4;
+    const pos = [];
+    const tan = [];
+    const side = [];
+    const rank = [];
+    const idx = [];
+    const _a = new THREE.Vector3();
+    const _t = new THREE.Vector3();
+
+    const flush = (xs, ys, sr) => {
+      const n = xs.length;
+      if (n < 2) return;
+      const xyz = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        _a.copy(latLonToLocal(ys[i], xs[i], RIVER_R));
+        xyz[i * 3] = _a.x;
+        xyz[i * 3 + 1] = _a.y;
+        xyz[i * 3 + 2] = _a.z;
+      }
+      const base = pos.length / 3;
+      for (let i = 0; i < n; i++) {
+        if (i === 0) {
+          _t.set(xyz[3] - xyz[0], xyz[4] - xyz[1], xyz[5] - xyz[2]);
+        } else if (i === n - 1) {
+          const k = (n - 2) * 3;
+          const j = (n - 1) * 3;
+          _t.set(xyz[j] - xyz[k], xyz[j + 1] - xyz[k + 1], xyz[j + 2] - xyz[k + 2]);
+        } else {
+          const p = (i - 1) * 3;
+          const q = (i + 1) * 3;
+          _t.set(xyz[q] - xyz[p], xyz[q + 1] - xyz[p + 1], xyz[q + 2] - xyz[p + 2]);
+        }
+        if (_t.lengthSq() < 1e-12) _t.set(0, 0, 1);
+        _t.normalize();
+        const x = xyz[i * 3];
+        const y = xyz[i * 3 + 1];
+        const z = xyz[i * 3 + 2];
+        pos.push(x, y, z, x, y, z);
+        tan.push(_t.x, _t.y, _t.z, _t.x, _t.y, _t.z);
+        side.push(1, -1);
+        rank.push(sr, sr);
+      }
+      for (let i = 0; i < n - 1; i++) {
+        const a = base + i * 2;
+        idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+      }
+    };
+
+    for (let li = 0; li < nLines; li++) {
+      const sr = Math.max(1, Math.min(12, view.getUint8(o)));
+      o += 4;
+      const n = view.getUint32(o, true);
+      o += 4;
+      const xs = [];
+      const ys = [];
+      let prevLon = NaN;
+      for (let j = 0; j < n; j++) {
+        const lon = view.getFloat32(o, true);
+        o += 4;
+        const lat = view.getFloat32(o, true);
+        o += 4;
+        if (Number.isFinite(prevLon) && Math.abs(lon - prevLon) >= 180) {
+          flush(xs, ys, sr);
+          xs.length = 0;
+          ys.length = 0;
+        }
+        xs.push(lon);
+        ys.push(lat);
+        prevLon = lon;
+      }
+      flush(xs, ys, sr);
+    }
+    if (!idx.length) return null;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute("aTan", new THREE.Float32BufferAttribute(tan, 3));
+    geo.setAttribute("aSide", new THREE.Float32BufferAttribute(side, 1));
+    geo.setAttribute("aRank", new THREE.Float32BufferAttribute(rank, 1));
+    geo.setIndex(new THREE.Uint32BufferAttribute(new Uint32Array(idx), 1));
+    const lines = new THREE.Mesh(geo, makeRiverMaterial());
     lines.name = "rivers";
     lines.renderOrder = 2;
     lines.frustumCulled = false;
@@ -1393,6 +1506,7 @@ export function createEarthGlobe(canvas, options = {}) {
         if (disposed) return;
         disposeRivers();
         riverLines = attachRiverLines(buf);
+        syncRiverPixels();
         kick();
       })
       .catch(() => {});
@@ -3097,6 +3211,7 @@ export function createEarthGlobe(canvas, options = {}) {
 
     renderer.setPixelRatio(drawingRatio(bufferW, bufferH));
     renderer.setSize(bufferW, bufferH, false);
+    syncRiverPixels();
     if (starfield?.material) {
       starfield.material.size = starPointSize();
     }

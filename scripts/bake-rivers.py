@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Bake Natural Earth 10m rivers into SuperEarth's lon/lat line bin.
+"""Bake Natural Earth 10m rivers into SuperEarth's ranked line bin.
 
-Same layout as borders-50m.bin:
+  4 bytes magic RV10
   uint32 nLines
   for each line:
+    uint8 scalerank (1=giant .. 12=creek)
+    3 pad bytes
     uint32 nPoints
     nPoints × (float32 lon, float32 lat)
 
@@ -85,20 +87,27 @@ def polylines(shp_path):
         if is_centerline(d.get("featurecla")):
             skipped += 1
             continue
+        sr = d.get("scalerank")
+        try:
+            sr = int(round(float(sr)))
+        except (TypeError, ValueError):
+            sr = 8
+        sr = max(1, min(12, sr))
         pts = shp.points
         parts = list(shp.parts) + [len(pts)]
         for a, b in zip(parts, parts[1:]):
             ring = [(float(x), float(y)) for x, y in pts[a:b]]
             if len(ring) >= 2:
-                lines.append(densify(ring))
+                lines.append((densify(ring), sr))
     return lines, skipped
 
 
 def write_bin(path, lines):
     with open(path, "wb") as f:
+        f.write(b"RV10")
         f.write(struct.pack("<I", len(lines)))
-        for line in lines:
-            f.write(struct.pack("<I", len(line)))
+        for line, sr in lines:
+            f.write(struct.pack("<BxxxI", sr, len(line)))
             for lon, lat in line:
                 f.write(struct.pack("<ff", lon, lat))
 
@@ -112,7 +121,7 @@ def main():
         all_lines.extend(lines)
         print(f"{src.name}: {len(lines)} river lines, skipped {skipped} centerlines")
     write_bin(OUT, all_lines)
-    npts = sum(len(x) for x in all_lines)
+    npts = sum(len(x[0]) for x in all_lines)
     print(
         f"wrote {OUT.name}: {len(all_lines)} lines, {npts} points, "
         f"{OUT.stat().st_size} bytes"
