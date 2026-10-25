@@ -6,7 +6,7 @@
     uint32 nPoints
     nPoints × (float32 lon, float32 lat)
 
-Equator, tropics, polar circles, prime meridian, date line.
+Equator, tropics, polar circles. Skips the date line.
 """
 from __future__ import annotations
 
@@ -75,7 +75,10 @@ def polylines(shp_path):
     names = []
     for shp, rec in zip(r.iterShapes(), r.iterRecords()):
         d = dict(zip(fields, rec))
-        names.append(str(d.get("name") or d.get("NAME") or ""))
+        name = str(d.get("name") or d.get("NAME") or "")
+        if "date line" in name.lower():
+            continue
+        names.append(name)
         pts = shp.points
         parts = list(shp.parts) + [len(pts)]
         for a, b in zip(parts, parts[1:]):
