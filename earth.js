@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e293";
+export const BUILD = "e294";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1957,16 +1957,14 @@ export function createEarthGlobe(canvas, options = {}) {
   function attachGridLabels() {
     gridLabels = [];
     if (!gridGroup) return;
-    const latLon = 20;
     const nameLon = -30;
     const spots = [
-      [90, latLon, "90°N"],
-      [60, latLon, "60°N"],
-      [30, latLon, "30°N"],
-      [-30, latLon, "30°S"],
-      [-60, latLon, "60°S"],
-      [-90, latLon, "90°S"],
-      [0, 0, "0°"],
+      [90, nameLon, "90°N"],
+      [60, nameLon, "60°N"],
+      [30, nameLon, "30°N"],
+      [-30, nameLon, "30°S"],
+      [-60, nameLon, "60°S"],
+      [-90, nameLon, "90°S"],
       [0, 90, "90°E"],
       [0, 180, "180°"],
       [0, -90, "90°W"],
