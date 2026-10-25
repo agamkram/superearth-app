@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e280";
+export const BUILD = "e281";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1658,17 +1658,19 @@ export function createEarthGlobe(canvas, options = {}) {
   const AXIS_EXT = RADIUS * (1 + 0.07 * 3);
   const AXIS_RADIUS = 0.01;
   const AXIS_PX = 1;
-  const GRID_STEP = 15;
-  const GRID_SEGS = 128;
+  const GRID_SEGS = 96;
   let gridGroup = null;
   let axisMesh = null;
+  let grid30 = null;
+  let grid15 = null;
+  let grid5 = null;
   let geoLineMesh = null;
   let geoLinePos = null;
   let gridLabels = [];
   let gridOn = false;
   const LABEL_R = RADIUS * 1.0042;
-  const LABEL_PX_FAR = 22;
-  const LABEL_PX_NEAR = 14;
+  const LABEL_PX_FAR = isTabletDisplay() ? 22 : 13;
+  const LABEL_PX_NEAR = isTabletDisplay() ? 14 : 9;
   let labelGeo = null;
 
   function pushArc(positions, pts) {
@@ -1698,27 +1700,31 @@ export function createEarthGlobe(canvas, options = {}) {
     return lines;
   }
 
-  function buildGrid() {
-    disposeGrid();
-    const fine = [];
-    // Parallels (skip poles)
-    for (let lat = -90 + GRID_STEP; lat <= 90 - GRID_STEP; lat += GRID_STEP) {
+  function collectGridLines(step, skipStep) {
+    const pos = [];
+    for (let lat = -90 + step; lat <= 90 - step; lat += step) {
+      if (skipStep && Math.abs(lat) % skipStep === 0) continue;
       const pts = [];
       for (let i = 0; i <= GRID_SEGS; i++) {
         const lon = (i / GRID_SEGS) * 360 - 180;
         pts.push(latLonToLocal(lat, lon, GRID_R));
       }
-      pushArc(fine, pts);
+      pushArc(pos, pts);
     }
-    // Meridians
-    for (let lon = -180; lon < 180; lon += GRID_STEP) {
+    for (let lon = -180; lon < 180; lon += step) {
+      if (skipStep && Math.abs(lon) % skipStep === 0) continue;
       const pts = [];
       for (let i = 0; i <= GRID_SEGS; i++) {
         const lat = (i / GRID_SEGS) * 180 - 90;
         pts.push(latLonToLocal(lat, lon, GRID_R));
       }
-      pushArc(fine, pts);
+      pushArc(pos, pts);
     }
+    return pos;
+  }
+
+  function buildGrid() {
+    disposeGrid();
     // Polar axle: 2px-wide rod; ends stick out 3× the original visible length
     const axisGeo = new THREE.CylinderGeometry(
       AXIS_RADIUS,
@@ -1738,7 +1744,14 @@ export function createEarthGlobe(canvas, options = {}) {
     axisMesh.renderOrder = 2;
     gridGroup = new THREE.Group();
     gridGroup.name = "globe-grid";
-    gridGroup.add(makeLineObj(fine, 0.32, "grid-fine"));
+    grid30 = makeLineObj(collectGridLines(30, 0), 0.38, "grid-30");
+    grid15 = makeLineObj(collectGridLines(15, 30), 0.28, "grid-15");
+    grid5 = makeLineObj(collectGridLines(5, 15), 0.2, "grid-5");
+    grid15.visible = false;
+    grid5.visible = false;
+    gridGroup.add(grid30);
+    gridGroup.add(grid15);
+    gridGroup.add(grid5);
     gridGroup.add(axisMesh);
     attachGeoLineMesh();
     attachGridLabels();
@@ -1819,7 +1832,6 @@ export function createEarthGlobe(canvas, options = {}) {
       [90, latLon, "90°N"],
       [60, latLon, "60°N"],
       [30, latLon, "30°N"],
-      [0, latLon, "0°"],
       [-30, latLon, "30°S"],
       [-60, latLon, "60°S"],
       [-90, latLon, "90°S"],
@@ -1842,7 +1854,6 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function updateGridLabels(worldPerPx, dist) {
-    if (!gridLabels.length) return;
     if (worldPerPx == null) {
       dist = Math.max(camDist(), MIN_DIST);
       const h = Math.max(height || window.innerHeight || 1, 1);
@@ -1851,6 +1862,9 @@ export function createEarthGlobe(canvas, options = {}) {
     }
     const span = Math.max(homeDist - MIN_DIST, 0.01);
     const zoomIn = 1 - THREE.MathUtils.clamp((dist - MIN_DIST) / span, 0, 1);
+    if (grid15) grid15.visible = gridOn && zoomIn > 0.22;
+    if (grid5) grid5.visible = gridOn && zoomIn > 0.55;
+    if (!gridLabels.length) return;
     const px = THREE.MathUtils.lerp(LABEL_PX_FAR, LABEL_PX_NEAR, zoomIn);
     const s = px * worldPerPx;
     _offset.copy(camera.position).sub(target).normalize();
@@ -1898,6 +1912,9 @@ export function createEarthGlobe(canvas, options = {}) {
     labelGeo = null;
     gridGroup = null;
     axisMesh = null;
+    grid30 = null;
+    grid15 = null;
+    grid5 = null;
     geoLineMesh = null;
     gridLabels = [];
   }
