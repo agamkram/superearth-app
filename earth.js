@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e279";
+export const BUILD = "e280";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1667,9 +1667,9 @@ export function createEarthGlobe(canvas, options = {}) {
   let gridLabels = [];
   let gridOn = false;
   const LABEL_R = RADIUS * 1.0042;
-  const LABEL_H = 0.02;
-  const LABEL_PX_FAR = 26;
-  const LABEL_PX_NEAR = 16;
+  const LABEL_PX_FAR = 22;
+  const LABEL_PX_NEAR = 14;
+  let labelGeo = null;
 
   function pushArc(positions, pts) {
     for (let i = 1; i < pts.length; i++) {
@@ -1773,24 +1773,41 @@ export function createEarthGlobe(canvas, options = {}) {
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.needsUpdate = true;
-    const mat = new THREE.SpriteMaterial({
+    const mat = new THREE.MeshBasicMaterial({
       map: tex,
       transparent: true,
       depthTest: true,
       depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
       toneMapped: false,
-      sizeAttenuation: true,
+      side: THREE.DoubleSide,
     });
-    const spr = new THREE.Sprite(mat);
-    spr.name = "grid-label";
-    spr.renderOrder = 7;
-    spr.userData.labelTex = tex;
-    spr.userData.aspect = w / h;
-    return spr;
+    if (!labelGeo) labelGeo = new THREE.PlaneGeometry(1, 1);
+    const mark = new THREE.Mesh(labelGeo, mat);
+    mark.name = "grid-label";
+    mark.renderOrder = 7;
+    mark.userData.labelTex = tex;
+    mark.userData.aspect = w / h;
+    mark.userData.sharedGeo = true;
+    return mark;
   }
 
-  function placeGridLabel(spr, lat, lon) {
-    spr.position.copy(latLonToLocal(lat, lon, LABEL_R));
+  function placeGridLabel(mark, lat, lon) {
+    const p = latLonToLocal(lat, lon, LABEL_R);
+    mark.position.copy(p);
+    _pinOut.copy(p).normalize();
+    _pinEast.crossVectors(_yUp, _pinOut);
+    if (_pinEast.lengthSq() < 1e-8) {
+      mark.quaternion.setFromUnitVectors(_zPlus, _pinOut);
+    } else {
+      _pinEast.normalize();
+      _pinNorth.crossVectors(_pinOut, _pinEast).normalize();
+      mark.quaternion.setFromRotationMatrix(
+        _pinMat.makeBasis(_pinEast, _pinNorth, _pinOut)
+      );
+    }
   }
 
   function attachGridLabels() {
@@ -1835,7 +1852,7 @@ export function createEarthGlobe(canvas, options = {}) {
     const span = Math.max(homeDist - MIN_DIST, 0.01);
     const zoomIn = 1 - THREE.MathUtils.clamp((dist - MIN_DIST) / span, 0, 1);
     const px = THREE.MathUtils.lerp(LABEL_PX_FAR, LABEL_PX_NEAR, zoomIn);
-    const s = (px * worldPerPx) / LABEL_H;
+    const s = px * worldPerPx;
     _offset.copy(camera.position).sub(target).normalize();
     for (const mark of gridLabels) {
       mark.getWorldPosition(_pinOut);
@@ -1874,9 +1891,11 @@ export function createEarthGlobe(canvas, options = {}) {
     if (gridGroup.parent) gridGroup.parent.remove(gridGroup);
     gridGroup.traverse((obj) => {
       obj.userData?.labelTex?.dispose();
-      obj.geometry?.dispose();
+      if (!obj.userData?.sharedGeo) obj.geometry?.dispose();
       obj.material?.dispose();
     });
+    labelGeo?.dispose();
+    labelGeo = null;
     gridGroup = null;
     axisMesh = null;
     geoLineMesh = null;
