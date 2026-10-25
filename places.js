@@ -75,14 +75,16 @@ function parsePolys(buf, q) {
   return out;
 }
 
+const PLACES_VER = "e229";
+
 export function loadPlaces() {
   if (ready) return ready;
   ready = Promise.all([
-    fetch("places.json").then((r) => {
+    fetch(`places.json?v=${PLACES_VER}`).then((r) => {
       if (!r.ok) throw new Error("places.json");
       return r.json();
     }),
-    fetch("places-polys.bin").then((r) => {
+    fetch(`places-polys.bin?v=${PLACES_VER}`).then((r) => {
       if (!r.ok) throw new Error("places-polys.bin");
       return r.arrayBuffer();
     }),

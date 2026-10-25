@@ -2,7 +2,7 @@
 """Bake country + state tap data for SuperEarth.
 
 Writes:
-  places.json      — name, population, area km², capital, region
+  places.json      — name, population, area km², capital, capLat, capLon, region
   places-polys.bin — quantized lon/lat rings for point-in-polygon
 
 Countries: Natural Earth 110m admin_0
@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import math
 import struct
+import unicodedata
 from pathlib import Path
 
 import shapefile
@@ -89,7 +90,123 @@ def quantize(ring):
     return out
 
 
-def load_capitals():
+COUNTRY_CAPITAL_NAMES = {
+    "GRL": "Nuuk",
+    "FLK": "Stanley",
+    "PRI": "San Juan",
+    "NCL": "Nouméa",
+    "SSD": "Juba",
+    "SAH": "Laayoune",
+    "PSX": "East Jerusalem",
+    "CYN": "North Nicosia",
+}
+
+STATE_CAPITAL_ALIASES = {
+    "Yuzhong District": "Chongqing",
+    "Tongzhou District": "Beijing",
+    "Hexi District": "Tianjin",
+    "Huangpu District": "Shanghai",
+    "Palangka Raya": "Palangkaraya",
+    "Bau-Bau": "Baubau",
+    "Srivijayapuram": "Port Blair",
+    "Gairsain": "Dehra Dun",
+    "Magas": "Nazran",
+    "Mahikeng": "Mmabatho",
+    "Banjarbaru": "Bandjarmasin",
+}
+
+# Not in Natural Earth 10m populated places.
+HARDCODED_COORDS = {
+    "Mamuju": (-2.6748, 118.8887),
+    "Sofifi": (0.7373, 127.5588),
+}
+
+COUNTRY_ALIASES = {
+    "united states of america": "united states",
+    "people s republic of china": "china",
+    "the bahamas": "bahamas",
+    "the gambia": "gambia",
+    "czech republic": "czechia",
+    "east timor": "timor leste",
+    "swaziland": "eswatini",
+}
+
+
+def fold(s):
+    s = unicodedata.normalize("NFKD", s or "")
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    out = []
+    for ch in s.lower():
+        if ch.isalnum() or ch.isspace():
+            out.append(ch)
+        else:
+            out.append(" ")
+    return " ".join("".join(out).split())
+
+
+def country_key(name):
+    k = fold(name)
+    return COUNTRY_ALIASES.get(k, k)
+
+
+def load_place_points():
+    path = NE / "ne_10m_populated_places.shp"
+    if not path.exists():
+        path = NE / "ne_110m_populated_places.shp"
+    r = shapefile.Reader(str(path))
+    fields = [f[0] for f in r.fields[1:]]
+    by_a3 = {}
+    by_name = {}
+    for rec in r.iterRecords():
+        d = dict(zip(fields, rec))
+        feat = (d.get("FEATURECLA") or "").strip()
+        lat = d.get("LATITUDE")
+        lon = d.get("LONGITUDE")
+        try:
+            lat = float(lat)
+            lon = float(lon)
+        except (TypeError, ValueError):
+            continue
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            continue
+        names = [
+            d.get("NAME"),
+            d.get("NAMEASCII"),
+            d.get("NAME_EN"),
+            d.get("NAMEALT"),
+        ]
+        extra = []
+        for n in names:
+            if n and "|" in str(n):
+                extra.extend(str(n).split("|"))
+        names.extend(extra)
+        country = country_key(d.get("ADM0NAME") or d.get("SOV0NAME") or "")
+        a3 = (d.get("ADM0_A3") or "").strip()
+        rank = 0
+        fl = feat.lower()
+        if fl == "admin-0 capital":
+            rank = 4
+        elif "capital" in fl:
+            rank = 3
+        else:
+            rank = 1
+        pt = (lat, lon, rank)
+        if a3 and rank >= 3:
+            prev = by_a3.get(a3)
+            if not prev or pt[2] > prev[2]:
+                by_a3[a3] = pt
+        for n in names:
+            k = fold(n)
+            if not k or not country:
+                continue
+            key = (k, country)
+            prev = by_name.get(key)
+            if not prev or pt[2] > prev[2]:
+                by_name[key] = pt
+    return by_a3, by_name
+
+
+def load_capitals(by_a3, by_name):
     path = NE / "ne_110m_populated_places.shp"
     r = shapefile.Reader(str(path))
     fields = [f[0] for f in r.fields[1:]]
@@ -102,17 +219,30 @@ def load_capitals():
         name = (d.get("NAME") or "").strip()
         if a3 and name:
             caps[a3] = name
-    # 110m places only marks sovereign capitals. These polygons are
-    # still in the country list, and each has a clear capital.
-    caps.setdefault("GRL", "Nuuk")
-    caps.setdefault("FLK", "Stanley")
-    caps.setdefault("PRI", "San Juan")
-    caps.setdefault("NCL", "Nouméa")
-    caps.setdefault("SSD", "Juba")
-    caps.setdefault("SAH", "Laayoune")
-    caps.setdefault("PSX", "East Jerusalem")
-    caps.setdefault("CYN", "North Nicosia")
+    for a3, name in COUNTRY_CAPITAL_NAMES.items():
+        caps.setdefault(a3, name)
     return caps
+
+
+def capital_point(name, country, a3, by_a3, by_name):
+    names = [name]
+    alias = STATE_CAPITAL_ALIASES.get(name)
+    if alias:
+        names.append(alias)
+    ck = country_key(country)
+    for n in names:
+        k = fold(n)
+        if k and ck:
+            hit = by_name.get((k, ck))
+            if hit:
+                return round(hit[0], 4), round(hit[1], 4)
+    if name in HARDCODED_COORDS:
+        lat, lon = HARDCODED_COORDS[name]
+        return lat, lon
+    if a3 and a3 in by_a3:
+        lat, lon, _ = by_a3[a3]
+        return round(lat, 4), round(lon, 4)
+    return None, None
 
 
 def load_wikidata():
@@ -123,7 +253,8 @@ def load_wikidata():
 
 
 def main():
-    caps = load_capitals()
+    by_a3, by_name = load_place_points()
+    caps = load_capitals(by_a3, by_name)
     wd = load_wikidata()
     places = []
     all_rings = []  # parallel to places
@@ -146,13 +277,19 @@ def main():
             pop = None
         area = shape_area_km2(shp)
         area = round(area) if area >= 1 else None
+        capital = caps.get(a3) or None
+        cap_lat, cap_lon = capital_point(
+            capital, d.get("ADMIN") or d.get("NAME") or name, a3, by_a3, by_name
+        )
         places.append(
             {
                 "kind": "country",
                 "name": name,
                 "pop": pop,
                 "area": area,
-                "capital": caps.get(a3) or None,
+                "capital": capital,
+                "capLat": cap_lat,
+                "capLon": cap_lon,
                 "region": (d.get("CONTINENT") or "").strip() or None,
             }
         )
@@ -182,6 +319,7 @@ def main():
             admin = "United States"
         if not capital:
             capital = STATE_CAPITALS.get((name, admin))
+        cap_lat, cap_lon = capital_point(capital, admin, None, by_a3, by_name)
         places.append(
             {
                 "kind": "state",
@@ -189,6 +327,8 @@ def main():
                 "pop": int(pop) if pop else None,
                 "area": area,
                 "capital": capital or None,
+                "capLat": cap_lat,
+                "capLon": cap_lon,
                 "region": admin,
             }
         )

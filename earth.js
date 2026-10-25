@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e228";
+export const BUILD = "e229";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -760,6 +760,7 @@ export function createEarthGlobe(canvas, options = {}) {
     ensureAtmosphere();
     attachPoleMarks(mesh);
     attachLocPin(mesh);
+    attachCapDot(mesh);
     applyEphemeris();
   }
 
@@ -932,6 +933,10 @@ export function createEarthGlobe(canvas, options = {}) {
       locPin.scale.setScalar((px * worldPerPx) / (PIN_GEO_R * 2));
       updateLocPinFacing();
     }
+    if (capDot) {
+      capDot.scale.setScalar((CAP_PX * worldPerPx) / (CAP_GEO_R * 2));
+      updateCapDotFacing();
+    }
   }
 
   function makeLocReticle() {
@@ -1038,6 +1043,116 @@ export function createEarthGlobe(canvas, options = {}) {
     _pinOut.sub(target).normalize();
     _offset.copy(camera.position).sub(target).normalize();
     locPin.visible = _pinOut.dot(_offset) > 0.06;
+  }
+
+  const CAP_GEO_R = 0.004;
+  const CAP_PX = 3;
+  let capDot = null;
+  let capDotGeo = null;
+  let capLat = null;
+  let capLon = null;
+
+  function makeCapDot() {
+    const size = 64;
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, size, size);
+    const m = size / 2;
+    ctx.beginPath();
+    ctx.arc(m, m, 18, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(12, 8, 8, 0.9)";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(m, m, 14, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255, 28, 20, 1)";
+    ctx.fill();
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      depthTest: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+      toneMapped: false,
+    });
+    const mark = new THREE.Mesh(capDotGeo, mat);
+    mark.renderOrder = 8;
+    mark.userData.capTex = tex;
+    mark.visible = false;
+    return mark;
+  }
+
+  function disposeCapDot() {
+    if (!capDot) return;
+    capDot.userData.capTex?.dispose();
+    capDot.material?.dispose();
+    capDotGeo?.dispose();
+    capDotGeo = null;
+    if (capDot.parent) capDot.parent.remove(capDot);
+    capDot = null;
+  }
+
+  function attachCapDot(parentMesh) {
+    disposeCapDot();
+    if (!parentMesh) return;
+    capDotGeo = new THREE.CircleGeometry(CAP_GEO_R, 24);
+    capDot = makeCapDot();
+    capDot.name = "capital-dot";
+    parentMesh.add(capDot);
+    if (capLat != null && capLon != null) placeCapDot();
+    else capDot.visible = false;
+  }
+
+  function placeCapDot() {
+    if (!capDot || capLat == null || capLon == null) return;
+    const p = latLonToLocal(capLat, capLon, RADIUS * 1.0042);
+    capDot.position.copy(p);
+    _pinOut.copy(p).normalize();
+    capDot.quaternion.setFromUnitVectors(_zPlus, _pinOut);
+    updateCapDotFacing();
+    updatePoleScale();
+  }
+
+  function updateCapDotFacing() {
+    if (!capDot) return;
+    if (capLat == null || capLon == null) {
+      capDot.visible = false;
+      return;
+    }
+    capDot.getWorldPosition(_pinOut);
+    _pinOut.sub(target).normalize();
+    _offset.copy(camera.position).sub(target).normalize();
+    capDot.visible = _pinOut.dot(_offset) > 0.06;
+  }
+
+  function setCapitalMark(lat, lon) {
+    const la = Number(lat);
+    const lo = Number(lon);
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) {
+      hideCapitalMark();
+      return;
+    }
+    capLat = THREE.MathUtils.clamp(la, -90, 90);
+    let L = lo;
+    while (L > 180) L -= 360;
+    while (L < -180) L += 360;
+    capLon = L;
+    if (!capDot && mesh) attachCapDot(mesh);
+    placeCapDot();
+    kick();
+  }
+
+  function hideCapitalMark() {
+    capLat = null;
+    capLon = null;
+    if (capDot) capDot.visible = false;
+    kick();
   }
 
   /**
@@ -3343,6 +3458,8 @@ export function createEarthGlobe(canvas, options = {}) {
     setAuroraShown,
     setSun,
     setNightLights,
+    setCapitalMark,
+    hideCapitalMark,
     setTime,
     getPhaseInfo,
     getObserver,
@@ -3368,6 +3485,7 @@ export function createEarthGlobe(canvas, options = {}) {
       window.removeEventListener("contextmenu", onContextMenu, true);
       hideTiles();
       disposePoleMarks();
+      disposeCapDot();
       disposeLocPin();
       disposeBorders();
       disposeGrid();
