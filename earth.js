@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e227";
+export const BUILD = "e228";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -320,6 +320,10 @@ export function createEarthGlobe(canvas, options = {}) {
   const uShadeMax = { value: 1.14 };
   const uReliefStr = { value: 2.0 };
   const uSlope = { value: 1.35 };
+  // Night lights. Brightness multiplies the photo. Curve fades the dim glow
+  // between cities; higher keeps the centers and drops the haze.
+  const uNightGain = { value: 2.45 };
+  const uNightCurve = { value: 2.2 };
   let nightMesh = null;
   let nightMat = null;
   let cloudMesh = null;
@@ -537,6 +541,8 @@ export function createEarthGlobe(canvas, options = {}) {
       shader.uniforms.uShadeMax = uShadeMax;
       shader.uniforms.uReliefStr = uReliefStr;
       shader.uniforms.uSlope = uSlope;
+      shader.uniforms.uNightGain = uNightGain;
+      shader.uniforms.uNightCurve = uNightCurve;
       shader.uniforms.uMapTexel = mapTexelUniform;
       shader.vertexShader = shader.vertexShader.replace(
         "#include <common>",
@@ -566,6 +572,8 @@ export function createEarthGlobe(canvas, options = {}) {
         uniform float uShadeMax;
         uniform float uReliefStr;
         uniform float uSlope;
+        uniform float uNightGain;
+        uniform float uNightCurve;
         uniform vec2 uMapTexel;
         varying vec3 vWorldN;
         varying vec3 vWorldPos;
@@ -613,8 +621,8 @@ export function createEarthGlobe(canvas, options = {}) {
         float rim = 1.0 - max(0.0, dot(nSphere, viewD));
         dayCol += vec3(0.03, 0.09, 0.22) * pow(rim, 3.2) * smoothstep(-0.05, 0.35, ndl) * uSunOn * 0.42;
 
-        vec3 nightCol = pow(texture2D(uNight, vMapUv).rgb, vec3(2.2));
-        diffuseColor.rgb = mix(nightCol * 2.45, dayCol, day);`
+        vec3 nightCol = pow(max(texture2D(uNight, vMapUv).rgb, vec3(0.0)), vec3(max(uNightCurve, 0.05)));
+        diffuseColor.rgb = mix(nightCol * uNightGain, dayCol, day);`
       );
     };
     return material;
@@ -636,6 +644,8 @@ export function createEarthGlobe(canvas, options = {}) {
       shader.uniforms.uShadeMax = uShadeMax;
       shader.uniforms.uReliefStr = uReliefStr;
       shader.uniforms.uSlope = uSlope;
+      shader.uniforms.uNightGain = uNightGain;
+      shader.uniforms.uNightCurve = uNightCurve;
       shader.uniforms.uMapTexel = mapTexelUniform;
       shader.vertexShader = shader.vertexShader.replace(
         "#include <common>",
@@ -666,6 +676,8 @@ export function createEarthGlobe(canvas, options = {}) {
         uniform float uShadeMax;
         uniform float uReliefStr;
         uniform float uSlope;
+        uniform float uNightGain;
+        uniform float uNightCurve;
         uniform vec2 uMapTexel;
         varying vec3 vWorldN;
         varying vec3 vWorldPos;
@@ -709,8 +721,8 @@ export function createEarthGlobe(canvas, options = {}) {
         float rim = 1.0 - max(0.0, dot(nSphere, viewD));
         dayCol += vec3(0.03, 0.09, 0.22) * pow(rim, 3.2) * smoothstep(-0.05, 0.35, ndl) * uSunOn * 0.42;
         // Sharp night from the matching zoom tile (same UVs as day), not the soft 8k wrap.
-        vec3 nightCol = pow(texture2D(uNight, vMapUv).rgb, vec3(2.2));
-        diffuseColor.rgb = mix(nightCol * 2.45, dayCol, day);
+        vec3 nightCol = pow(max(texture2D(uNight, vMapUv).rgb, vec3(0.0)), vec3(max(uNightCurve, 0.05)));
+        diffuseColor.rgb = mix(nightCol * uNightGain, dayCol, day);
         diffuseColor.a = 1.0;`
       );
     };
@@ -2406,6 +2418,14 @@ export function createEarthGlobe(canvas, options = {}) {
     return auroraShown;
   }
 
+  function setNightLights(gain, curve) {
+    const g = Number(gain);
+    const c = Number(curve);
+    if (Number.isFinite(g)) uNightGain.value = THREE.MathUtils.clamp(g, 0, 8);
+    if (Number.isFinite(c)) uNightCurve.value = THREE.MathUtils.clamp(c, 0.2, 8);
+    kick();
+  }
+
   function setSun(on) {
     sunOnUniform.value = on ? 1 : 0;
     kick();
@@ -2890,7 +2910,7 @@ export function createEarthGlobe(canvas, options = {}) {
   // —— Touch + pointer: 2fs pans the canvas (CSS) so movement is always visible ——
 
   const UI_HIT =
-    "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#fact-sheet,#place-sheet,#pole-sheet,.cycle,.slider-track,.cycle-controls,.m-cell-fact,.vision-btn,.geo-btn,.live-btn,.sun-btn,.fact-sheet-inner,.fact-sheet-scrim";
+    "input,button,select,textarea,a,label,#loc-dialog,.leaflet-container,.loc-dialog,#fact-sheet,#place-sheet,#pole-sheet,.cycle,.slider-track,.cycle-controls,.night-tune,.m-cell-fact,.vision-btn,.geo-btn,.live-btn,.sun-btn,.fact-sheet-inner,.fact-sheet-scrim";
 
   function eventPoint(e) {
     if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
@@ -3322,6 +3342,7 @@ export function createEarthGlobe(canvas, options = {}) {
     setAurora,
     setAuroraShown,
     setSun,
+    setNightLights,
     setTime,
     getPhaseInfo,
     getObserver,
