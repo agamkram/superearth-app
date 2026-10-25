@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e246";
+export const BUILD = "e247";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1354,9 +1354,8 @@ export function createEarthGlobe(canvas, options = {}) {
       void main() {
         float ndl = dot(normalize(vWorldN), normalize(uSunDir));
         float day = uSunOn * smoothstep(-0.04, 0.20, ndl);
-        float t = clamp((vRank - 1.0) / 11.0, 0.0, 1.0);
-        vec3 water = vec3(0.022, 0.10, 0.26) * mix(1.5, 0.5, t);
-        gl_FragColor = vec4(mix(water * 0.2, water, day), 1.0);
+        vec3 navy = vec3(0.0038, 0.0191, 0.0577);
+        gl_FragColor = vec4(mix(navy * 0.08, navy, day), 1.0);
         #include <colorspace_fragment>
       }
     `;
@@ -1426,8 +1425,11 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function syncRiverPixels() {
     if (!riverLines) return;
-    const h = renderer.drawingBufferHeight || 0;
-    if (h < 200) return;
+    const h = Math.max(
+      renderer.drawingBufferHeight || 0,
+      Math.round((height || canvas.clientHeight || 1) * (renderer.getPixelRatio() || 1)),
+      1
+    );
     const fovRad = THREE.MathUtils.degToRad(camera.fov);
     const v = (2 * Math.tan(fovRad / 2)) / h;
     riverLines.traverse((obj) => {
@@ -3780,6 +3782,7 @@ export function createEarthGlobe(canvas, options = {}) {
     }
     syncEarth();
     updateTiles();
+    syncRiverPixels();
     renderer.render(scene, camera);
     // Idle when still. Real Earth spin is invisible frame-to-frame; the page
     // refreshes Live on a timer. Keep looping only while dragging or tipping.
