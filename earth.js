@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e284";
+export const BUILD = "e285";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -892,6 +892,13 @@ export function createEarthGlobe(canvas, options = {}) {
       capDot.scale.setScalar((CAP_PX * worldPerPx) / (CAP_GEO_R * 2));
       updateCapDotFacing();
     }
+    if (tapDot && tapLat != null) {
+      tapDot.getWorldPosition(_pinOut);
+      const tapDist = Math.max(camera.position.distanceTo(_pinOut), 0.05);
+      const tapWorldPerPx = (tapDist * 2 * Math.tan(vFov / 2)) / h;
+      tapDot.scale.setScalar((TAP_PX * tapWorldPerPx) / (TAP_GEO_R * 2));
+      updateTapDotFacing();
+    }
     updateGridLabels(worldPerPx, dist);
   }
 
@@ -1108,6 +1115,114 @@ export function createEarthGlobe(canvas, options = {}) {
     capLat = null;
     capLon = null;
     if (capDot) capDot.visible = false;
+    kick();
+  }
+
+  const TAP_GEO_R = 0.004;
+  const TAP_PX = 6;
+  let tapDot = null;
+  let tapDotGeo = null;
+  let tapLat = null;
+  let tapLon = null;
+
+  function makeTapDot() {
+    const size = 64;
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, size, size);
+    const m = size / 2;
+    ctx.beginPath();
+    ctx.arc(m, m, 18, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(12, 8, 8, 0.9)";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(m, m, 14, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255, 28, 20, 1)";
+    ctx.fill();
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      depthTest: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+      toneMapped: false,
+    });
+    const mark = new THREE.Mesh(tapDotGeo, mat);
+    mark.renderOrder = 9;
+    mark.userData.tapTex = tex;
+    mark.visible = false;
+    return mark;
+  }
+
+  function disposeTapDot() {
+    if (!tapDot) return;
+    tapDot.userData.tapTex?.dispose();
+    tapDot.material?.dispose();
+    tapDotGeo?.dispose();
+    tapDotGeo = null;
+    if (tapDot.parent) tapDot.parent.remove(tapDot);
+    tapDot = null;
+  }
+
+  function attachTapDot(parentMesh) {
+    disposeTapDot();
+    if (!parentMesh) return;
+    tapDotGeo = new THREE.CircleGeometry(TAP_GEO_R, 24);
+    tapDot = makeTapDot();
+    tapDot.name = "tap-dot";
+    parentMesh.add(tapDot);
+  }
+
+  function placeTapDot() {
+    if (!tapDot || tapLat == null || tapLon == null) return;
+    const p = latLonToLocal(tapLat, tapLon, RADIUS * 1.0044);
+    tapDot.position.copy(p);
+    _pinOut.copy(p).normalize();
+    tapDot.quaternion.setFromUnitVectors(_zPlus, _pinOut);
+    updateTapDotFacing();
+    updatePoleScale();
+  }
+
+  function updateTapDotFacing() {
+    if (!tapDot) return;
+    if (tapLat == null || tapLon == null) {
+      tapDot.visible = false;
+      return;
+    }
+    tapDot.getWorldPosition(_pinOut);
+    _pinOut.sub(target).normalize();
+    _offset.copy(camera.position).sub(target).normalize();
+    tapDot.visible = _pinOut.dot(_offset) > 0.06;
+  }
+
+  function setTapMark(lat, lon) {
+    const la = Number(lat);
+    const lo = Number(lon);
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) {
+      hideTapMark();
+      return;
+    }
+    tapLat = THREE.MathUtils.clamp(la, -90, 90);
+    let L = lo;
+    while (L > 180) L -= 360;
+    while (L < -180) L += 360;
+    tapLon = L;
+    if (!tapDot && mesh) attachTapDot(mesh);
+    placeTapDot();
+    kick();
+  }
+
+  function hideTapMark() {
+    tapLat = null;
+    tapLon = null;
+    if (tapDot) tapDot.visible = false;
     kick();
   }
 
@@ -4045,6 +4160,8 @@ export function createEarthGlobe(canvas, options = {}) {
     setSun,
     setCapitalMark,
     hideCapitalMark,
+    setTapMark,
+    hideTapMark,
     setTime,
     getPhaseInfo,
     getObserver,
@@ -4071,6 +4188,7 @@ export function createEarthGlobe(canvas, options = {}) {
       hideTiles();
       disposePoleMarks();
       disposeCapDot();
+      disposeTapDot();
       disposeLocPin();
       disposeBorders();
       disposeLakes();

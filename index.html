@@ -1231,7 +1231,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e284</span>
+    <span class="build-mark" id="build-mark">e285</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1457,7 +1457,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe, BUILD } from "./earth.js?v=e284";
+    import { createEarthGlobe, BUILD } from "./earth.js?v=e285";
     import {
       loadPlaces,
       placeAt,
@@ -1726,6 +1726,7 @@
     function closeGridTap() {
       gridTapElevSeq += 1;
       if (gridTap) gridTap.hidden = true;
+      globeRef.current?.hideTapMark?.();
     }
 
     function fmtElev(m) {
@@ -1762,6 +1763,7 @@
       gridTapLon.textContent = fmtCoord(ll.lon, "E", "W");
       gridTapElev.textContent = "…";
       gridTap.hidden = false;
+      globeRef.current?.setTapMark?.(ll.lat, ll.lon);
       placeGridTapBox(ll.sx || window.innerWidth / 2, ll.sy || window.innerHeight / 2);
       const seq = ++gridTapElevSeq;
       const lat = Number(ll.lat).toFixed(4);
