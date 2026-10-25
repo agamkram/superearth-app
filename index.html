@@ -683,7 +683,7 @@
       }
     }
 
-    /* Location + Aurora · Clouds · Borders · Globe */
+    /* Location + Aurora · Clouds · Borders · Globe · Tilt */
     .loc-strip {
       display: grid;
       grid-template-columns: minmax(0, 1fr) max-content;
@@ -1231,7 +1231,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e286</span>
+    <span class="build-mark" id="build-mark">e287</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1288,10 +1288,19 @@
             type="button"
             class="vision-btn"
             id="grid-btn"
-            title="Show globe lines and put today's season in the axle"
+            title="Show globe lines"
             aria-pressed="false"
           >
             Globe
+          </button>
+          <button
+            type="button"
+            class="vision-btn"
+            id="tilt-btn"
+            title="Show Earth's axial tilt"
+            aria-pressed="false"
+          >
+            Tilt
           </button>
         </div>
       </div>
@@ -1457,7 +1466,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe, BUILD } from "./earth.js?v=e286";
+    import { createEarthGlobe, BUILD } from "./earth.js?v=e287";
     import {
       loadPlaces,
       placeAt,
@@ -1504,6 +1513,7 @@
     const riversBtn = document.getElementById("rivers-btn");
     const bordersBtn = document.getElementById("borders-btn");
     const gridBtn = document.getElementById("grid-btn");
+    const tiltBtn = document.getElementById("tilt-btn");
 
     /** @type {import("leaflet").Map | null} */
     let locationMap = null;
@@ -2537,6 +2547,7 @@
       try {
         info = globe.setTime(now, { lockOrient: false });
         globe.resetView();
+        setTiltUi(false);
       } catch (err) {
         console.warn("goLive setTime/resetView", err);
       }
@@ -2722,9 +2733,7 @@
       gridOn = !!on;
       if (gridBtn) {
         gridBtn.setAttribute("aria-pressed", gridOn ? "true" : "false");
-        gridBtn.title = gridOn
-          ? "Hide globe lines and stand Earth poles-up"
-          : "Show globe lines and put today's season in the axle";
+        gridBtn.title = gridOn ? "Hide globe lines" : "Show globe lines";
       }
       if (globeRef.current && typeof globeRef.current.setGrid === "function") {
         globeRef.current.setGrid(gridOn);
@@ -2735,6 +2744,26 @@
       gridBtn.addEventListener("click", (e) => {
         e.preventDefault();
         setGridUi(!gridOn);
+      });
+    }
+
+    let tiltOn = false;
+    function setTiltUi(on) {
+      tiltOn = !!on;
+      if (tiltBtn) {
+        tiltBtn.setAttribute("aria-pressed", tiltOn ? "true" : "false");
+        tiltBtn.title = tiltOn
+          ? "Stand Earth poles-up"
+          : "Show Earth's axial tilt";
+      }
+      if (globeRef.current && typeof globeRef.current.setTilt === "function") {
+        globeRef.current.setTilt(tiltOn);
+      }
+    }
+    if (tiltBtn) {
+      tiltBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        setTiltUi(!tiltOn);
       });
     }
 

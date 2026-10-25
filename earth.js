@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e286";
+export const BUILD = "e287";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -2073,13 +2073,16 @@ export function createEarthGlobe(canvas, options = {}) {
   function setGrid(on) {
     gridOn = !!on;
     if (gridGroup) gridGroup.visible = gridOn;
+    if (gridOn) updateGridLabels();
+    kick();
+    return gridOn;
+  }
+
+  function setTilt(on) {
     const dist = camDist();
-    if (gridOn) {
-      // Always ease 0→1 over 1s. Camera stays poles-up so the only lean is
-      // today's declination on the axle — do not re-aim spin/theta.
+    if (on) {
       tipHoldSun = gridTilt > 0.5;
-      gridTilt = 0;
-      gridTiltFrom = 0;
+      gridTiltFrom = gridTilt;
       gridTiltTarget = 1;
       gridTiltAnimStart = performance.now();
       applyEphemeris({ skipKick: true });
@@ -2093,7 +2096,7 @@ export function createEarthGlobe(canvas, options = {}) {
     }
     applyEphemeris();
     kick();
-    return gridOn;
+    return !!on;
   }
 
   function scheduleHigh() {
@@ -4155,6 +4158,7 @@ export function createEarthGlobe(canvas, options = {}) {
     setRivers,
     setBorders,
     setGrid,
+    setTilt,
     setAurora,
     setAuroraShown,
     setSun,
