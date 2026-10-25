@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e248";
+export const BUILD = "e249";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1341,8 +1341,8 @@ export function createEarthGlobe(canvas, options = {}) {
     riverLines = null;
   }
 
-  /** Ranks 1-8 get a strip. 9-12 stay one-pixel lines. */
-  const RIVER_WIDE_MAX = 8;
+  /** All ranks get a strip so creeks can sit under 1px when zoomed out. */
+  const RIVER_WIDE_MAX = 12;
 
   function riverFrag() {
     return /* glsl */ `
@@ -1380,7 +1380,7 @@ export function createEarthGlobe(canvas, options = {}) {
           vRank = aRank;
           float t = clamp((aRank - 1.0) / 7.0, 0.0, 1.0);
           float worldHalf = mix(0.00020, 0.00009, t);
-          float minPx = mix(2.0, 1.25, t);
+          float minPx = aRank >= 8.5 ? 0.75 : mix(1.5, 1.0, t);
           vec3 n = normalize(position);
           vec3 tan = aTan - n * dot(aTan, n);
           float tanLen = length(tan);
