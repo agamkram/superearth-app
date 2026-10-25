@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bake Natural Earth 10m lakes into a triangle mesh for SuperEarth.
+"""Bake Natural Earth lakes plus a few missing coastal lakes for SuperEarth.
 
 Writes lakes-10m.bin:
   4 bytes magic LK10
@@ -19,7 +19,14 @@ import shapefile
 from mapbox_earcut import triangulate_float32
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / ".texture-src" / "ne" / "ne_10m_lakes.shp"
+NE = ROOT / ".texture-src" / "ne"
+# Regional files first so extra detail wins if the same water appears twice.
+SRCS = [
+    NE / "ne_10m_lakes_north_america.shp",
+    NE / "ne_10m_lakes_europe.shp",
+    NE / "ne_10m_lakes.shp",
+]
+EXTRA = Path(__file__).with_name("extra-lakes.json")
 OUT = ROOT / "lakes-10m.bin"
 MAGIC = b"LK10"
 
@@ -127,41 +134,100 @@ def refine(verts, idx):
     return np.asarray(verts, dtype=np.float32), np.asarray(out, dtype=np.uint32).reshape(-1)
 
 
+def bbox_of_rings(rings):
+    xs = [p[0] for ring in rings for p in ring]
+    ys = [p[1] for ring in rings for p in ring]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def iou(a, b):
+    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    if inter <= 0:
+        return 0.0
+    aa = (a[2] - a[0]) * (a[3] - a[1])
+    ba = (b[2] - b[0]) * (b[3] - b[1])
+    return inter / max(aa + ba - inter, 1e-18)
+
+
+def already_have(bb, kept):
+    return any(iou(bb, other) > 0.65 for other in kept)
+
+
+def add_rings(rings, all_verts, all_idx, base):
+    if not rings:
+        return base, False
+    verts, idx = triangulate(rings)
+    if verts is None:
+        ok = False
+        for ring in rings:
+            verts, idx = triangulate([ring])
+            if verts is None:
+                continue
+            all_verts.append(verts)
+            all_idx.append(idx + base)
+            base += len(verts)
+            ok = True
+        return base, ok
+    all_verts.append(verts)
+    all_idx.append(idx + base)
+    return base + len(verts), True
+
+
 def main():
-    if not SRC.exists():
-        raise SystemExit(f"missing {SRC}")
-    r = shapefile.Reader(str(SRC))
     all_verts = []
     all_idx = []
     base = 0
     used = 0
     skipped = 0
-    for shp in r.iterShapes():
-        rings = rings_of(shp)
-        if not rings:
-            skipped += 1
-            continue
-        verts, idx = triangulate(rings)
-        if verts is None:
-            # Some records are several outer rings. Try each ring alone.
-            ok = False
-            for ring in rings:
-                verts, idx = triangulate([ring])
-                if verts is None:
-                    continue
-                all_verts.append(verts)
-                all_idx.append(idx + base)
-                base += len(verts)
-                ok = True
+    duped = 0
+    kept = []
+    from_src = {}
+    for src in SRCS:
+        if not src.exists():
+            raise SystemExit(f"missing {src}")
+        n_here = 0
+        r = shapefile.Reader(str(src))
+        for shp in r.iterShapes():
+            rings = rings_of(shp)
+            if not rings:
+                skipped += 1
+                continue
+            bb = bbox_of_rings(rings)
+            if already_have(bb, kept):
+                duped += 1
+                continue
+            base, ok = add_rings(rings, all_verts, all_idx, base)
             if ok:
                 used += 1
+                n_here += 1
+                kept.append(bb)
             else:
                 skipped += 1
-            continue
-        all_verts.append(verts)
-        all_idx.append(idx + base)
-        base += len(verts)
-        used += 1
+        from_src[src.name] = n_here
+
+    extra_n = 0
+    if EXTRA.exists():
+        import json
+        extra = json.loads(EXTRA.read_text())
+        for lake in extra:
+            for rings in lake.get("rings") or []:
+                if not rings:
+                    skipped += 1
+                    continue
+                bb = bbox_of_rings(rings)
+                if already_have(bb, kept):
+                    duped += 1
+                    continue
+                base, ok = add_rings(rings, all_verts, all_idx, base)
+                if ok:
+                    used += 1
+                    extra_n += 1
+                    kept.append(bb)
+                else:
+                    skipped += 1
+    from_src[EXTRA.name] = extra_n
 
     if not all_verts:
         raise SystemExit("no lakes triangulated")
@@ -175,9 +241,11 @@ def main():
         f.write(struct.pack("<I", len(idx)))
         f.write(np.ascontiguousarray(idx, dtype=np.uint32).tobytes())
     print(
-        f"wrote {OUT.name}: {used} lakes, skipped {skipped}, "
+        f"wrote {OUT.name}: {used} lakes, skipped {skipped}, dup {duped}, "
         f"{len(verts)} verts, {len(idx) // 3} tris, {OUT.stat().st_size} bytes"
     )
+    for k, v in from_src.items():
+        print(f"  {k}: {v}")
 
 
 if __name__ == "__main__":
