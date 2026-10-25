@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e281";
+export const BUILD = "e282";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1669,8 +1669,8 @@ export function createEarthGlobe(canvas, options = {}) {
   let gridLabels = [];
   let gridOn = false;
   const LABEL_R = RADIUS * 1.0042;
-  const LABEL_PX_FAR = isTabletDisplay() ? 22 : 13;
-  const LABEL_PX_NEAR = isTabletDisplay() ? 14 : 9;
+  /** One screen size. Maps do this — not a new height at every zoom. */
+  const LABEL_PX = isTabletDisplay() ? 13 : 9;
   let labelGeo = null;
 
   function pushArc(positions, pts) {
@@ -1854,22 +1854,20 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function updateGridLabels(worldPerPx, dist) {
-    if (worldPerPx == null) {
-      dist = Math.max(camDist(), MIN_DIST);
-      const h = Math.max(height || window.innerHeight || 1, 1);
-      const vFov = THREE.MathUtils.degToRad(BASE_FOV);
-      worldPerPx = (dist * 2 * Math.tan(vFov / 2)) / h;
-    }
+    dist = dist == null ? Math.max(camDist(), MIN_DIST) : dist;
     const span = Math.max(homeDist - MIN_DIST, 0.01);
     const zoomIn = 1 - THREE.MathUtils.clamp((dist - MIN_DIST) / span, 0, 1);
     if (grid15) grid15.visible = gridOn && zoomIn > 0.22;
     if (grid5) grid5.visible = gridOn && zoomIn > 0.55;
     if (!gridLabels.length) return;
-    const px = THREE.MathUtils.lerp(LABEL_PX_FAR, LABEL_PX_NEAR, zoomIn);
-    const s = px * worldPerPx;
+    const h = Math.max(height || window.innerHeight || 1, 1);
+    const vFov = THREE.MathUtils.degToRad(camera.fov);
+    const tanHalf = Math.tan(vFov / 2);
     _offset.copy(camera.position).sub(target).normalize();
     for (const mark of gridLabels) {
       mark.getWorldPosition(_pinOut);
+      const labelDist = Math.max(camera.position.distanceTo(_pinOut), 0.05);
+      const s = (LABEL_PX * (labelDist * 2 * tanHalf)) / h;
       _pinOut.sub(target).normalize();
       mark.visible = gridOn && _pinOut.dot(_offset) > 0.08;
       const aspect = mark.userData.aspect || 1;
