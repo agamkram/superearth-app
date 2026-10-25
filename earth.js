@@ -3,7 +3,7 @@
  * 1-finger orbit · 2fs (two-finger slide) pan · pinch zoom · Live/home reset
  */
 import * as THREE from "three";
-import { loadOvationPrime, makeAuroraColor } from "./ovation.js?v=e54";
+import { loadOvationPrime, makeAuroraColor } from "./ovation.js?v=e223";
 
 const RADIUS = 1;
 const HOME_FILL = 0.9;
@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e222";
+export const BUILD = "e223";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -359,13 +359,18 @@ export function createEarthGlobe(canvas, options = {}) {
   let auroraCoords = null;
   let auroraDrive = null;
   let ovationTables = null;
-  const ovationReady = loadOvationPrime(new URL("./ovation-prime.bin?v=e54", import.meta.url))
-    .then((tables) => {
-      ovationTables = tables;
-      if (auroraCoords) setAurora(auroraCoords, auroraDrive);
-      return tables;
-    })
-    .catch(() => null);
+  let ovationPromise = null;
+
+  function ensureOvationTables() {
+    if (ovationTables || ovationPromise) return;
+    ovationPromise = loadOvationPrime(new URL("./ovation-prime.bin?v=e54", import.meta.url))
+      .then((tables) => {
+        ovationTables = tables;
+        if (auroraCoords) setAurora(auroraCoords, auroraDrive);
+        return tables;
+      })
+      .catch(() => null);
+  }
   let auroraMat = null;
   let auroraTex = null;
   let auroraShown = true;
@@ -595,8 +600,6 @@ export function createEarthGlobe(canvas, options = {}) {
     const mat = new THREE.MeshBasicMaterial({
       map,
       color: 0xffffff,
-      transparent: true,
-      depthWrite: false,
     });
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uNight = nightUniform;
@@ -675,7 +678,6 @@ export function createEarthGlobe(canvas, options = {}) {
         // Sharp night from the matching zoom tile (same UVs as day), not the soft 8k wrap.
         vec3 nightCol = pow(texture2D(uNight, vMapUv).rgb, vec3(2.2));
         diffuseColor.rgb = mix(nightCol * 2.45, dayCol, day);
-        // Always opaque so day and night both cover the soft wrap underneath.
         diffuseColor.a = 1.0;`
       );
     };
@@ -823,7 +825,7 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function placePoleMark(mark, lat, lon) {
-    const p = latLonToLocal(lat, lon, RADIUS * 1.0008);
+    const p = latLonToLocal(lat, lon, RADIUS * 1.0036);
     mark.position.copy(p);
     _poleOut.copy(p).normalize();
     mark.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), _poleOut);
@@ -1004,9 +1006,12 @@ export function createEarthGlobe(canvas, options = {}) {
     );
   }
 
-  /** Natural Earth 50m land borders + coastlines — hairline shell just above the surface. */
-  const BORDER_R = RADIUS * 1.0012;
-  const STATE_R = RADIUS * 1.0015;
+  /**
+   * Just outside the zoom tiles (32 sits at 1.0022). Tiles write depth, so
+   * these lines have to be farther out or the tiles hide them.
+   */
+  const BORDER_R = RADIUS * 1.0028;
+  const STATE_R = RADIUS * 1.0030;
   let borderLines = null;
   let stateLines = null;
   let bordersOn = false;
@@ -1108,7 +1113,7 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   /** Classic globe grid: polar axis, equator, 15° lat/lon lines. */
-  const GRID_R = RADIUS * 1.0018;
+  const GRID_R = RADIUS * 1.0032;
   /** Visible end past each pole was 0.07R; ×3 → 0.21R. Width 2px (was 1px). */
   const AXIS_EXT = RADIUS * (1 + 0.07 * 3);
   const AXIS_RADIUS = 0.01;
@@ -1447,8 +1452,9 @@ export function createEarthGlobe(canvas, options = {}) {
     if (cloudsStarted || disposed) return;
     cloudsStarted = true;
     const stamp = Math.floor(Date.now() / (3 * 3600 * 1000));
-    // CDN max is 8192×4096 (~23 MB). 16384 returns HTML, not an image.
-    const size = "8192x4096";
+    // 8192×4096 is about 170 MB on the GPU with mipmaps. Half size is the
+    // same 2:1 map, still mipmapped so the opening view does not sparkle.
+    const size = "4096x2048";
     const url = `https://clouds.matteason.co.uk/images/${size}/clouds-alpha.png?t=${stamp}`;
     loader.load(
       url,
@@ -1457,6 +1463,7 @@ export function createEarthGlobe(canvas, options = {}) {
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.flipY = true;
         tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+        tex.generateMipmaps = true;
         tex.needsUpdate = true;
         releaseDecodedImage(tex);
         const mat = new THREE.MeshBasicMaterial({
@@ -1645,8 +1652,9 @@ export function createEarthGlobe(canvas, options = {}) {
     const mat = makeTileMaterial(dayTex, nightU, normalU);
     mat.userData.nightUniform = nightU;
     const piece = new THREE.Mesh(geo, mat);
-    // 32 sits just outside 16 so the sharper patch covers the coarser one.
-    piece.renderOrder = level.label === "32" ? 1.5 : 1;
+    // Draw before the soft globe and write depth, so the globe is not shaded
+    // again under the sharp patch. 32 is outside 16, so it has to come second.
+    piece.renderOrder = level.label === "32" ? -1 : -2;
     piece.userData.tileKey = `${level.label}:${c}:${r}`;
     return piece;
   }
@@ -2320,6 +2328,7 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function setAurora(coords, drive) {
+    ensureOvationTables();
     ensureAuroraMesh();
     auroraCoords = coords;
     if (drive && Number.isFinite(drive.dF)) auroraDrive = drive;

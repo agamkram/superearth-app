@@ -226,6 +226,18 @@ function geoToMlt(latDeg, lonDeg, sun) {
   return { mlat, mlt };
 }
 
+const F16_EXP = new Float32Array(31);
+for (let e = 1; e < 31; e++) F16_EXP[e] = 2 ** (e - 15);
+
+function halfToFloat(bits) {
+  const sign = bits & 0x8000 ? -1 : 1;
+  const exp = (bits >>> 10) & 31;
+  const frac = bits & 1023;
+  if (exp === 31) return frac ? NaN : sign * Infinity;
+  if (exp === 0) return sign * 5.960464477539063e-8 * frac;
+  return sign * F16_EXP[exp] * (1 + frac * 0.0009765625);
+}
+
 export async function loadOvationPrime(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error("ovation tables " + res.status);
@@ -233,25 +245,25 @@ export async function loadOvationPrime(url) {
   const view = new DataView(buf);
   const magic = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
   if (magic !== "OP12") throw new Error("ovation tables");
+  const little = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
+  if (!little) throw new Error("ovation tables");
   let o = 16;
   // b1 + b2*dF cancels. Energy, number, and the probability slopes stay float32
   // so that sum does not cross the model's flux caps. The probability cube is 0..1.
+  // The file is little-endian and already aligned, so the float32 blocks are
+  // views of the download instead of a second copy.
   function readF32(n) {
-    const arr = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      arr[i] = view.getFloat32(o, true);
-      o += 4;
-    }
+    const arr = new Float32Array(buf, o, n);
+    o += n * 4;
     return arr;
   }
   function readF16(n) {
     const scale = view.getFloat32(o, true);
     o += 4;
+    const src = new Uint16Array(buf, o, n);
+    o += n * 2;
     const arr = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      arr[i] = view.getFloat16(o, true) * scale;
-      o += 2;
-    }
+    for (let i = 0; i < n; i++) arr[i] = halfToFloat(src[i]) * scale;
     return arr;
   }
   const tables = {};
