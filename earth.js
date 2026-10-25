@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e271";
+export const BUILD = "e272";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1388,15 +1388,20 @@ export function createEarthGlobe(canvas, options = {}) {
           else if (aRank <= 8.5) farPx = 0.4;
           float minPx = mix(farPx, nearPx, clamp(uZoomIn, 0.0, 1.0));
           vec3 n = normalize(position);
+          vec4 viewPos = modelViewMatrix * vec4(position, 1.0);
+          vec3 viewN = normalize(mat3(modelViewMatrix) * n);
+          if (dot(viewN, -normalize(viewPos.xyz)) < -0.02) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            return;
+          }
           vec3 tan = aTan - n * dot(aTan, n);
           float tanLen = length(tan);
           tan = tanLen > 1e-8 ? tan / tanLen : vec3(0.0, 0.0, 1.0);
           vec3 side = normalize(cross(n, tan));
-          vec4 viewPos = modelViewMatrix * vec4(position, 1.0);
           float z = max(abs(viewPos.z), 0.02);
           float pixelWorld = uPixelToWorld * z;
           float halfW = max(minPx * 0.5 * pixelWorld, 0.000008);
-          halfW = min(halfW, 0.0022 * z);
+          halfW = min(halfW, min(0.0022 * z, 0.001));
           viewPos.xyz += mat3(modelViewMatrix) * (side * aSide * halfW);
           gl_Position = projectionMatrix * viewPos;
         }
@@ -1437,7 +1442,10 @@ export function createEarthGlobe(canvas, options = {}) {
       1
     );
     const fovRad = THREE.MathUtils.degToRad(camera.fov);
-    const v = (2 * Math.tan(fovRad / 2)) / h;
+    let v = 0;
+    if (h >= 64) {
+      v = Math.min((2 * Math.tan(fovRad / 2)) / h, 0.002);
+    }
     const dist = Math.max(camDist(), MIN_DIST);
     const span = Math.max(homeDist - MIN_DIST, 0.01);
     const zoomIn = 1 - THREE.MathUtils.clamp((dist - MIN_DIST) / span, 0, 1);
