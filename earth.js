@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e256";
+export const BUILD = "e257";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1367,21 +1367,25 @@ export function createEarthGlobe(canvas, options = {}) {
         uSunDir: sunDirUniform,
         uSunOn: sunOnUniform,
         uPixelToWorld: { value: 0 },
+        uZoomIn: { value: 0 },
       },
       vertexShader: /* glsl */ `
         attribute vec3 aTan;
         attribute float aSide;
         attribute float aRank;
         uniform float uPixelToWorld;
+        uniform float uZoomIn;
         varying vec3 vWorldN;
         varying float vRank;
         void main() {
           vWorldN = normalize(mat3(modelMatrix) * normalize(position));
           vRank = aRank;
-          float minPx = 0.4;
-          if (aRank <= 2.5) minPx = 0.9;
-          else if (aRank <= 5.5) minPx = 0.7;
-          else if (aRank <= 8.5) minPx = 0.5;
+          float farPx = 0.4;
+          float nearPx = 0.5;
+          if (aRank <= 2.5) { farPx = 0.9; nearPx = 1.1; }
+          else if (aRank <= 5.5) { farPx = 0.7; nearPx = 0.9; }
+          else if (aRank <= 8.5) { farPx = 0.5; nearPx = 0.7; }
+          float minPx = mix(farPx, nearPx, clamp(uZoomIn, 0.0, 1.0));
           vec3 n = normalize(position);
           vec3 tan = aTan - n * dot(aTan, n);
           float tanLen = length(tan);
@@ -1433,10 +1437,14 @@ export function createEarthGlobe(canvas, options = {}) {
     );
     const fovRad = THREE.MathUtils.degToRad(camera.fov);
     const v = (2 * Math.tan(fovRad / 2)) / h;
+    const dist = Math.max(camDist(), MIN_DIST);
+    const span = Math.max(homeDist - MIN_DIST, 0.01);
+    const zoomIn = 1 - THREE.MathUtils.clamp((dist - MIN_DIST) / span, 0, 1);
     riverLines.traverse((obj) => {
-      if (obj.material?.uniforms?.uPixelToWorld) {
-        obj.material.uniforms.uPixelToWorld.value = v;
-      }
+      const u = obj.material?.uniforms;
+      if (!u) return;
+      if (u.uPixelToWorld) u.uPixelToWorld.value = v;
+      if (u.uZoomIn) u.uZoomIn.value = zoomIn;
     });
   }
 
