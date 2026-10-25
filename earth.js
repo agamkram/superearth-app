@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e241";
+export const BUILD = "e242";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1332,11 +1332,77 @@ export function createEarthGlobe(canvas, options = {}) {
   let riverLines = null;
 
   function disposeRivers() {
-    disposeLineMesh(riverLines);
+    if (!riverLines) return;
+    riverLines.traverse((obj) => {
+      obj.geometry?.dispose();
+      obj.material?.dispose();
+    });
+    if (riverLines.parent) riverLines.parent.remove(riverLines);
     riverLines = null;
   }
 
-  function makeRiverMaterial() {
+  /** Ranks 1-6 get real width. 7-12 stay one-pixel lines. */
+  const RIVER_WIDE_MAX = 6;
+
+  function riverFrag() {
+    return /* glsl */ `
+      #include <common>
+      uniform vec3 uSunDir;
+      uniform float uSunOn;
+      varying vec3 vWorldN;
+      varying float vRank;
+      void main() {
+        float ndl = dot(normalize(vWorldN), normalize(uSunDir));
+        float day = uSunOn * smoothstep(-0.04, 0.20, ndl);
+        float t = clamp((vRank - 1.0) / 11.0, 0.0, 1.0);
+        vec3 water = vec3(0.022, 0.10, 0.26) * mix(1.5, 0.5, t);
+        gl_FragColor = vec4(mix(water * 0.2, water, day), 1.0);
+        #include <colorspace_fragment>
+      }
+    `;
+  }
+
+  function makeRiverWideMaterial() {
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        uSunDir: sunDirUniform,
+        uSunOn: sunOnUniform,
+        uPixelToWorld: { value: 0 },
+      },
+      vertexShader: /* glsl */ `
+        attribute vec3 aTan;
+        attribute float aSide;
+        attribute float aRank;
+        uniform float uPixelToWorld;
+        varying vec3 vWorldN;
+        varying float vRank;
+        void main() {
+          vWorldN = normalize(mat3(modelMatrix) * normalize(position));
+          vRank = aRank;
+          float t = clamp((aRank - 1.0) / 11.0, 0.0, 1.0);
+          float worldHalf = 0.000045 * (13.0 - aRank) * (13.0 - aRank) / 12.0;
+          float minPx = mix(2.0, 1.15, t);
+          vec3 n = normalize(position);
+          vec3 tan = aTan - n * dot(aTan, n);
+          float tanLen = length(tan);
+          tan = tanLen > 1e-8 ? tan / tanLen : vec3(0.0, 0.0, 1.0);
+          vec3 side = normalize(cross(n, tan));
+          vec4 viewPos = modelViewMatrix * vec4(position, 1.0);
+          float z = max(abs(viewPos.z), 0.02);
+          float pixelWorld = uPixelToWorld * z;
+          float halfW = max(worldHalf, minPx * 0.5 * pixelWorld);
+          halfW = min(halfW, 0.004 * z);
+          viewPos.xyz += mat3(modelViewMatrix) * (side * aSide * halfW);
+          gl_Position = projectionMatrix * viewPos;
+        }
+      `,
+      fragmentShader: riverFrag(),
+      toneMapped: false,
+      depthWrite: false,
+    });
+  }
+
+  function makeRiverThinMaterial() {
     return new THREE.ShaderMaterial({
       uniforms: {
         uSunDir: sunDirUniform,
@@ -1352,23 +1418,22 @@ export function createEarthGlobe(canvas, options = {}) {
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
-      fragmentShader: /* glsl */ `
-        #include <common>
-        uniform vec3 uSunDir;
-        uniform float uSunOn;
-        varying vec3 vWorldN;
-        varying float vRank;
-        void main() {
-          float ndl = dot(normalize(vWorldN), normalize(uSunDir));
-          float day = uSunOn * smoothstep(-0.04, 0.20, ndl);
-          float t = clamp((vRank - 1.0) / 11.0, 0.0, 1.0);
-          vec3 water = vec3(0.022, 0.10, 0.26) * mix(1.5, 0.5, t);
-          gl_FragColor = vec4(mix(water * 0.2, water, day), 1.0);
-          #include <colorspace_fragment>
-        }
-      `,
+      fragmentShader: riverFrag(),
       toneMapped: false,
       depthWrite: false,
+    });
+  }
+
+  function syncRiverPixels() {
+    if (!riverLines) return;
+    const h = renderer.drawingBufferHeight || 0;
+    if (h < 200) return;
+    const fovRad = THREE.MathUtils.degToRad(camera.fov);
+    const v = (2 * Math.tan(fovRad / 2)) / h;
+    riverLines.traverse((obj) => {
+      if (obj.material?.uniforms?.uPixelToWorld) {
+        obj.material.uniforms.uPixelToWorld.value = v;
+      }
     });
   }
 
@@ -1382,75 +1447,170 @@ export function createEarthGlobe(canvas, options = {}) {
       view.getUint8(3)
     );
     if (mag !== "RV10") return null;
-    let o = 8;
-    const nLines = view.getUint32(4, true);
-    let vCount = 0;
-    const parts = [];
-    for (let li = 0; li < nLines; li++) {
-      const sr = Math.max(1, Math.min(12, view.getUint8(o)));
-      o += 4;
-      const n = view.getUint32(o, true);
-      o += 4;
-      const start = o;
-      o += n * 8;
-      let segs = 0;
-      let prevLon = NaN;
-      let run = 0;
-      for (let j = 0; j < n; j++) {
-        const lon = view.getFloat32(start + j * 8, true);
-        if (Number.isFinite(prevLon) && Math.abs(lon - prevLon) >= 180) {
-          if (run >= 2) segs += run - 1;
-          run = 0;
-        }
-        run += 1;
-        prevLon = lon;
-      }
-      if (run >= 2) segs += run - 1;
-      if (segs > 0) {
-        parts.push({ sr, n, start, segs });
-        vCount += segs * 2;
-      }
-    }
-    if (!vCount) return null;
-    const pos = new Float32Array(vCount * 3);
-    const rank = new Float32Array(vCount);
-    let vi = 0;
-    const put = (lat, lon, sr) => {
-      const la = THREE.MathUtils.degToRad(lat);
-      const lo = THREE.MathUtils.degToRad(lon);
-      const cl = Math.cos(la);
-      pos[vi * 3] = RIVER_R * cl * Math.cos(lo);
-      pos[vi * 3 + 1] = RIVER_R * Math.sin(la);
-      pos[vi * 3 + 2] = -RIVER_R * cl * Math.sin(lo);
-      rank[vi] = sr;
-      vi += 1;
+
+    const xs = [];
+    const ys = [];
+    const xyz = new Float32Array(8192 * 3);
+    const writeXYZ = (latDeg, lonDeg, i) => {
+      const lat = THREE.MathUtils.degToRad(latDeg);
+      const lon = THREE.MathUtils.degToRad(lonDeg);
+      const cl = Math.cos(lat);
+      xyz[i * 3] = RIVER_R * cl * Math.cos(lon);
+      xyz[i * 3 + 1] = RIVER_R * Math.sin(lat);
+      xyz[i * 3 + 2] = -RIVER_R * cl * Math.sin(lon);
     };
-    for (const part of parts) {
-      let prevLon = NaN;
-      let prevLat = NaN;
-      for (let j = 0; j < part.n; j++) {
-        const lon = view.getFloat32(part.start + j * 8, true);
-        const lat = view.getFloat32(part.start + j * 8 + 4, true);
-        if (
-          Number.isFinite(prevLon) &&
-          Math.abs(lon - prevLon) < 180
-        ) {
-          put(prevLat, prevLon, part.sr);
-          put(lat, lon, part.sr);
+    const forEachPart = (fn) => {
+      let o = 8;
+      const nLines = view.getUint32(4, true);
+      const emit = (sr) => {
+        if (xs.length >= 2) fn(sr, xs.length);
+      };
+      for (let li = 0; li < nLines; li++) {
+        const sr = Math.max(1, Math.min(12, view.getUint8(o)));
+        o += 4;
+        const n = view.getUint32(o, true);
+        o += 4;
+        xs.length = 0;
+        ys.length = 0;
+        let prevLon = NaN;
+        for (let j = 0; j < n; j++) {
+          const lon = view.getFloat32(o, true);
+          o += 4;
+          const lat = view.getFloat32(o, true);
+          o += 4;
+          if (Number.isFinite(prevLon) && Math.abs(lon - prevLon) >= 180) {
+            emit(sr);
+            xs.length = 0;
+            ys.length = 0;
+          }
+          xs.push(lon);
+          ys.push(lat);
+          prevLon = lon;
         }
-        prevLon = lon;
-        prevLat = lat;
+        emit(sr);
       }
+    };
+
+    let wideV = 0;
+    let wideI = 0;
+    let thinV = 0;
+    forEachPart((sr, n) => {
+      if (sr <= RIVER_WIDE_MAX) {
+        wideV += n * 2;
+        wideI += (n - 1) * 6;
+      } else thinV += (n - 1) * 2;
+    });
+
+    const wPos = new Float32Array(wideV * 3);
+    const wTan = new Float32Array(wideV * 3);
+    const wSide = new Float32Array(wideV);
+    const wRank = new Float32Array(wideV);
+    const wIdx = new Uint32Array(wideI);
+    const tPos = new Float32Array(thinV * 3);
+    const tRank = new Float32Array(thinV);
+    let wvi = 0;
+    let wii = 0;
+    let tvi = 0;
+
+    forEachPart((sr, n) => {
+      if (n > 8192) n = 8192;
+      for (let i = 0; i < n; i++) writeXYZ(ys[i], xs[i], i);
+      if (sr <= RIVER_WIDE_MAX) {
+        const base = wvi;
+        for (let i = 0; i < n; i++) {
+          let tx;
+          let ty;
+          let tz;
+          if (i === 0) {
+            tx = xyz[3] - xyz[0];
+            ty = xyz[4] - xyz[1];
+            tz = xyz[5] - xyz[2];
+          } else if (i === n - 1) {
+            const k = (n - 2) * 3;
+            const j = (n - 1) * 3;
+            tx = xyz[j] - xyz[k];
+            ty = xyz[j + 1] - xyz[k + 1];
+            tz = xyz[j + 2] - xyz[k + 2];
+          } else {
+            const p = (i - 1) * 3;
+            const q = (i + 1) * 3;
+            tx = xyz[q] - xyz[p];
+            ty = xyz[q + 1] - xyz[p + 1];
+            tz = xyz[q + 2] - xyz[p + 2];
+          }
+          const tlen = Math.sqrt(tx * tx + ty * ty + tz * tz) || 1;
+          tx /= tlen;
+          ty /= tlen;
+          tz /= tlen;
+          const x = xyz[i * 3];
+          const y = xyz[i * 3 + 1];
+          const z = xyz[i * 3 + 2];
+          for (let s = 0; s < 2; s++) {
+            const vi = wvi * 3;
+            wPos[vi] = x;
+            wPos[vi + 1] = y;
+            wPos[vi + 2] = z;
+            wTan[vi] = tx;
+            wTan[vi + 1] = ty;
+            wTan[vi + 2] = tz;
+            wSide[wvi] = s === 0 ? 1 : -1;
+            wRank[wvi] = sr;
+            wvi += 1;
+          }
+        }
+        for (let i = 0; i < n - 1; i++) {
+          const a = base + i * 2;
+          wIdx[wii++] = a;
+          wIdx[wii++] = a + 1;
+          wIdx[wii++] = a + 2;
+          wIdx[wii++] = a + 1;
+          wIdx[wii++] = a + 3;
+          wIdx[wii++] = a + 2;
+        }
+      } else {
+        for (let i = 1; i < n; i++) {
+          const a = (i - 1) * 3;
+          const b = i * 3;
+          tPos[tvi * 3] = xyz[a];
+          tPos[tvi * 3 + 1] = xyz[a + 1];
+          tPos[tvi * 3 + 2] = xyz[a + 2];
+          tRank[tvi] = sr;
+          tvi += 1;
+          tPos[tvi * 3] = xyz[b];
+          tPos[tvi * 3 + 1] = xyz[b + 1];
+          tPos[tvi * 3 + 2] = xyz[b + 2];
+          tRank[tvi] = sr;
+          tvi += 1;
+        }
+      }
+    });
+
+    const group = new THREE.Group();
+    group.name = "rivers";
+    if (wii > 0) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(wPos, 3));
+      geo.setAttribute("aTan", new THREE.BufferAttribute(wTan, 3));
+      geo.setAttribute("aSide", new THREE.BufferAttribute(wSide, 1));
+      geo.setAttribute("aRank", new THREE.BufferAttribute(wRank, 1));
+      geo.setIndex(new THREE.BufferAttribute(wIdx, 1));
+      const wide = new THREE.Mesh(geo, makeRiverWideMaterial());
+      wide.renderOrder = 2;
+      wide.frustumCulled = false;
+      group.add(wide);
     }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute("aRank", new THREE.BufferAttribute(rank, 1));
-    const lines = new THREE.LineSegments(geo, makeRiverMaterial());
-    lines.name = "rivers";
-    lines.renderOrder = 2;
-    lines.frustumCulled = false;
-    if (mesh) mesh.add(lines);
-    return lines;
+    if (tvi > 0) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(tPos, 3));
+      geo.setAttribute("aRank", new THREE.BufferAttribute(tRank, 1));
+      const thin = new THREE.LineSegments(geo, makeRiverThinMaterial());
+      thin.renderOrder = 2;
+      thin.frustumCulled = false;
+      group.add(thin);
+    }
+    if (!group.children.length) return null;
+    if (mesh) mesh.add(group);
+    return group;
   }
 
   function loadRivers() {
@@ -1467,6 +1627,7 @@ export function createEarthGlobe(canvas, options = {}) {
         } catch (err) {
           riverLines = null;
         }
+        syncRiverPixels();
         kick();
       })
       .catch(() => {});
@@ -3171,6 +3332,7 @@ export function createEarthGlobe(canvas, options = {}) {
 
     renderer.setPixelRatio(drawingRatio(bufferW, bufferH));
     renderer.setSize(bufferW, bufferH, false);
+    syncRiverPixels();
     if (starfield?.material) {
       starfield.material.size = starPointSize();
     }
