@@ -376,8 +376,8 @@
       justify-self: stretch;
       width: 100%;
       min-width: 0;
-      height: 100%;
-      max-height: 2.05rem;
+      height: 4.1rem;
+      max-height: none;
       padding: 0;
       border-radius: 0;
       background: transparent;
@@ -570,7 +570,8 @@
       }
 
       .tool-strip {
-        max-height: 2.35rem;
+        height: 4.7rem;
+        max-height: none;
       }
 
       .loc-place-row {
@@ -1238,7 +1239,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e290</span>
+    <span class="build-mark" id="build-mark">e291</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1480,7 +1481,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe, BUILD } from "./earth.js?v=e290";
+    import { createEarthGlobe, BUILD } from "./earth.js?v=e291";
     import {
       loadPlaces,
       placeAt,
