@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e260";
+export const BUILD = "e261";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -770,7 +770,7 @@ export function createEarthGlobe(canvas, options = {}) {
   const POLE_PX_NEAR = 5;
   const PIN_GEO_R = 0.012;
   /** Screen px: findable at home, smaller in tight so it does not sit on the city. */
-  const PIN_PX_HOME = 9;
+  const PIN_PX_HOME = 4;
   const PIN_PX_CLOSE = 5;
   const _poleOut = new THREE.Vector3();
   const _poleProj = new THREE.Vector3();
@@ -1260,7 +1260,7 @@ export function createEarthGlobe(canvas, options = {}) {
         void main() {
           float ndl = dot(normalize(vWorldN), normalize(uSunDir));
           float day = uSunOn * smoothstep(-0.04, 0.20, ndl);
-          vec3 navy = vec3(0.11, 0.24, 0.38);
+          vec3 navy = vec3(0.14, 0.23, 0.33);
           gl_FragColor = vec4(mix(navy * 0.08, navy, day), 1.0);
           #include <colorspace_fragment>
         }
@@ -1330,6 +1330,7 @@ export function createEarthGlobe(canvas, options = {}) {
   /** Between lake fill and country lines. */
   const RIVER_R = RADIUS * 1.0026;
   let riverLines = null;
+  let riversOn = true;
 
   function disposeRivers() {
     if (!riverLines) return;
@@ -1354,7 +1355,7 @@ export function createEarthGlobe(canvas, options = {}) {
       void main() {
         float ndl = dot(normalize(vWorldN), normalize(uSunDir));
         float day = uSunOn * smoothstep(-0.04, 0.20, ndl);
-        vec3 navy = vec3(0.11, 0.24, 0.38);
+        vec3 navy = vec3(0.14, 0.23, 0.33);
         gl_FragColor = vec4(mix(navy * 0.08, navy, day), 1.0);
         #include <colorspace_fragment>
       }
@@ -1638,6 +1639,7 @@ export function createEarthGlobe(canvas, options = {}) {
         } catch (err) {
           riverLines = null;
         }
+        if (riverLines) riverLines.visible = riversOn;
         syncRiverPixels();
         kick();
       })
@@ -2596,6 +2598,13 @@ export function createEarthGlobe(canvas, options = {}) {
     if (cloudMesh) cloudMesh.visible = cloudsOn;
     kick();
     return cloudsOn;
+  }
+
+  function setRivers(on) {
+    riversOn = !!on;
+    if (riverLines) riverLines.visible = riversOn;
+    kick();
+    return riversOn;
   }
 
   /** Contiguous oval on one longitude. Stops at a gap or the equator. */
@@ -3819,6 +3828,7 @@ export function createEarthGlobe(canvas, options = {}) {
     resetView,
     setObserver,
     setClouds,
+    setRivers,
     setBorders,
     setGrid,
     setAurora,
