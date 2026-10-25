@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e257";
+export const BUILD = "e258";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -3048,7 +3048,11 @@ export function createEarthGlobe(canvas, options = {}) {
     camera.far = Math.max(STAR_RADIUS + 40, dist + 40);
     camera.updateProjectionMatrix();
     updatePoleScale();
-    if (typeof onZoom === "function") onZoom(spherical.radius);
+    if (typeof onZoom === "function") {
+      const span = Math.max(homeDist - MIN_DIST, 0.01);
+      const zoomIn = 1 - THREE.MathUtils.clamp((dist - MIN_DIST) / span, 0, 1);
+      onZoom(dist, zoomIn);
+    }
     kick();
   }
 
