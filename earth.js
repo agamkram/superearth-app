@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e292";
+export const BUILD = "e293";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1791,7 +1791,7 @@ export function createEarthGlobe(canvas, options = {}) {
   let gridOn = false;
   const LABEL_R = RADIUS * 1.0042;
   /** One screen size. Maps do this — not a new height at every zoom. */
-  const LABEL_PX = isTabletDisplay() ? 13 : 9;
+  const LABEL_PX = isTabletDisplay() ? 8 : 6;
   let labelGeo = null;
 
   function pushArc(positions, pts) {
@@ -1893,28 +1893,27 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function makeGridLabel(text) {
-    const pad = 18;
+    const fontPx = 32;
+    const padX = 6;
+    const padY = 5;
     const c = document.createElement("canvas");
     const ctx = c.getContext("2d");
-    ctx.font = "600 36px system-ui, -apple-system, sans-serif";
+    ctx.font = `500 ${fontPx}px system-ui, -apple-system, sans-serif`;
     const tw = Math.ceil(ctx.measureText(text).width);
-    const w = Math.max(72, tw + pad * 2);
-    const h = 64;
+    const w = Math.max(8, tw + padX * 2);
+    const h = fontPx + padY * 2;
     c.width = w;
     c.height = h;
-    ctx.font = "600 36px system-ui, -apple-system, sans-serif";
+    ctx.font = `500 ${fontPx}px system-ui, -apple-system, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "rgba(6, 10, 18, 0.58)";
-    ctx.beginPath();
-    if (typeof ctx.roundRect === "function") {
-      ctx.roundRect(4, 10, w - 8, h - 20, 16);
-    } else {
-      ctx.rect(4, 10, w - 8, h - 20);
-    }
-    ctx.fill();
+    ctx.lineJoin = "round";
+    ctx.miterLimit = 2;
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(6, 10, 18, 0.82)";
     ctx.fillStyle = "#d4deec";
-    ctx.fillText(text, w / 2, h / 2 + 1);
+    ctx.strokeText(text, w / 2, h / 2);
+    ctx.fillText(text, w / 2, h / 2);
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.needsUpdate = true;
