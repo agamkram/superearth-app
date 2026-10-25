@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e274";
+export const BUILD = "e275";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -3032,6 +3032,16 @@ export function createEarthGlobe(canvas, options = {}) {
     return camDist() < homeDist - 1e-3;
   }
 
+  /** One-finger drag. Slow at closest zoom so the surface does not whip. */
+  function orbitDragSpeed() {
+    const z = THREE.MathUtils.clamp(
+      (camDist() - MIN_DIST) / Math.max(homeDist - MIN_DIST, 0.01),
+      0,
+      1
+    );
+    return THREE.MathUtils.lerp(0.025, 0.55, z * z);
+  }
+
   // Camera stays world-up so a fixed sun stays fixed on screen.
   // (Following the tipped axle rolls the view and makes the sun look like it moves.)
   function readSpherical() {
@@ -3586,14 +3596,7 @@ export function createEarthGlobe(canvas, options = {}) {
       const dx = t.clientX - oneFinger.x;
       const dy = t.clientY - oneFinger.y;
       const h = Math.max(height, 1);
-      const dist = camDist();
-      const z = THREE.MathUtils.clamp(
-        (dist - MIN_DIST) / Math.max(homeDist - MIN_DIST, 0.01),
-        0,
-        1
-      );
-      // Close zoom: slow spin so a drag doesn't whip the surface away.
-      const speed = THREE.MathUtils.lerp(0.07, 0.55, z * z);
+      const speed = orbitDragSpeed();
       // Horizontal: spin Earth under the fixed sun. Vertical: tilt the view.
       userSpin += (2 * Math.PI * dx * speed) / h;
       applyEphemeris();
@@ -3714,13 +3717,7 @@ export function createEarthGlobe(canvas, options = {}) {
       panCamera(dx, dy);
     } else {
       const h = Math.max(height, 1);
-      const dist = camDist();
-      const z = THREE.MathUtils.clamp(
-        (dist - MIN_DIST) / Math.max(homeDist - MIN_DIST, 0.01),
-        0,
-        1
-      );
-      const speed = THREE.MathUtils.lerp(0.07, 0.55, z * z);
+      const speed = orbitDragSpeed();
       userSpin += (2 * Math.PI * dx * speed) / h;
       applyEphemeris();
       readSpherical();
