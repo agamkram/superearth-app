@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e275";
+export const BUILD = "e276";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -3032,14 +3032,15 @@ export function createEarthGlobe(canvas, options = {}) {
     return camDist() < homeDist - 1e-3;
   }
 
-  /** One-finger drag. Slow at closest zoom so the surface does not whip. */
+  /** One-finger drag. Close and far stay as they feel; mid follows distance to the ground. */
   function orbitDragSpeed() {
-    const z = THREE.MathUtils.clamp(
-      (camDist() - MIN_DIST) / Math.max(homeDist - MIN_DIST, 0.01),
-      0,
-      1
-    );
-    return THREE.MathUtils.lerp(0.025, 0.55, z * z);
+    const near = 0.025;
+    const far = 0.55;
+    const dClose = Math.max(MIN_DIST - RADIUS, 0.05);
+    const dFar = Math.max(homeDist - RADIUS, dClose + 0.01);
+    const d = Math.max(camDist() - RADIUS, dClose);
+    const t = THREE.MathUtils.clamp((d - dClose) / (dFar - dClose), 0, 1);
+    return THREE.MathUtils.lerp(near, far, t);
   }
 
   // Camera stays world-up so a fixed sun stays fixed on screen.
