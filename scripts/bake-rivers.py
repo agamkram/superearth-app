@@ -28,8 +28,6 @@ SRCS = [
 ]
 OUT = ROOT / "rivers-10m.bin"
 MAX_EDGE_DEG = 1.0
-# Join same-rank pieces whose tips sit within ~2 km so one river is not a dashed chain.
-MAX_JOIN_DEG = 0.02
 
 
 def xyz(lon, lat):
@@ -104,120 +102,6 @@ def polylines(shp_path):
     return lines, skipped
 
 
-def stitch_same_rank(lines):
-    """Tip-to-tip join of same-rank pieces. Does not glue tributaries into a mid-river T."""
-    from collections import defaultdict
-
-    n = len(lines)
-    if n < 2:
-        return lines
-    pts = [list(p) for p, _sr in lines]
-    srs = [sr for _p, sr in lines]
-    inv = 1.0 / MAX_JOIN_DEG
-    thresh2 = MAX_JOIN_DEG * MAX_JOIN_DEG
-
-    def coord(e):
-        i, k = divmod(e, 2)
-        return pts[i][0] if k == 0 else pts[i][-1]
-
-    buckets = defaultdict(list)
-    for e in range(n * 2):
-        lon, lat = coord(e)
-        buckets[(int(math.floor(lon * inv)), int(math.floor(lat * inv)))].append(e)
-
-    def nearest(e):
-        lon, lat = coord(e)
-        i = e // 2
-        sr = srs[i]
-        best = None
-        bx, by = int(math.floor(lon * inv)), int(math.floor(lat * inv))
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                for f in buckets.get((bx + dx, by + dy), []):
-                    j = f // 2
-                    if j == i or srs[j] != sr:
-                        continue
-                    flon, flat = coord(f)
-                    d2 = (flon - lon) ** 2 + (flat - lat) ** 2
-                    if d2 <= thresh2 and (best is None or d2 < best[0]):
-                        best = (d2, f)
-        return None if best is None else best[1]
-
-    partner = [nearest(e) for e in range(n * 2)]
-    parent = list(range(n))
-
-    def find(x):
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    link = defaultdict(list)
-    seen = set()
-    for e in range(n * 2):
-        f = partner[e]
-        if f is None or partner[f] != e:
-            continue
-        a, b = (e, f) if e < f else (f, e)
-        if (a, b) in seen:
-            continue
-        seen.add((a, b))
-        i, j = e // 2, f // 2
-        if find(i) == find(j):
-            continue
-        parent[find(j)] = find(i)
-        link[i].append((e % 2, j, f % 2))
-        link[j].append((f % 2, i, e % 2))
-
-    used = [False] * n
-    out = []
-    for start in range(n):
-        if used[start]:
-            continue
-        stack = [start]
-        comp = []
-        seen_l = set()
-        while stack:
-            i = stack.pop()
-            if i in seen_l:
-                continue
-            seen_l.add(i)
-            comp.append(i)
-            for _le, o, _oe in link[i]:
-                stack.append(o)
-        heads = [i for i in comp if len(link[i]) <= 1]
-        head = heads[0] if heads else comp[0]
-        start_end = 0
-        if len(link[head]) == 1:
-            start_end = 1 - link[head][0][0]
-        seq = []
-        cur, enter_end = head, start_end
-        visited = set()
-        while cur is not None and cur not in visited:
-            seq.append((cur, enter_end == 1))
-            visited.add(cur)
-            exit_end = 1 - enter_end
-            nxt = None
-            for le, ol, oe in link[cur]:
-                if le == exit_end and ol not in visited:
-                    nxt = (ol, oe)
-                    break
-            cur, enter_end = nxt if nxt else (None, 0)
-        acc = []
-        acc_sr = srs[head]
-        for li, rev in seq:
-            used[li] = True
-            p = pts[li][::-1] if rev else pts[li]
-            acc.extend(p)
-        out.append((acc, acc_sr))
-        for i in comp:
-            if used[i]:
-                continue
-            used[i] = True
-            out.append((pts[i], srs[i]))
-    return out
-
-
 def write_bin(path, lines):
     with open(path, "wb") as f:
         f.write(b"RV10")
@@ -236,15 +120,11 @@ def main():
         lines, skipped = polylines(src)
         all_lines.extend(lines)
         print(f"{src.name}: {len(lines)} river lines, skipped {skipped} centerlines")
-    before = len(all_lines)
-    all_lines = stitch_same_rank(all_lines)
-    print(f"stitched same-rank tips: {before} -> {len(all_lines)} lines")
     write_bin(OUT, all_lines)
     npts = sum(len(x[0]) for x in all_lines)
-    mx = max((len(x[0]) for x in all_lines), default=0)
     print(
         f"wrote {OUT.name}: {len(all_lines)} lines, {npts} points, "
-        f"longest {mx}, {OUT.stat().st_size} bytes"
+        f"{OUT.stat().st_size} bytes"
     )
 
 

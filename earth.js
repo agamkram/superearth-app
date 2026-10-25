@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e255";
+export const BUILD = "e256";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1372,16 +1372,15 @@ export function createEarthGlobe(canvas, options = {}) {
         attribute vec3 aTan;
         attribute float aSide;
         attribute float aRank;
-        attribute float aEnd;
         uniform float uPixelToWorld;
         varying vec3 vWorldN;
         varying float vRank;
         void main() {
           vWorldN = normalize(mat3(modelMatrix) * normalize(position));
           vRank = aRank;
-          float minPx = 0.3;
-          if (aRank <= 2.5) minPx = 1.0;
-          else if (aRank <= 5.5) minPx = 0.75;
+          float minPx = 0.4;
+          if (aRank <= 2.5) minPx = 0.9;
+          else if (aRank <= 5.5) minPx = 0.7;
           else if (aRank <= 8.5) minPx = 0.5;
           vec3 n = normalize(position);
           vec3 tan = aTan - n * dot(aTan, n);
@@ -1393,16 +1392,13 @@ export function createEarthGlobe(canvas, options = {}) {
           float pixelWorld = uPixelToWorld * z;
           float halfW = max(minPx * 0.5 * pixelWorld, 0.000008);
           halfW = min(halfW, 0.0022 * z);
-          viewPos.xyz += mat3(modelViewMatrix) * (side * aSide * halfW + tan * aEnd * halfW);
+          viewPos.xyz += mat3(modelViewMatrix) * (side * aSide * halfW);
           gl_Position = projectionMatrix * viewPos;
         }
       `,
       fragmentShader: riverFrag(),
       toneMapped: false,
       depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
     });
   }
 
@@ -1457,7 +1453,7 @@ export function createEarthGlobe(canvas, options = {}) {
 
     const xs = [];
     const ys = [];
-    const xyz = new Float32Array(32768 * 3);
+    const xyz = new Float32Array(8192 * 3);
     const writeXYZ = (latDeg, lonDeg, i) => {
       const lat = THREE.MathUtils.degToRad(latDeg);
       const lon = THREE.MathUtils.degToRad(lonDeg);
@@ -1512,7 +1508,6 @@ export function createEarthGlobe(canvas, options = {}) {
     const wTan = new Float32Array(wideV * 3);
     const wSide = new Float32Array(wideV);
     const wRank = new Float32Array(wideV);
-    const wEnd = new Float32Array(wideV);
     const wIdx = new Uint32Array(wideI);
     const tPos = new Float32Array(thinV * 3);
     const tRank = new Float32Array(thinV);
@@ -1521,7 +1516,7 @@ export function createEarthGlobe(canvas, options = {}) {
     let tvi = 0;
 
     forEachPart((sr, n) => {
-      if (n > 32768) n = 32768;
+      if (n > 8192) n = 8192;
       for (let i = 0; i < n; i++) writeXYZ(ys[i], xs[i], i);
       if (sr <= RIVER_WIDE_MAX) {
         const base = wvi;
@@ -1563,7 +1558,6 @@ export function createEarthGlobe(canvas, options = {}) {
             wTan[vi + 2] = tz;
             wSide[wvi] = s === 0 ? 1 : -1;
             wRank[wvi] = sr;
-            wEnd[wvi] = i === 0 ? -1 : i === n - 1 ? 1 : 0;
             wvi += 1;
           }
         }
@@ -1602,7 +1596,6 @@ export function createEarthGlobe(canvas, options = {}) {
       geo.setAttribute("aTan", new THREE.BufferAttribute(wTan, 3));
       geo.setAttribute("aSide", new THREE.BufferAttribute(wSide, 1));
       geo.setAttribute("aRank", new THREE.BufferAttribute(wRank, 1));
-      geo.setAttribute("aEnd", new THREE.BufferAttribute(wEnd, 1));
       geo.setIndex(new THREE.BufferAttribute(wIdx, 1));
       const wide = new THREE.Mesh(geo, makeRiverWideMaterial());
       wide.renderOrder = 2;
