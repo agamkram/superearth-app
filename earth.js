@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e242";
+export const BUILD = "e243";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1341,8 +1341,8 @@ export function createEarthGlobe(canvas, options = {}) {
     riverLines = null;
   }
 
-  /** Ranks 1-6 get real width. 7-12 stay one-pixel lines. */
-  const RIVER_WIDE_MAX = 6;
+  /** Ranks 1-8 get real width. 9-12 stay one-pixel lines. */
+  const RIVER_WIDE_MAX = 8;
 
   function riverFrag() {
     return /* glsl */ `
@@ -1379,9 +1379,9 @@ export function createEarthGlobe(canvas, options = {}) {
         void main() {
           vWorldN = normalize(mat3(modelMatrix) * normalize(position));
           vRank = aRank;
-          float t = clamp((aRank - 1.0) / 11.0, 0.0, 1.0);
-          float worldHalf = 0.000045 * (13.0 - aRank) * (13.0 - aRank) / 12.0;
-          float minPx = mix(2.0, 1.15, t);
+          float t = clamp((aRank - 1.0) / 7.0, 0.0, 1.0);
+          float worldHalf = mix(0.00020, 0.00009, t);
+          float minPx = mix(2.0, 1.25, t);
           vec3 n = normalize(position);
           vec3 tan = aTan - n * dot(aTan, n);
           float tanLen = length(tan);
@@ -1391,7 +1391,7 @@ export function createEarthGlobe(canvas, options = {}) {
           float z = max(abs(viewPos.z), 0.02);
           float pixelWorld = uPixelToWorld * z;
           float halfW = max(worldHalf, minPx * 0.5 * pixelWorld);
-          halfW = min(halfW, 0.004 * z);
+          halfW = min(halfW, 0.0022 * z);
           viewPos.xyz += mat3(modelViewMatrix) * (side * aSide * halfW);
           gl_Position = projectionMatrix * viewPos;
         }
