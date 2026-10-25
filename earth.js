@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e296";
+export const BUILD = "e297";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1783,7 +1783,6 @@ export function createEarthGlobe(canvas, options = {}) {
   let grid30 = null;
   let grid15 = null;
   let grid5 = null;
-  let grid2 = null;
   let grid1 = null;
   let geoLineMesh = null;
   let geoLinePos = null;
@@ -1883,12 +1882,9 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function ensureFineGrid() {
-    if (!gridGroup || grid2) return;
-    grid2 = makeLineObj(collectGridLines(2, 5), 0.15, "grid-2");
-    grid1 = makeLineObj(collectGridLines(1, 2), 0.11, "grid-1");
-    grid2.visible = false;
+    if (!gridGroup || grid1) return;
+    grid1 = makeLineObj(collectGridLines(1, 5), 0.12, "grid-1");
     grid1.visible = false;
-    gridGroup.add(grid2);
     gridGroup.add(grid1);
   }
 
@@ -1991,8 +1987,7 @@ export function createEarthGlobe(canvas, options = {}) {
     if (gridOn && zoomIn > 0.5) ensureFineGrid();
     if (grid15) grid15.visible = gridOn && zoomIn > 0.16;
     if (grid5) grid5.visible = gridOn && zoomIn > 0.36;
-    if (grid2) grid2.visible = gridOn && zoomIn > 0.56;
-    if (grid1) grid1.visible = gridOn && zoomIn > 0.76;
+    if (grid1) grid1.visible = gridOn && zoomIn > 0.55;
     if (!gridLabels.length) return;
     const h = Math.max(height || window.innerHeight || 1, 1);
     const vFov = THREE.MathUtils.degToRad(camera.fov);
@@ -2047,7 +2042,6 @@ export function createEarthGlobe(canvas, options = {}) {
     grid30 = null;
     grid15 = null;
     grid5 = null;
-    grid2 = null;
     grid1 = null;
     geoLineMesh = null;
     gridLabels = [];
