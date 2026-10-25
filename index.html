@@ -1075,6 +1075,7 @@
       max-width: min(240px, calc(100% - 20px));
       pointer-events: auto;
       touch-action: manipulation;
+      cursor: pointer;
     }
 
     .grid-tap[hidden] {
@@ -1247,7 +1248,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e298</span>
+    <span class="build-mark" id="build-mark">e299</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1498,7 +1499,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe, BUILD } from "./earth.js?v=e298";
+    import { createEarthGlobe, BUILD } from "./earth.js?v=e299";
     import {
       loadPlaces,
       placeAt,
@@ -1669,6 +1670,7 @@
     const gridTapLon = document.getElementById("grid-tap-lon");
     const gridTapElev = document.getElementById("grid-tap-elev");
     let gridTapElevSeq = 0;
+    let lastGridPick = null;
 
     const LINE_CARDS = {
       equator: {
@@ -1826,8 +1828,24 @@
 
     function closeGridTap() {
       gridTapElevSeq += 1;
+      lastGridPick = null;
       if (gridTap) gridTap.hidden = true;
       globeRef.current?.hideTapMark?.();
+    }
+
+    function sameGridPick(ll) {
+      if (!lastGridPick || !ll) return false;
+      const px = Math.hypot(
+        (ll.sx || 0) - lastGridPick.sx,
+        (ll.sy || 0) - lastGridPick.sy
+      );
+      if (px < 80) return true;
+      let dlon = ll.lon - lastGridPick.lon;
+      while (dlon > 180) dlon -= 360;
+      while (dlon < -180) dlon += 360;
+      const clat = Math.cos((ll.lat * Math.PI) / 180);
+      const deg = Math.hypot(ll.lat - lastGridPick.lat, dlon * clat);
+      return deg < 1.6;
     }
 
     function fmtElev(m) {
@@ -1866,6 +1884,12 @@
       gridTapElev.textContent = "…";
       gridTap.hidden = false;
       globeRef.current?.setTapMark?.(ll.lat, ll.lon);
+      lastGridPick = {
+        lat: ll.lat,
+        lon: ll.lon,
+        sx: ll.sx || 0,
+        sy: ll.sy || 0,
+      };
       placeGridTapBox(ll.sx || window.innerWidth / 2, ll.sy || window.innerHeight / 2);
       const seq = ++gridTapElevSeq;
       const lat = Number(ll.lat).toFixed(4);
@@ -1920,6 +1944,11 @@
       closeLineSheet();
     }
 
+    gridTap?.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      closeGridTap();
+    });
     placeScrim?.addEventListener("click", onPlaceDismiss);
     poleScrim?.addEventListener("click", onPoleDismiss);
     lineScrim?.addEventListener("click", onLineDismiss);
@@ -2734,6 +2763,7 @@
             closeGridTap();
             return;
           }
+          if (gridTap && !gridTap.hidden && sameGridPick(ll)) return;
           openGridTap(ll);
           return;
         }

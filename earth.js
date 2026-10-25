@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e298";
+export const BUILD = "e299";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -3748,6 +3748,22 @@ export function createEarthGlobe(canvas, options = {}) {
     for (const id of roots) {
       const root = document.getElementById(id);
       if (!root || root.hasAttribute("hidden")) continue;
+      if (id === "grid-tap") {
+        const r = root.getBoundingClientRect();
+        if (
+          pt.x >= r.left &&
+          pt.x <= r.right &&
+          pt.y >= r.top &&
+          pt.y <= r.bottom
+        ) {
+          const area = Math.max(1, r.width * r.height);
+          if (area < bestArea) {
+            best = root;
+            bestArea = area;
+          }
+        }
+        continue;
+      }
       const ctrls = root.querySelectorAll(
         "button,input,select,textarea,a,.leaflet-container,.fact-sheet-scrim"
       );
