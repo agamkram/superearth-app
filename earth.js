@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e278";
+export const BUILD = "e279";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -892,6 +892,7 @@ export function createEarthGlobe(canvas, options = {}) {
       capDot.scale.setScalar((CAP_PX * worldPerPx) / (CAP_GEO_R * 2));
       updateCapDotFacing();
     }
+    updateGridLabels(worldPerPx, dist);
   }
 
   function makeLocReticle() {
@@ -1663,7 +1664,12 @@ export function createEarthGlobe(canvas, options = {}) {
   let axisMesh = null;
   let geoLineMesh = null;
   let geoLinePos = null;
+  let gridLabels = [];
   let gridOn = false;
+  const LABEL_R = RADIUS * 1.0042;
+  const LABEL_H = 0.02;
+  const LABEL_PX_FAR = 26;
+  const LABEL_PX_NEAR = 16;
 
   function pushArc(positions, pts) {
     for (let i = 1; i < pts.length; i++) {
@@ -1735,9 +1741,109 @@ export function createEarthGlobe(canvas, options = {}) {
     gridGroup.add(makeLineObj(fine, 0.32, "grid-fine"));
     gridGroup.add(axisMesh);
     attachGeoLineMesh();
+    attachGridLabels();
     gridGroup.visible = gridOn;
     if (mesh) mesh.add(gridGroup);
     updatePoleScale();
+  }
+
+  function makeGridLabel(text) {
+    const pad = 18;
+    const c = document.createElement("canvas");
+    const ctx = c.getContext("2d");
+    ctx.font = "600 36px system-ui, -apple-system, sans-serif";
+    const tw = Math.ceil(ctx.measureText(text).width);
+    const w = Math.max(72, tw + pad * 2);
+    const h = 64;
+    c.width = w;
+    c.height = h;
+    ctx.font = "600 36px system-ui, -apple-system, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(6, 10, 18, 0.58)";
+    ctx.beginPath();
+    if (typeof ctx.roundRect === "function") {
+      ctx.roundRect(4, 10, w - 8, h - 20, 16);
+    } else {
+      ctx.rect(4, 10, w - 8, h - 20);
+    }
+    ctx.fill();
+    ctx.fillStyle = "#d4deec";
+    ctx.fillText(text, w / 2, h / 2 + 1);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    const mat = new THREE.SpriteMaterial({
+      map: tex,
+      transparent: true,
+      depthTest: true,
+      depthWrite: false,
+      toneMapped: false,
+      sizeAttenuation: true,
+    });
+    const spr = new THREE.Sprite(mat);
+    spr.name = "grid-label";
+    spr.renderOrder = 7;
+    spr.userData.labelTex = tex;
+    spr.userData.aspect = w / h;
+    return spr;
+  }
+
+  function placeGridLabel(spr, lat, lon) {
+    spr.position.copy(latLonToLocal(lat, lon, LABEL_R));
+  }
+
+  function attachGridLabels() {
+    gridLabels = [];
+    if (!gridGroup) return;
+    const latLon = 20;
+    const nameLon = -30;
+    const spots = [
+      [90, latLon, "90°N"],
+      [60, latLon, "60°N"],
+      [30, latLon, "30°N"],
+      [0, latLon, "0°"],
+      [-30, latLon, "30°S"],
+      [-60, latLon, "60°S"],
+      [-90, latLon, "90°S"],
+      [0, 0, "0°"],
+      [0, 90, "90°E"],
+      [0, 180, "180°"],
+      [0, -90, "90°W"],
+      [0, nameLon, "Equator"],
+      [23.44, nameLon, "Cancer"],
+      [-23.44, nameLon, "Capricorn"],
+      [66.56, nameLon, "Arctic"],
+      [-66.56, nameLon, "Antarctic"],
+    ];
+    for (const [lat, lon, text] of spots) {
+      const spr = makeGridLabel(text);
+      placeGridLabel(spr, lat, lon);
+      gridGroup.add(spr);
+      gridLabels.push(spr);
+    }
+  }
+
+  function updateGridLabels(worldPerPx, dist) {
+    if (!gridLabels.length) return;
+    if (worldPerPx == null) {
+      dist = Math.max(camDist(), MIN_DIST);
+      const h = Math.max(height || window.innerHeight || 1, 1);
+      const vFov = THREE.MathUtils.degToRad(BASE_FOV);
+      worldPerPx = (dist * 2 * Math.tan(vFov / 2)) / h;
+    }
+    const span = Math.max(homeDist - MIN_DIST, 0.01);
+    const zoomIn = 1 - THREE.MathUtils.clamp((dist - MIN_DIST) / span, 0, 1);
+    const px = THREE.MathUtils.lerp(LABEL_PX_FAR, LABEL_PX_NEAR, zoomIn);
+    const s = (px * worldPerPx) / LABEL_H;
+    _offset.copy(camera.position).sub(target).normalize();
+    for (const mark of gridLabels) {
+      mark.getWorldPosition(_pinOut);
+      _pinOut.sub(target).normalize();
+      mark.visible = gridOn && _pinOut.dot(_offset) > 0.08;
+      const aspect = mark.userData.aspect || 1;
+      mark.scale.set(s * aspect, s, 1);
+    }
   }
 
   function attachGeoLineMesh() {
@@ -1767,12 +1873,14 @@ export function createEarthGlobe(canvas, options = {}) {
     if (!gridGroup) return;
     if (gridGroup.parent) gridGroup.parent.remove(gridGroup);
     gridGroup.traverse((obj) => {
+      obj.userData?.labelTex?.dispose();
       obj.geometry?.dispose();
       obj.material?.dispose();
     });
     gridGroup = null;
     axisMesh = null;
     geoLineMesh = null;
+    gridLabels = [];
   }
 
   /** 0 = upright (poles up); 1 = season in the axle (tip = today's sun declination). */
@@ -3835,6 +3943,7 @@ export function createEarthGlobe(canvas, options = {}) {
     syncEarth();
     updateTiles();
     syncRiverPixels();
+    if (gridOn) updateGridLabels();
     renderer.render(scene, camera);
     // Idle when still. Real Earth spin is invisible frame-to-frame; the page
     // refreshes Live on a timer. Keep looping only while dragging or tipping.
