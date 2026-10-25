@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e262";
+export const BUILD = "e263";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1260,7 +1260,7 @@ export function createEarthGlobe(canvas, options = {}) {
         void main() {
           float ndl = dot(normalize(vWorldN), normalize(uSunDir));
           float day = uSunOn * smoothstep(-0.04, 0.20, ndl);
-          vec3 navy = vec3(0.007, 0.032, 0.138);
+          vec3 navy = vec3(0.016, 0.084, 0.26);
           gl_FragColor = vec4(mix(navy * 0.08, navy, day), 1.0);
           #include <colorspace_fragment>
         }
@@ -1355,7 +1355,7 @@ export function createEarthGlobe(canvas, options = {}) {
       void main() {
         float ndl = dot(normalize(vWorldN), normalize(uSunDir));
         float day = uSunOn * smoothstep(-0.04, 0.20, ndl);
-        vec3 navy = vec3(0.007, 0.032, 0.138);
+        vec3 navy = vec3(0.016, 0.084, 0.26);
         gl_FragColor = vec4(mix(navy * 0.08, navy, day), 1.0);
         #include <colorspace_fragment>
       }
