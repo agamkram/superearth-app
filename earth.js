@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e297";
+export const BUILD = "e298";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1984,10 +1984,10 @@ export function createEarthGlobe(canvas, options = {}) {
     dist = dist == null ? Math.max(camDist(), MIN_DIST) : dist;
     const span = Math.max(homeDist - MIN_DIST, 0.01);
     const zoomIn = 1 - THREE.MathUtils.clamp((dist - MIN_DIST) / span, 0, 1);
-    if (gridOn && zoomIn > 0.5) ensureFineGrid();
-    if (grid15) grid15.visible = gridOn && zoomIn > 0.16;
-    if (grid5) grid5.visible = gridOn && zoomIn > 0.36;
-    if (grid1) grid1.visible = gridOn && zoomIn > 0.55;
+    if (gridOn && zoomIn > 0.72) ensureFineGrid();
+    if (grid15) grid15.visible = gridOn && zoomIn > 0.25;
+    if (grid5) grid5.visible = gridOn && zoomIn > 0.52;
+    if (grid1) grid1.visible = gridOn && zoomIn > 0.78;
     if (!gridLabels.length) return;
     const h = Math.max(height || window.innerHeight || 1, 1);
     const vFov = THREE.MathUtils.degToRad(camera.fov);
