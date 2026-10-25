@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e233";
+export const BUILD = "e234";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -743,6 +743,7 @@ export function createEarthGlobe(canvas, options = {}) {
     if (tileGroup) mesh.add(tileGroup);
     if (borderLines) mesh.add(borderLines);
     if (stateLines) mesh.add(stateLines);
+    if (lakeMesh) mesh.add(lakeMesh);
     if (gridGroup) mesh.add(gridGroup);
     earthTilt.add(mesh);
     ensureAtmosphere();
@@ -1261,6 +1262,103 @@ export function createEarthGlobe(canvas, options = {}) {
     if (stateLines) stateLines.visible = bordersOn;
     kick();
     return bordersOn;
+  }
+
+  /** Just outside zoom tiles so the fill covers the photo, under border lines. */
+  const LAKE_R = RADIUS * 1.0024;
+  let lakeMesh = null;
+
+  function disposeLakes() {
+    disposeLineMesh(lakeMesh);
+    lakeMesh = null;
+  }
+
+  function makeLakeMaterial() {
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        uSunDir: sunDirUniform,
+        uSunOn: sunOnUniform,
+      },
+      vertexShader: /* glsl */ `
+        varying vec3 vWorldN;
+        void main() {
+          vWorldN = normalize(mat3(modelMatrix) * normalize(position));
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        #include <common>
+        uniform vec3 uSunDir;
+        uniform float uSunOn;
+        varying vec3 vWorldN;
+        void main() {
+          float ndl = dot(normalize(vWorldN), normalize(uSunDir));
+          float day = uSunOn * smoothstep(-0.04, 0.20, ndl);
+          vec3 navy = vec3(0.0038, 0.0191, 0.0577);
+          gl_FragColor = vec4(mix(navy * 0.08, navy, day), 1.0);
+          #include <colorspace_fragment>
+        }
+      `,
+      toneMapped: false,
+      side: THREE.DoubleSide,
+      depthWrite: true,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    });
+  }
+
+  function attachLakeMesh(buf) {
+    const view = new DataView(buf);
+    if (view.byteLength < 12) return;
+    const mag = String.fromCharCode(
+      view.getUint8(0),
+      view.getUint8(1),
+      view.getUint8(2),
+      view.getUint8(3)
+    );
+    if (mag !== "LK10") return;
+    let o = 4;
+    const nVerts = view.getUint32(o, true);
+    o += 4;
+    const lonlat = new Float32Array(buf, o, nVerts * 2);
+    o += nVerts * 8;
+    const pos = new Float32Array(nVerts * 3);
+    const _p = new THREE.Vector3();
+    for (let i = 0; i < nVerts; i++) {
+      _p.copy(latLonToLocal(lonlat[i * 2 + 1], lonlat[i * 2], LAKE_R));
+      pos[i * 3] = _p.x;
+      pos[i * 3 + 1] = _p.y;
+      pos[i * 3 + 2] = _p.z;
+    }
+    const nIdx = view.getUint32(o, true);
+    o += 4;
+    const idx = new Uint32Array(buf.slice(o, o + nIdx * 4));
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    geo.computeBoundingSphere();
+    const meshLakes = new THREE.Mesh(geo, makeLakeMaterial());
+    meshLakes.name = "lakes";
+    meshLakes.renderOrder = 2;
+    meshLakes.frustumCulled = false;
+    if (mesh) mesh.add(meshLakes);
+    return meshLakes;
+  }
+
+  function loadLakes() {
+    fetch(new URL(`./lakes-10m.bin?v=${TEX_VER}`, import.meta.url))
+      .then((res) => {
+        if (!res.ok) throw new Error("lakes " + res.status);
+        return res.arrayBuffer();
+      })
+      .then((buf) => {
+        if (disposed) return;
+        disposeLakes();
+        lakeMesh = attachLakeMesh(buf);
+        kick();
+      })
+      .catch(() => {});
   }
 
   /** Classic globe grid: polar axis, equator, 15° lat/lon lines. */
@@ -3421,6 +3519,7 @@ export function createEarthGlobe(canvas, options = {}) {
   loadLow();
   loadSkyMoon();
   loadBorders();
+  loadLakes();
   buildGrid();
   fitToHost();
   applyHomeFraming();
@@ -3467,6 +3566,7 @@ export function createEarthGlobe(canvas, options = {}) {
       disposeCapDot();
       disposeLocPin();
       disposeBorders();
+      disposeLakes();
       disposeGrid();
       if (mesh) {
         mesh.geometry.dispose();
