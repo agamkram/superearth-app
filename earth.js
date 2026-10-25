@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e268";
+export const BUILD = "e269";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1383,9 +1383,9 @@ export function createEarthGlobe(canvas, options = {}) {
           vRank = aRank;
           float farPx = 0.3;
           float nearPx = 1.4;
-          if (aRank <= 2.5) { farPx = 0.8; nearPx = 1.5; }
-          else if (aRank <= 5.5) { farPx = 0.6; nearPx = 1.4; }
-          else if (aRank <= 8.5) { farPx = 0.4; nearPx = 1.4; }
+          if (aRank <= 2.5) farPx = 0.8;
+          else if (aRank <= 5.5) farPx = 0.6;
+          else if (aRank <= 8.5) farPx = 0.4;
           float minPx = mix(farPx, nearPx, clamp(uZoomIn, 0.0, 1.0));
           vec3 n = normalize(position);
           vec3 tan = aTan - n * dot(aTan, n);
