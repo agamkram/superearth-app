@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e252";
+export const BUILD = "e253";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1378,10 +1378,10 @@ export function createEarthGlobe(canvas, options = {}) {
         void main() {
           vWorldN = normalize(mat3(modelMatrix) * normalize(position));
           vRank = aRank;
-          float minPx = 0.75;
-          if (aRank <= 2.5) minPx = 1.5;
-          else if (aRank <= 5.5) minPx = 1.15;
-          else if (aRank <= 8.5) minPx = 0.9;
+          float minPx = 0.5;
+          if (aRank <= 2.5) minPx = 1.25;
+          else if (aRank <= 5.5) minPx = 1.0;
+          else if (aRank <= 8.5) minPx = 0.75;
           vec3 n = normalize(position);
           vec3 tan = aTan - n * dot(aTan, n);
           float tanLen = length(tan);
