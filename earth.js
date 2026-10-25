@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e291";
+export const BUILD = "e292";
 const TEX_VER = BUILD;
 
 const LOD = {
