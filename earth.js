@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e276";
+export const BUILD = "e277";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -1651,6 +1651,8 @@ export function createEarthGlobe(canvas, options = {}) {
 
   /** Classic globe grid: polar axis, equator, 15° lat/lon lines. */
   const GRID_R = RADIUS * 1.0032;
+  /** Natural Earth tropics, polar circles, equator, date line. Just outside the 15° net. */
+  const GEO_R = RADIUS * 1.0034;
   /** Visible end past each pole was 0.07R; ×3 → 0.21R. Width 2px (was 1px). */
   const AXIS_EXT = RADIUS * (1 + 0.07 * 3);
   const AXIS_RADIUS = 0.01;
@@ -1659,6 +1661,8 @@ export function createEarthGlobe(canvas, options = {}) {
   const GRID_SEGS = 128;
   let gridGroup = null;
   let axisMesh = null;
+  let geoLineMesh = null;
+  let geoLinePos = null;
   let gridOn = false;
 
   function pushArc(positions, pts) {
@@ -1730,9 +1734,33 @@ export function createEarthGlobe(canvas, options = {}) {
     gridGroup.name = "globe-grid";
     gridGroup.add(makeLineObj(fine, 0.32, "grid-fine"));
     gridGroup.add(axisMesh);
+    attachGeoLineMesh();
     gridGroup.visible = gridOn;
     if (mesh) mesh.add(gridGroup);
     updatePoleScale();
+  }
+
+  function attachGeoLineMesh() {
+    geoLineMesh = null;
+    if (!gridGroup || !geoLinePos || !geoLinePos.length) return;
+    geoLineMesh = makeLineObj(geoLinePos, 0.62, "geo-lines");
+    geoLineMesh.renderOrder = 3;
+    gridGroup.add(geoLineMesh);
+  }
+
+  function loadGeoLines() {
+    fetch(new URL(`./geo-lines-10m.bin?v=${TEX_VER}`, import.meta.url))
+      .then((res) => {
+        if (!res.ok) throw new Error("geo-lines " + res.status);
+        return res.arrayBuffer();
+      })
+      .then((buf) => {
+        if (disposed) return;
+        geoLinePos = positionsFromBorderBin(buf, GEO_R);
+        attachGeoLineMesh();
+        kick();
+      })
+      .catch(() => {});
   }
 
   function disposeGrid() {
@@ -1744,6 +1772,7 @@ export function createEarthGlobe(canvas, options = {}) {
     });
     gridGroup = null;
     axisMesh = null;
+    geoLineMesh = null;
   }
 
   /** 0 = upright (poles up); 1 = season in the axle (tip = today's sun declination). */
@@ -3819,6 +3848,7 @@ export function createEarthGlobe(canvas, options = {}) {
   loadLakes();
   loadRivers();
   buildGrid();
+  loadGeoLines();
   fitToHost();
   applyHomeFraming();
   kick();
