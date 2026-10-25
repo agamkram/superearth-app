@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e237";
+export const BUILD = "e238";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -709,6 +709,7 @@ export function createEarthGlobe(canvas, options = {}) {
     if (borderLines) mesh.add(borderLines);
     if (stateLines) mesh.add(stateLines);
     if (lakeMesh) mesh.add(lakeMesh);
+    if (riverLines) mesh.add(riverLines);
     if (gridGroup) mesh.add(gridGroup);
     earthTilt.add(mesh);
     ensureAtmosphere();
@@ -1321,6 +1322,77 @@ export function createEarthGlobe(canvas, options = {}) {
         if (disposed) return;
         disposeLakes();
         lakeMesh = attachLakeMesh(buf);
+        kick();
+      })
+      .catch(() => {});
+  }
+
+  /** Between lake fill and country lines. */
+  const RIVER_R = RADIUS * 1.0026;
+  let riverLines = null;
+
+  function disposeRivers() {
+    disposeLineMesh(riverLines);
+    riverLines = null;
+  }
+
+  function makeRiverMaterial() {
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        uSunDir: sunDirUniform,
+        uSunOn: sunOnUniform,
+      },
+      vertexShader: /* glsl */ `
+        varying vec3 vWorldN;
+        void main() {
+          vWorldN = normalize(mat3(modelMatrix) * normalize(position));
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        #include <common>
+        uniform vec3 uSunDir;
+        uniform float uSunOn;
+        varying vec3 vWorldN;
+        void main() {
+          float ndl = dot(normalize(vWorldN), normalize(uSunDir));
+          float day = uSunOn * smoothstep(-0.04, 0.20, ndl);
+          vec3 water = vec3(0.015, 0.07, 0.18);
+          gl_FragColor = vec4(mix(water * 0.15, water, day), 1.0);
+          #include <colorspace_fragment>
+        }
+      `,
+      toneMapped: false,
+      depthWrite: false,
+    });
+  }
+
+  function attachRiverLines(buf) {
+    const positions = positionsFromBorderBin(buf, RIVER_R);
+    if (!positions.length) return null;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(new Float32Array(positions), 3)
+    );
+    const lines = new THREE.LineSegments(geo, makeRiverMaterial());
+    lines.name = "rivers";
+    lines.renderOrder = 2;
+    lines.frustumCulled = false;
+    if (mesh) mesh.add(lines);
+    return lines;
+  }
+
+  function loadRivers() {
+    fetch(new URL(`./rivers-10m.bin?v=${TEX_VER}`, import.meta.url))
+      .then((res) => {
+        if (!res.ok) throw new Error("rivers " + res.status);
+        return res.arrayBuffer();
+      })
+      .then((buf) => {
+        if (disposed) return;
+        disposeRivers();
+        riverLines = attachRiverLines(buf);
         kick();
       })
       .catch(() => {});
@@ -3483,6 +3555,7 @@ export function createEarthGlobe(canvas, options = {}) {
   loadSkyMoon();
   loadBorders();
   loadLakes();
+  loadRivers();
   buildGrid();
   fitToHost();
   applyHomeFraming();
@@ -3530,6 +3603,7 @@ export function createEarthGlobe(canvas, options = {}) {
       disposeLocPin();
       disposeBorders();
       disposeLakes();
+      disposeRivers();
       disposeGrid();
       if (mesh) {
         mesh.geometry.dispose();
