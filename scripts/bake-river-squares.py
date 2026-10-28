@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Split rivers so the phone only keeps the water it can see.
 
-rivers-big.bin   reaches at or above 1000 m3/s, the whole Earth
-rivers-mid/      20–1000 m3/s, eight by four squares (same grid as tiles-16)
-rivers-close/    every smaller HydroRIVERS reach, forty by twenty squares
-                 (same grid as tiles-86). The big stems stay in rivers-big.bin.
+rivers-big.bin   rivers at or above 1000 m3/s, the whole Earth
+rivers-mid/      15–1000 m3/s, eight by four squares (same grid as tiles-16)
+rivers-close/    every smaller river, forty by twenty squares
+                 (same grid as tiles-86). Rivers of 1000 and up stay in rivers-big.bin.
+
+rivers-10m.bin holds the rivers from 20 up. The opening view also includes
+15 to 20, read from HydroRIVERS and clipped on the same lakes.
 
 A reach that crosses a square is cut on the square edge so the pieces meet.
 A reach that crosses a lake stops at the shore. The same lakes the globe draws.
@@ -27,6 +30,9 @@ BIG_OUT = ROOT / "rivers-big.bin"
 MID_DIR = ROOT / "rivers-mid"
 CLOSE_DIR = ROOT / "rivers-close"
 BIG_FLOW = 1000.0
+# rivers-10m.bin starts at 20. The opening view goes down to 15.
+BIN_FLOW = 20.0
+OPENING_FLOW = 15.0
 
 HEAD = struct.Struct("<BxxxI")
 PT = struct.Struct("<ff")
@@ -489,8 +495,113 @@ def write_big(lines):
     )
 
 
-def split_ranked_bin():
-    """The file already on disk is every reach at or above 20 m3/s."""
+def load_squares(squares):
+    """Read squares already written so a later write does not drop them."""
+    if not squares.folder.is_dir():
+        return
+    for path in sorted(squares.folder.glob("c*r*.bin")):
+        stem = path.stem
+        c = int(stem.split("r")[0][1:])
+        r = int(stem.split("r")[1])
+        data = path.read_bytes()
+        if data[:4] != b"RV10":
+            raise SystemExit(f"{path.name} is not RV10")
+        n = struct.unpack_from("<I", data, 4)[0]
+        o = 8
+        for _ in range(n):
+            rank = data[o]
+            o += 4
+            np = struct.unpack_from("<I", data, o)[0]
+            o += 4
+            coords = []
+            for _k in range(np):
+                lon, lat = struct.unpack_from("<ff", data, o)
+                o += 8
+                coords.append((lon, lat))
+            squares.add(c, r, rank, coords)
+
+
+def add_flow_band(squares, lo, hi):
+    """Add rivers whose flow is at least lo and below hi."""
+    added = 0
+    for folder in regions():
+        t0 = time.time()
+        shps = list(folder.glob("*.shp"))
+        if not shps:
+            raise SystemExit(f"no shapefile in {folder}")
+        shp_path = shps[0]
+        header_len, rec_len, (flow_off, flow_len) = fields_of(shp_path.with_suffix(".dbf"))
+        region_added = 0
+        with open(shp_path, "rb") as shp, open(shp_path.with_suffix(".dbf"), "rb") as dbf:
+            shp.seek(100)
+            i = 0
+            while True:
+                hdr = shp.read(8)
+                if len(hdr) < 8:
+                    break
+                _rec, words = struct.unpack(">II", hdr)
+                content = shp.read(words * 2)
+                dbf.seek(header_len + i * rec_len)
+                flag = dbf.read(1)
+                raw = b""
+                if flag and flag != b"*":
+                    dbf.seek(header_len + i * rec_len + flow_off)
+                    raw = dbf.read(flow_len)
+                i += 1
+                if not content or len(content) < 44:
+                    continue
+                if struct.unpack_from("<i", content, 0)[0] != 3:
+                    continue
+                try:
+                    flow = float(raw.strip() or "0")
+                except ValueError:
+                    flow = 0.0
+                if flow < lo or flow >= hi:
+                    continue
+                nparts, npts = struct.unpack_from("<ii", content, 36)
+                if nparts < 1 or npts < 2:
+                    continue
+                parts_at = 44
+                xy_at = parts_at + 4 * nparts
+                parts = struct.unpack_from("<" + "i" * nparts, content, parts_at)
+                ends = list(parts[1:]) + [npts]
+                for a, b in zip(parts, ends):
+                    if b - a < 2:
+                        continue
+                    coords = []
+                    base = xy_at + a * 16
+                    for k in range(b - a):
+                        lon, lat = struct.unpack_from("<dd", content, base + k * 16)
+                        coords.append((lon, lat))
+                    for piece in lake_mask().cut(coords):
+                        squares.add_clipped(piece, 12)
+                    region_added += 1
+                    added += 1
+        print(
+            f"  {shp_path.name}: {region_added} rivers from {lo:g} to {hi:g} "
+            f"in {time.time() - t0:.0f}s",
+            flush=True,
+        )
+    print(f"  added {added} rivers from {lo:g} to {hi:g}", flush=True)
+    if added == 0:
+        raise SystemExit(f"no rivers from {lo:g} to {hi:g}")
+    return added
+
+
+def extend_opening():
+    """Put rivers from 15 to 20 into the squares the opening view already draws."""
+    self_test()
+    mid = Squares(MID_DIR, 8, 4)
+    load_squares(mid)
+    before = mid.lines
+    print(f"opening squares already hold {before} rivers", flush=True)
+    add_flow_band(mid, OPENING_FLOW, BIN_FLOW)
+    print(f"  opening squares {before} -> {mid.lines}", flush=True)
+    mid.write()
+
+
+def split_ranked_bin(write_mid=True):
+    """The file already on disk is every river at or above 20 m3/s."""
     data = SRC_BIN.read_bytes()
     if data[:4] != b"RV10":
         raise SystemExit(f"{SRC_BIN.name} is not RV10")
@@ -516,7 +627,9 @@ def split_ranked_bin():
             for piece in kept:
                 mid.add_clipped(piece, 12)
     write_big(big)
-    mid.write()
+    if write_mid:
+        mid.write()
+    return mid
 
 
 def fields_of(dbf_path):
@@ -635,7 +748,10 @@ def self_test():
 def main():
     self_test()
     print("big and mid from the 20 m3/s file", flush=True)
-    split_ranked_bin()
+    mid = split_ranked_bin(write_mid=False)
+    print("rivers from 15 to 20", flush=True)
+    add_flow_band(mid, OPENING_FLOW, BIN_FLOW)
+    mid.write()
     print("close from HydroRIVERS", flush=True)
     bake_close()
 

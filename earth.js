@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e336";
+export const BUILD = "e337";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -1549,9 +1549,9 @@ export function createEarthGlobe(canvas, options = {}) {
   /** Between lake fill and country lines. */
   const RIVER_R = RADIUS * 1.0026;
   /**
-   * Big rivers (1000 m3/s and up) stay on for the whole Earth.
-   * The 20 m3/s set stays on at every zoom, including zoomed out, for the
-   * face of the earth in view. Every smaller river loads only up close.
+   * Rivers of 1000 m3/s and up stay on for the whole Earth.
+   * Rivers of 15 m3/s and up stay on at every zoom, including the opening
+   * view, for the face of the earth in view. Every smaller river loads only up close.
    */
   const RIVER_MID = { label: "mid", folder: "rivers-mid", cols: 8, rows: 4, onDist: 2.5 };
   const RIVER_CLOSE = { label: "close", folder: "rivers-close", cols: 40, rows: 20, onDist: 1.5 };
@@ -2009,7 +2009,7 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function riverViewKeys(level, at, samples, dist) {
-    // The 20 m3/s squares are 45° wide. The on-screen sample misses
+    // The 15 m3/s squares are 45° wide. The on-screen sample misses
     // whole rivers between those points, so cover the face in view.
     if (level === RIVER_MID) return visibleCapKeys(level, at, dist);
     return keysOnScreen(level, at, samples);
