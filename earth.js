@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e334";
+export const BUILD = "e335";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -342,7 +342,25 @@ export function createEarthGlobe(canvas, options = {}) {
   const cloudSkip = new Set();
   const cloudFails = new Map();
   let cloudRetryAt = 0;
-  const CLOUD_LEVEL = { label: "cloud", cols: 4, rows: 2 };
+  let cloudLevelLabel = "";
+  // Same 8192 cloud picture. Far squares are large. Close squares are small
+  // pieces of that picture, so a zoomed-in view does not hold a 90° square.
+  const CLOUD_FAR = { label: "cfar", cols: 4, rows: 2 };
+  const CLOUD_MID = { label: "cmid", cols: 8, rows: 4, onDist: 2.5 };
+  const CLOUD_CLOSE = { label: "cclose", cols: 16, rows: 8, onDist: 1.5 };
+
+  function pickCloudLevel(dist) {
+    if (dist <= CLOUD_CLOSE.onDist) return CLOUD_CLOSE;
+    if (dist <= CLOUD_MID.onDist) return CLOUD_MID;
+    return CLOUD_FAR;
+  }
+
+  function cloudLevelByLabel(label) {
+    if (label === CLOUD_CLOSE.label) return CLOUD_CLOSE;
+    if (label === CLOUD_MID.label) return CLOUD_MID;
+    if (label === CLOUD_FAR.label) return CLOUD_FAR;
+    return null;
+  }
   let tileGroup = null;
   const tileLive = new Map();
   const tileLoading = new Set();
@@ -732,6 +750,7 @@ export function createEarthGlobe(canvas, options = {}) {
     if (otherStateLines) mesh.add(otherStateLines);
     if (lakeMesh) mesh.add(lakeMesh);
     if (riverLines) mesh.add(riverLines);
+    if (riverGroup) mesh.add(riverGroup);
     if (gridGroup) mesh.add(gridGroup);
     mesh.renderOrder = photosOn ? 0 : -6;
     earthTilt.add(mesh);
@@ -1458,8 +1477,10 @@ export function createEarthGlobe(canvas, options = {}) {
         void main() {
           float ndl = dot(normalize(vWorldN), normalize(uSunDir));
           float day = uSunOn * smoothstep(-0.04, 0.20, ndl);
-          vec3 navy = vec3(0.064, 0.17, 0.371);
-          gl_FragColor = vec4(mix(navy * 0.08, navy, day), 1.0);
+          vec3 dayWater = vec3(0.064, 0.17, 0.371);
+          // Quiet slate so a lake reads on the black side without glowing.
+          vec3 nightWater = vec3(0.06, 0.11, 0.18);
+          gl_FragColor = vec4(mix(nightWater, dayWater, day), 1.0);
           #include <colorspace_fragment>
         }
       `,
@@ -1527,17 +1548,41 @@ export function createEarthGlobe(canvas, options = {}) {
 
   /** Between lake fill and country lines. */
   const RIVER_R = RADIUS * 1.0026;
+  /**
+   * Big rivers (1000 m3/s and up) stay on for the whole Earth.
+   * The 20 m3/s set loads per square from the middle zooms.
+   * Every smaller river loads per square only at the closest zoom.
+   */
+  const RIVER_MID = { label: "mid", folder: "rivers-mid", cols: 8, rows: 4, onDist: 2.5 };
+  const RIVER_CLOSE = { label: "close", folder: "rivers-close", cols: 40, rows: 20, onDist: 1.5 };
   let riverLines = null;
+  let riverGroup = null;
+  const riverLive = new Map();
+  const riverLoading = new Set();
+  const riverSkip = new Set();
+  let riverWanted = new Set();
+  let riverRetryAt = 0;
   let riversOn = true;
 
-  function disposeRivers() {
-    if (!riverLines) return;
-    riverLines.traverse((obj) => {
-      obj.geometry?.dispose();
-      obj.material?.dispose();
+  function disposeRiverObject(obj) {
+    if (!obj) return;
+    obj.traverse((child) => {
+      child.geometry?.dispose();
+      child.material?.dispose();
     });
-    if (riverLines.parent) riverLines.parent.remove(riverLines);
+    if (obj.parent) obj.parent.remove(obj);
+  }
+
+  function disposeRivers() {
+    disposeRiverObject(riverLines);
     riverLines = null;
+    for (const key of [...riverLive.keys()]) dropRiverSquare(key);
+    riverLive.clear();
+    riverLoading.clear();
+    riverSkip.clear();
+    riverWanted = new Set();
+    if (riverGroup && riverGroup.parent) riverGroup.parent.remove(riverGroup);
+    riverGroup = null;
   }
 
   /** Rank 1 grows as you zoom in. Every smaller river stays a 1 pixel line. */
@@ -1553,8 +1598,10 @@ export function createEarthGlobe(canvas, options = {}) {
       void main() {
         float ndl = dot(normalize(vWorldN), normalize(uSunDir));
         float day = uSunOn * smoothstep(-0.04, 0.20, ndl);
-        vec3 navy = vec3(0.064, 0.17, 0.371);
-        gl_FragColor = vec4(mix(navy * 0.08, navy, day), 1.0);
+        vec3 dayWater = vec3(0.064, 0.17, 0.371);
+        // Bright enough that a one-pixel river reads on Black Marble.
+        vec3 nightWater = vec3(0.24, 0.42, 0.60);
+        gl_FragColor = vec4(mix(nightWater, dayWater, day), 1.0);
         #include <colorspace_fragment>
       }
     `;
@@ -1663,7 +1710,7 @@ export function createEarthGlobe(canvas, options = {}) {
 
     const xs = [];
     const ys = [];
-    const xyz = new Float32Array(8192 * 3);
+    let xyz = new Float32Array(4096 * 3);
     const writeXYZ = (latDeg, lonDeg, i) => {
       const lat = THREE.MathUtils.degToRad(latDeg);
       const lon = THREE.MathUtils.degToRad(lonDeg);
@@ -1726,7 +1773,7 @@ export function createEarthGlobe(canvas, options = {}) {
     let tvi = 0;
 
     forEachPart((sr, n) => {
-      if (n > 8192) n = 8192;
+      if (n * 3 > xyz.length) xyz = new Float32Array(n * 3);
       for (let i = 0; i < n; i++) writeXYZ(ys[i], xs[i], i);
       if (sr <= RIVER_WIDE_MAX) {
         const base = wvi;
@@ -1825,9 +1872,10 @@ export function createEarthGlobe(canvas, options = {}) {
       geo.setAttribute("aRank", new THREE.BufferAttribute(wRank, 1));
       geo.setIndex(new THREE.BufferAttribute(wIdx, 1));
       dropGeometryLists(geo);
+      geo.computeBoundingSphere();
       const wide = new THREE.Mesh(geo, makeRiverWideMaterial());
       wide.renderOrder = 2;
-      wide.frustumCulled = false;
+      wide.frustumCulled = true;
       group.add(wide);
     }
     if (tvi > 0) {
@@ -1835,30 +1883,132 @@ export function createEarthGlobe(canvas, options = {}) {
       geo.setAttribute("position", new THREE.BufferAttribute(tPos, 3));
       geo.setAttribute("aRank", new THREE.BufferAttribute(tRank, 1));
       dropGeometryLists(geo);
+      geo.computeBoundingSphere();
       const thin = new THREE.LineSegments(geo, makeRiverThinMaterial());
       thin.renderOrder = 2;
-      thin.frustumCulled = false;
+      thin.frustumCulled = true;
       group.add(thin);
     }
     if (!group.children.length) return null;
-    if (mesh) mesh.add(group);
     return group;
   }
 
-  function loadRivers() {
-    fetch(new URL(`./rivers-10m.bin?v=${TEX_VER}`, import.meta.url))
+  function ensureRiverGroup() {
+    if (!riverGroup) {
+      riverGroup = new THREE.Group();
+      riverGroup.name = "river-squares";
+    }
+    if (mesh && riverGroup.parent !== mesh) mesh.add(riverGroup);
+    riverGroup.visible = riversOn;
+  }
+
+  function dropRiverSquare(key) {
+    const piece = riverLive.get(key);
+    if (!piece) return;
+    riverLive.delete(key);
+    disposeRiverObject(piece);
+  }
+
+  function riverKeyDist(key, level, at) {
+    const parts = key.split(":");
+    const { c0, r0 } = levelColRow(level, at.lon, at.lat);
+    const c = Number(parts[1]);
+    const r = Number(parts[2]);
+    const dc = Math.min(Math.abs(c - c0), level.cols - Math.abs(c - c0));
+    return dc + Math.abs(r - r0);
+  }
+
+  function loadRiverSquare(level, key) {
+    if (riverLive.has(key) || riverLoading.has(key) || riverSkip.has(key)) return;
+    const parts = key.split(":");
+    const c = Number(parts[1]);
+    const r = Number(parts[2]);
+    riverLoading.add(key);
+    fetch(new URL(`./${level.folder}/c${c}r${r}.bin?v=${TEX_VER}`, import.meta.url))
+      .then((res) => {
+        if (res.status === 404) return null;
+        if (!res.ok) throw new Error("rivers " + res.status);
+        return res.arrayBuffer();
+      })
+      .then((buf) => {
+        riverLoading.delete(key);
+        if (disposed || !riversOn || !riverWanted.has(key)) {
+          kick();
+          return;
+        }
+        if (!buf) {
+          riverSkip.add(key);
+          kick();
+          return;
+        }
+        let group = null;
+        try {
+          group = attachRiverLines(buf);
+        } catch (err) {
+          group = null;
+        }
+        if (!group) {
+          riverSkip.add(key);
+          kick();
+          return;
+        }
+        group.name = key;
+        ensureRiverGroup();
+        riverGroup.add(group);
+        riverLive.set(key, group);
+        syncRiverPixels();
+        kick();
+      })
+      .catch(() => {
+        riverLoading.delete(key);
+        riverRetryAt = performance.now() + 4000;
+        kick();
+      });
+  }
+
+  function updateRiverSquares() {
+    if (disposed || !mesh || !riversOn) return;
+    const at = viewLonLat();
+    if (!at) return;
+    const dist = camDist();
+    const samples = viewSamples();
+    const level = dist <= RIVER_CLOSE.onDist ? RIVER_CLOSE : dist <= RIVER_MID.onDist ? RIVER_MID : null;
+    const wantList = level ? keysOnScreen(level, at, samples) : [];
+    const want = new Set(wantList);
+    const covered = wantList.every((k) => riverLive.has(k) || riverSkip.has(k));
+    let keep = want;
+    // Keep the middle squares until the close ones covering this view are in,
+    // so the network does not vanish while the finer file arrives.
+    if (level === RIVER_CLOSE && !covered) {
+      keep = new Set([...want, ...keysOnScreen(RIVER_MID, at, samples)]);
+    }
+    riverWanted = keep;
+    for (const key of [...riverLive.keys()]) {
+      if (!keep.has(key)) dropRiverSquare(key);
+    }
+    if (!level || riverLoading.size > 0 || performance.now() < riverRetryAt) return;
+    const ordered = wantList
+      .filter((k) => !riverLive.has(k) && !riverSkip.has(k))
+      .sort((a, b) => riverKeyDist(a, level, at) - riverKeyDist(b, level, at));
+    if (ordered.length) loadRiverSquare(level, ordered[0]);
+  }
+
+  function loadBigRivers() {
+    fetch(new URL(`./rivers-big.bin?v=${TEX_VER}`, import.meta.url))
       .then((res) => {
         if (!res.ok) throw new Error("rivers " + res.status);
         return res.arrayBuffer();
       })
       .then((buf) => {
         if (disposed) return;
-        disposeRivers();
+        disposeRiverObject(riverLines);
+        riverLines = null;
         try {
           riverLines = attachRiverLines(buf);
         } catch (err) {
           riverLines = null;
         }
+        if (riverLines && mesh) mesh.add(riverLines);
         if (riverLines) riverLines.visible = riversOn;
         syncRiverPixels();
         kick();
@@ -1868,9 +2018,12 @@ export function createEarthGlobe(canvas, options = {}) {
 
   renderer.domElement.addEventListener("webglcontextlost", () => {
     if (riverLines) riverLines.visible = false;
+    if (riverGroup) riverGroup.visible = false;
   });
   renderer.domElement.addEventListener("webglcontextrestored", () => {
-    loadRivers();
+    riverSkip.clear();
+    for (const key of [...riverLive.keys()]) dropRiverSquare(key);
+    loadBigRivers();
   });
 
   /** Classic globe grid: polar axis, lat/lon lines. Equator is the Natural Earth line. */
@@ -2308,6 +2461,7 @@ export function createEarthGlobe(canvas, options = {}) {
     cloudSkip.clear();
     cloudFails.clear();
     cloudRetryAt = 0;
+    cloudLevelLabel = "";
     for (const key of [...cloudLive.keys()]) dropCloudPiece(key);
     if (cloudMesh && cloudMesh.parent) cloudMesh.parent.remove(cloudMesh);
     cloudMesh = null;
@@ -2348,9 +2502,9 @@ export function createEarthGlobe(canvas, options = {}) {
     return mat;
   }
 
-  function makeCloudPatch(c, r, tex) {
-    const cols = CLOUD_LEVEL.cols;
-    const rows = CLOUD_LEVEL.rows;
+  function makeCloudPatch(level, c, r, tex) {
+    const cols = level.cols;
+    const rows = level.rows;
     const geo = new THREE.SphereGeometry(
       RADIUS * 1.012,
       48,
@@ -2365,7 +2519,7 @@ export function createEarthGlobe(canvas, options = {}) {
     return piece;
   }
 
-  function loadCloudSquare(key, stamp) {
+  function loadCloudSquare(level, key, stamp) {
     if (cloudLive.has(key) || cloudLoading.has(key) || cloudSkip.has(stamp + ":" + key)) return;
     const parts = key.split(":");
     const c = Number(parts[1]);
@@ -2375,7 +2529,10 @@ export function createEarthGlobe(canvas, options = {}) {
     cloudAbort.set(key, ctrl);
     // One square at a time. The decoded picture is closed before the next
     // one starts, so they don't pile up and kill the tab.
-    fetch(`api/cloud-square?c=${c}&r=${r}&t=${stamp}`, { signal: ctrl.signal })
+    fetch(
+      `api/cloud-square?c=${c}&r=${r}&cols=${level.cols}&rows=${level.rows}&t=${stamp}`,
+      { signal: ctrl.signal }
+    )
       .then((res) => {
         if (!res.ok) throw new Error("cloud");
         return res.blob();
@@ -2402,7 +2559,7 @@ export function createEarthGlobe(canvas, options = {}) {
           bitmap.close();
           throw new Error("upload");
         }
-        const piece = makeCloudPatch(c, r, tex);
+        const piece = makeCloudPatch(level, c, r, tex);
         cloudMesh.add(piece);
         cloudLive.set(key, piece);
         kick();
@@ -2430,6 +2587,7 @@ export function createEarthGlobe(canvas, options = {}) {
       cloudSkip.clear();
       cloudFails.clear();
       cloudRetryAt = 0;
+      cloudLevelLabel = "";
       stopCloudLoads();
       for (const key of [...cloudLive.keys()]) dropCloudPiece(key);
     }
@@ -2440,26 +2598,38 @@ export function createEarthGlobe(canvas, options = {}) {
       cloudMesh.name = "clouds";
       mesh.add(cloudMesh);
     }
-    const want = new Set(keysOnScreen(CLOUD_LEVEL, at, viewSamples()));
+    const samples = viewSamples();
+    const level = pickCloudLevel(camDist());
+    const wantList = keysOnScreen(level, at, samples);
+    const want = new Set(wantList);
+    const ready = wantList.every(
+      (k) => cloudLive.has(k) || cloudSkip.has(stamp + ":" + k)
+    );
+    let keep = want;
+    if (!ready && cloudLevelLabel && cloudLevelLabel !== level.label) {
+      const prev = cloudLevelByLabel(cloudLevelLabel);
+      if (prev) keep = new Set([...want, ...keysOnScreen(prev, at, samples)]);
+    }
+    if (ready) cloudLevelLabel = level.label;
     for (const key of [...cloudLive.keys()]) {
-      if (!want.has(key)) dropCloudPiece(key);
+      if (!keep.has(key)) dropCloudPiece(key);
     }
     if (cloudLoading.size > 0 || performance.now() < cloudRetryAt) return;
-    const { c0, r0 } = levelColRow(CLOUD_LEVEL, at.lon, at.lat);
+    const { c0, r0 } = levelColRow(level, at.lon, at.lat);
     const ordered = [...want].sort((a, b) => {
       const ap = a.split(":");
       const bp = b.split(":");
       const da =
-        Math.min(Math.abs(Number(ap[1]) - c0), CLOUD_LEVEL.cols - Math.abs(Number(ap[1]) - c0)) +
+        Math.min(Math.abs(Number(ap[1]) - c0), level.cols - Math.abs(Number(ap[1]) - c0)) +
         Math.abs(Number(ap[2]) - r0);
       const db =
-        Math.min(Math.abs(Number(bp[1]) - c0), CLOUD_LEVEL.cols - Math.abs(Number(bp[1]) - c0)) +
+        Math.min(Math.abs(Number(bp[1]) - c0), level.cols - Math.abs(Number(bp[1]) - c0)) +
         Math.abs(Number(bp[2]) - r0);
       return da - db;
     });
     for (const key of ordered) {
       if (cloudLive.has(key) || cloudSkip.has(stamp + ":" + key)) continue;
-      loadCloudSquare(key, stamp);
+      loadCloudSquare(level, key, stamp);
       return;
     }
   }
@@ -2866,7 +3036,6 @@ export function createEarthGlobe(canvas, options = {}) {
     if (!at) return;
     const samples = viewSamples();
     const base = TILE_LEVELS[8];
-    const baseKeys = keysOnScreen(base, at, samples);
     const shown = level || soon;
     if (tileLevel && level && tileLevel !== level.label) holdLevel = tileLevel;
     if (!level) holdLevel = null;
@@ -2879,8 +3048,15 @@ export function createEarthGlobe(canvas, options = {}) {
       soon && shown !== soon
         ? new Set(keysOnScreen(soon, at, samples))
         : new Set();
-    tileWanted = new Set([...baseKeys, ...onScreen, ...soonKeys]);
     const screenReady = [...onScreen].every((k) => tileLive.has(k));
+    // The coarse squares stay only while the sharper ones are still arriving,
+    // or while the limb is on screen and the close set does not cover the edge.
+    const limb = !samples;
+    const baseKeys =
+      !shown || shown.label === base.label || limb || !screenReady
+        ? keysOnScreen(base, at, samples)
+        : [];
+    tileWanted = new Set([...baseKeys, ...onScreen, ...soonKeys]);
     if (screenReady) holdLevel = null;
     const holdKeep =
       holdLevel && TILE_LEVELS[holdLevel]
@@ -3206,6 +3382,13 @@ export function createEarthGlobe(canvas, options = {}) {
   function setRivers(on) {
     riversOn = !!on;
     if (riverLines) riverLines.visible = riversOn;
+    if (!riversOn) {
+      for (const key of [...riverLive.keys()]) dropRiverSquare(key);
+      riverWanted = new Set();
+      if (riverGroup) riverGroup.visible = false;
+    } else if (riverGroup) {
+      riverGroup.visible = true;
+    }
     kick();
     return riversOn;
   }
@@ -4519,6 +4702,7 @@ export function createEarthGlobe(canvas, options = {}) {
     syncEarth();
     updateTiles();
     updateClouds();
+    updateRiverSquares();
     syncRiverPixels();
     if (gridOn) updateGridLabels();
     renderer.render(scene, camera);
@@ -4532,7 +4716,7 @@ export function createEarthGlobe(canvas, options = {}) {
   loadSkyMoon();
   loadBorders();
   loadLakes();
-  loadRivers();
+  loadBigRivers();
   buildGrid();
   loadGeoLines();
   fitToHost();

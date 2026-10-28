@@ -142,12 +142,12 @@ def _cloud_picture(stamp):
     return im
 
 
-def _cut_one_locked(c, r, stamp):
-    dest = _CLOUD_DIR / f"{stamp}-c{c}r{r}.png"
+def _cut_one_locked(c, r, stamp, cols, rows):
+    dest = _CLOUD_DIR / f"{stamp}-c{c}r{r}-{cols}x{rows}.png"
     if dest.is_file() and dest.stat().st_size > 1000:
         return dest.read_bytes()
     im = _cloud_picture(stamp)
-    tw, th = im.size[0] // 4, im.size[1] // 2
+    tw, th = im.size[0] // cols, im.size[1] // rows
     tile = im.crop((c * tw, r * th, (c + 1) * tw, (r + 1) * th))
     buf = io.BytesIO()
     tile.save(buf, "PNG", compress_level=1)
@@ -157,26 +157,34 @@ def _cut_one_locked(c, r, stamp):
     return data
 
 
-def _cut_rest(stamp):
-    """Cut the other squares while the phone is busy with the first one."""
+def _cut_rest(stamp, cols, rows):
+    """Cut the other far squares while the phone is busy with the first one."""
     try:
-        for r in range(2):
-            for c in range(4):
+        if cols * rows > 8:
+            return
+        for r in range(rows):
+            for c in range(cols):
                 with _cloud_lock:
-                    _cut_one_locked(c, r, stamp)
+                    _cut_one_locked(c, r, stamp, cols, rows)
     finally:
         with _cloud_lock:
             _cloud_jobs.discard(stamp)
 
 
-def _cloud_square_png(c, r, stamp):
+_CLOUD_GRIDS = {(4, 2), (8, 4), (16, 8)}
+
+
+def _cloud_square_png(c, r, stamp, cols, rows):
     """One square of the sharp cloud photo. The phone never sees the whole picture."""
     _CLOUD_DIR.mkdir(parents=True, exist_ok=True)
     with _cloud_lock:
-        data = _cut_one_locked(c, r, stamp)
-        if stamp not in _cloud_jobs:
-            _cloud_jobs.add(stamp)
-            threading.Thread(target=_cut_rest, args=(stamp,), daemon=True).start()
+        data = _cut_one_locked(c, r, stamp, cols, rows)
+        # Only the zoomed-out grid is small enough to cut ahead. A close view
+        # asks for a few squares, not all 128.
+        job = f"{stamp}:{cols}x{rows}"
+        if job not in _cloud_jobs:
+            _cloud_jobs.add(job)
+            threading.Thread(target=_cut_rest, args=(stamp, cols, rows), daemon=True).start()
         return data
 
 
@@ -205,8 +213,11 @@ class Handler(SimpleHTTPRequestHandler):
             self._serve_cloud_square(raw)
             return
         if path != "/" and not (ROOT / path.lstrip("/")).exists():
-            if not path.startswith("/api"):
-                self.path = "/index.html"
+            # A missing river square is empty ocean, not a page.
+            if path.startswith("/api") or path.endswith(".bin"):
+                self.send_error(404)
+                return
+            self.path = "/index.html"
         return super().do_GET()
 
     def _serve_cloud_square(self, raw):
@@ -218,14 +229,20 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             c = int(qs.get("c", ["-1"])[0])
             r = int(qs.get("r", ["-1"])[0])
+            cols = int(qs.get("cols", ["4"])[0])
+            rows = int(qs.get("rows", ["2"])[0])
             stamp = qs.get("t", [""])[0]
         except ValueError:
-            c, r, stamp = -1, -1, ""
-        if not stamp.isdigit() or not (0 <= c <= 3 and 0 <= r <= 1):
+            c, r, cols, rows, stamp = -1, -1, 0, 0, ""
+        if (
+            not stamp.isdigit()
+            or (cols, rows) not in _CLOUD_GRIDS
+            or not (0 <= c < cols and 0 <= r < rows)
+        ):
             self.send_error(400)
             return
         try:
-            data = _cloud_square_png(c, r, stamp)
+            data = _cloud_square_png(c, r, stamp, cols, rows)
         except Exception:
             self.send_error(502)
             return
