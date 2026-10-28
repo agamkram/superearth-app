@@ -1,5 +1,6 @@
 .DS_Store
 .npm-cache
+node_modules
 .tmp
 .vercel
 .texture-src

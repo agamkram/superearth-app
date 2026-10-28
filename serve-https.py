@@ -90,6 +90,9 @@ if _pc_ss.StreamRequestHandler.timeout is None:
 # --- preview-ctl guard v3: end ---
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+from urllib.request import Request, urlopen
+import io
 import os
 import signal
 import socketserver
@@ -97,12 +100,84 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_PORT = 8916
 CERT = ROOT / ".local-cert.pem"
 KEY = ROOT / ".local-key.pem"
+_CLOUD_DIR = Path(tempfile.gettempdir()) / "superearth-cloud-squares"
+_cloud_lock = threading.Lock()
+_cloud_open = {"stamp": None, "im": None}
+_cloud_jobs = set()
+
+
+def _cloud_picture(stamp):
+    """The sharp cloud photo, downloaded once per update and kept open."""
+    if _cloud_open["stamp"] == stamp and _cloud_open["im"] is not None:
+        return _cloud_open["im"]
+    _CLOUD_DIR.mkdir(parents=True, exist_ok=True)
+    src = _CLOUD_DIR / f"{stamp}.png"
+    if not src.is_file() or src.stat().st_size < 1000:
+        url = (
+            "https://clouds.matteason.co.uk/images/8192x4096/clouds-alpha.png?t="
+            + stamp
+        )
+        req = Request(url, headers={"User-Agent": "SuperEarth"})
+        with urlopen(req, timeout=60) as resp:
+            raw = resp.read()
+        part = src.with_suffix(".part")
+        part.write_bytes(raw)
+        part.replace(src)
+    from PIL import Image
+
+    im = Image.open(src)
+    im.load()
+    old = _cloud_open["im"]
+    _cloud_open["stamp"] = stamp
+    _cloud_open["im"] = im
+    if old is not None:
+        old.close()
+    return im
+
+
+def _cut_one_locked(c, r, stamp):
+    dest = _CLOUD_DIR / f"{stamp}-c{c}r{r}.png"
+    if dest.is_file() and dest.stat().st_size > 1000:
+        return dest.read_bytes()
+    im = _cloud_picture(stamp)
+    tw, th = im.size[0] // 4, im.size[1] // 2
+    tile = im.crop((c * tw, r * th, (c + 1) * tw, (r + 1) * th))
+    buf = io.BytesIO()
+    tile.save(buf, "PNG", compress_level=1)
+    tile.close()
+    data = buf.getvalue()
+    dest.write_bytes(data)
+    return data
+
+
+def _cut_rest(stamp):
+    """Cut the other squares while the phone is busy with the first one."""
+    try:
+        for r in range(2):
+            for c in range(4):
+                with _cloud_lock:
+                    _cut_one_locked(c, r, stamp)
+    finally:
+        with _cloud_lock:
+            _cloud_jobs.discard(stamp)
+
+
+def _cloud_square_png(c, r, stamp):
+    """One square of the sharp cloud photo. The phone never sees the whole picture."""
+    _CLOUD_DIR.mkdir(parents=True, exist_ok=True)
+    with _cloud_lock:
+        data = _cut_one_locked(c, r, stamp)
+        if stamp not in _cloud_jobs:
+            _cloud_jobs.add(stamp)
+            threading.Thread(target=_cut_rest, args=(stamp,), daemon=True).start()
+        return data
 
 
 class ThreadingHTTPServer(socketserver.ThreadingMixIn, HTTPServer):
@@ -124,11 +199,41 @@ class Handler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
     def do_GET(self):
-        path = (self.path or "/").split("?", 1)[0]
+        raw = self.path or "/"
+        path = raw.split("?", 1)[0]
+        if path == "/api/cloud-square":
+            self._serve_cloud_square(raw)
+            return
         if path != "/" and not (ROOT / path.lstrip("/")).exists():
             if not path.startswith("/api"):
                 self.path = "/index.html"
         return super().do_GET()
+
+    def _serve_cloud_square(self, raw):
+        try:
+            self.connection.settimeout(120)
+        except Exception:
+            pass
+        qs = parse_qs(urlparse(raw).query)
+        try:
+            c = int(qs.get("c", ["-1"])[0])
+            r = int(qs.get("r", ["-1"])[0])
+            stamp = qs.get("t", [""])[0]
+        except ValueError:
+            c, r, stamp = -1, -1, ""
+        if not stamp.isdigit() or not (0 <= c <= 3 and 0 <= r <= 1):
+            self.send_error(400)
+            return
+        try:
+            data = _cloud_square_png(c, r, stamp)
+        except Exception:
+            self.send_error(502)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def guess_type(self, path):
         p = (path or "").split("?", 1)[0].lower()
@@ -138,7 +243,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def end_headers(self):
         path = (self.path or "").split("?", 1)[0].lower()
-        if path.endswith(
+        if path == "/api/cloud-square":
+            self.send_header("Cache-Control", "public, max-age=10800")
+        elif path.endswith(
             (".png", ".jpg", ".jpeg", ".webp", ".ico", ".webmanifest")
         ) or path.endswith("manifest.webmanifest"):
             self.send_header("Cache-Control", "public, max-age=86400")

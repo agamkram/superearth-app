@@ -180,35 +180,33 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e318";
+export const BUILD = "e334";
 const TEX_VER = BUILD;
 
-const LOD = {
-  low: {
-    map: `earth-2k.jpg?v=${TEX_VER}`,
-    night: `earth-night-2k.jpg?v=${TEX_VER}`,
-    normal: `earth-normal-2k.jpg?v=${TEX_VER}`,
-    segments: 128,
-  },
-  high: {
-    map: `earth-8k.jpg?v=${TEX_VER}`,
-    night: `earth-night-8k.jpg?v=${TEX_VER}`,
-    normal: `earth-normal-4k.jpg?v=${TEX_VER}`,
-    segments: 320,
-  },
-};
+const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
+const SPHERE_SEGMENTS = 320;
 
 /**
- * Zoom tiles (Next Gen day + Black Marble night @ JPEG 85). Never a full high-k wrap.
- * Ladder by camera distance: 8k wrap → tiles-16 @≤2.5 → tiles-32 @≤1.75 → floor 1.1.
- * Each level loads a 3×3 under the screen center (plus one keep-ring while loading).
- * The tiles already on screen stay up until the next size covers that center,
- * so the view does not fall back to the soft 8k map in between.
- * A new block decodes one tile at a time, center first, so the zoom doesn't freeze.
- * Day and night tiles share the same grid; patches stay opaque so sharp night covers soft 8k.
+ * Squares, never one giant photo.
+ * 8 is what you see zoomed out, and it stays around the edge when you zoom in.
+ * 16 turns on at distance 2.5, 32 at 1.75, 86 at 1.50.
+ * The on-screen squares and the ones that touch them stay loaded.
+ * The next closer set starts loading before the current one would look soft.
+ * One square decodes at a time. A daylight square loads the day photo.
+ * A dark square loads the night photo. A square the day-night line is about
+ * to cross loads both.
  */
 const TILE_RING = 1;
 const TILE_LEVELS = {
+  8: {
+    label: "8",
+    folder: "tiles-8",
+    nightFolder: "night-tiles-8",
+    cols: 4,
+    rows: 2,
+    onDist: 99,
+    radius: 1.001,
+  },
   16: {
     label: "16",
     folder: "tiles-16",
@@ -226,6 +224,15 @@ const TILE_LEVELS = {
     rows: 8,
     onDist: 1.75,
     radius: 1.0022,
+  },
+  86: {
+    label: "86",
+    folder: "tiles-86",
+    nightFolder: "night-tiles-86",
+    cols: 40,
+    rows: 20,
+    onDist: 1.5,
+    radius: 1.0023,
   },
 };
 
@@ -308,7 +315,6 @@ export function createEarthGlobe(canvas, options = {}) {
   let mesh = null;
   let material = null;
   let ready = false;
-  let hqStarted = false;
   let disposed = false;
   let animId = 0;
   let orbiting = false;
@@ -328,12 +334,21 @@ export function createEarthGlobe(canvas, options = {}) {
   let nightMat = null;
   let cloudMesh = null;
   let cloudsOn = false;
+  let photosOn = true;
+  let cloudStamp = 0;
+  const cloudLive = new Map();
+  const cloudLoading = new Set();
+  const cloudAbort = new Map();
+  const cloudSkip = new Set();
+  const cloudFails = new Map();
+  let cloudRetryAt = 0;
+  const CLOUD_LEVEL = { label: "cloud", cols: 4, rows: 2 };
   let tileGroup = null;
   const tileLive = new Map();
   const tileLoading = new Set();
   let tileWanted = new Set();
   let tilesEnabled = false;
-  /** @type {null | "16" | "32"} */
+  /** @type {null | "16" | "32" | "86"} */
   let tileLevel = null;
   /** Previous size kept on screen until the new size's center tiles are ready. */
   let holdLevel = null;
@@ -351,6 +366,7 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function pickTileLevel(dist) {
+    if (dist <= TILE_LEVELS[86].onDist) return TILE_LEVELS[86];
     if (dist <= TILE_LEVELS[32].onDist) return TILE_LEVELS[32];
     if (dist <= TILE_LEVELS[16].onDist) return TILE_LEVELS[16];
     return null;
@@ -514,6 +530,7 @@ export function createEarthGlobe(canvas, options = {}) {
     const nightUniform = { value: night };
     const normalUniform = { value: normal };
     const material = new THREE.MeshBasicMaterial({ map, color: 0xffffff });
+    material.colorWrite = photosOn;
     material.userData.nightUniform = nightUniform;
     material.userData.normalUniform = normalUniform;
     material.onBeforeCompile = (shader) => {
@@ -716,6 +733,7 @@ export function createEarthGlobe(canvas, options = {}) {
     if (lakeMesh) mesh.add(lakeMesh);
     if (riverLines) mesh.add(riverLines);
     if (gridGroup) mesh.add(gridGroup);
+    mesh.renderOrder = photosOn ? 0 : -6;
     earthTilt.add(mesh);
     ensureAtmosphere();
     attachPoleMarks(mesh);
@@ -1522,8 +1540,8 @@ export function createEarthGlobe(canvas, options = {}) {
     riverLines = null;
   }
 
-  /** All ranks get a strip so creeks can sit under 1px when zoomed out. */
-  const RIVER_WIDE_MAX = 12;
+  /** Rank 1 grows as you zoom in. Every smaller river stays a 1 pixel line. */
+  const RIVER_WIDE_MAX = 1;
 
   function riverFrag() {
     return /* glsl */ `
@@ -1780,6 +1798,23 @@ export function createEarthGlobe(canvas, options = {}) {
       }
     });
 
+    // The graphics chip keeps its own copy. Once that copy exists, the lists
+    // in the page can be thrown away. They are only needed again if the phone
+    // resets the chip, and then the rivers are loaded from the file again.
+    const dropListsAfterSend = (attr) => {
+      if (!attr || !attr.array || attr.array.length === 0) return;
+      const Ctor = attr.array.constructor;
+      attr.onUpload(() => {
+        queueMicrotask(() => {
+          attr.array = new Ctor(0);
+        });
+      });
+    };
+    const dropGeometryLists = (geo) => {
+      for (const name in geo.attributes) dropListsAfterSend(geo.attributes[name]);
+      if (geo.index) dropListsAfterSend(geo.index);
+    };
+
     const group = new THREE.Group();
     group.name = "rivers";
     if (wii > 0) {
@@ -1789,6 +1824,7 @@ export function createEarthGlobe(canvas, options = {}) {
       geo.setAttribute("aSide", new THREE.BufferAttribute(wSide, 1));
       geo.setAttribute("aRank", new THREE.BufferAttribute(wRank, 1));
       geo.setIndex(new THREE.BufferAttribute(wIdx, 1));
+      dropGeometryLists(geo);
       const wide = new THREE.Mesh(geo, makeRiverWideMaterial());
       wide.renderOrder = 2;
       wide.frustumCulled = false;
@@ -1798,6 +1834,7 @@ export function createEarthGlobe(canvas, options = {}) {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute("position", new THREE.BufferAttribute(tPos, 3));
       geo.setAttribute("aRank", new THREE.BufferAttribute(tRank, 1));
+      dropGeometryLists(geo);
       const thin = new THREE.LineSegments(geo, makeRiverThinMaterial());
       thin.renderOrder = 2;
       thin.frustumCulled = false;
@@ -1828,6 +1865,13 @@ export function createEarthGlobe(canvas, options = {}) {
       })
       .catch(() => {});
   }
+
+  renderer.domElement.addEventListener("webglcontextlost", () => {
+    if (riverLines) riverLines.visible = false;
+  });
+  renderer.domElement.addEventListener("webglcontextrestored", () => {
+    loadRivers();
+  });
 
   /** Classic globe grid: polar axis, lat/lon lines. Equator is the Natural Earth line. */
   const GRID_R = RADIUS * 1.0032;
@@ -2154,15 +2198,8 @@ export function createEarthGlobe(canvas, options = {}) {
     return !!on;
   }
 
-  function scheduleHigh() {
-    if (hqStarted) return;
-    hqStarted = true;
-    setTimeout(() => upgradeHigh(), 400);
-  }
-
-  // Upload now, then drop the decoded bitmap. One 8192×4096 image is ~128 MB
-  // in CPU memory and ~170 MB on the GPU with mipmaps. Safari kills the tab
-  // when day, night, and clouds are decoded together.
+  // Upload now, then drop the decoded bitmap. A decoded photo is much
+  // larger than the file, and Safari kills the tab when several sit in memory.
   function releaseDecodedImage(tex) {
     const img = tex && tex.image;
     if (!img || !img.width || !img.height) return;
@@ -2176,7 +2213,8 @@ export function createEarthGlobe(canvas, options = {}) {
     tex.needsUpdate = false;
     // Version stays put, so the GPU copy is what gets drawn.
     tex.image = { width: w, height: h };
-    if (typeof img.src === "string") {
+    if (typeof img.close === "function") img.close();
+    else if (typeof img.src === "string") {
       img.onload = null;
       img.onerror = null;
       img.src = "";
@@ -2187,226 +2225,243 @@ export function createEarthGlobe(canvas, options = {}) {
     if (!tex) return;
     const img = tex.image;
     tex.dispose();
-    if (img && typeof img.src === "string") {
+    if (img && typeof img.close === "function") img.close();
+    else if (img && typeof img.src === "string") {
       img.onload = null;
       img.onerror = null;
       img.src = "";
     }
   }
 
-  function loadLow() {
-    const cfg = LOD.low;
-    let lowMapReady = false;
-    let lowNightReady = false;
-    let lowNormalReady = false;
-    const maybeSchedule = () => {
-      if (lowMapReady && lowNightReady && lowNormalReady) scheduleHigh();
-    };
-    const map = loader.load(
-      cfg.map,
-      (tex) => {
-        configureColor(tex);
-        ready = true;
-        if (typeof onReady === "function") onReady();
-        reportQuality("2k");
-        kick();
-        lowMapReady = true;
-        maybeSchedule();
-      },
-      undefined,
-      () => {
-        lowMapReady = true;
-        maybeSchedule();
-      }
-    );
-    const night = loader.load(
-      cfg.night,
-      (tex) => {
-        if (
-          !disposed &&
-          material &&
-          material.userData.nightUniform &&
-          material.userData.nightUniform.value === tex
-        ) {
-          configureNight(tex);
-        }
-        lowNightReady = true;
-        maybeSchedule();
-      },
-      undefined,
-      () => {
-        lowNightReady = true;
-        maybeSchedule();
-      }
-    );
-    const normal = loader.load(
-      cfg.normal,
-      (tex) => {
-        if (
-          !disposed &&
-          material &&
-          material.userData.normalUniform &&
-          material.userData.normalUniform.value === tex
-        ) {
-          configureNormal(tex);
-          kick();
-        }
-        lowNormalReady = true;
-        maybeSchedule();
-      },
-      undefined,
-      () => {
-        lowNormalReady = true;
-        maybeSchedule();
-      }
-    );
-    configureColor(map);
-    configureNight(night);
-    configureNormal(normal);
-    buildMesh(map, night, normal, cfg);
+  function flatTex(r, g, b) {
+    const data = new Uint8Array([r, g, b, 255]);
+    const tex = new THREE.DataTexture(data, 1, 1);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    tex.needsUpdate = true;
+    return tex;
   }
 
-  function upgradeHigh() {
-    if (disposed) return;
-    const cfg = LOD.high;
-    let dayApplied = false;
-    // Let Safari reclaim the previous decode before the next 8k image starts.
-    const next = (fn) => setTimeout(fn, 150);
-
-    const loadNormal = () => {
-      if (disposed) return;
-      loader.load(
-        cfg.normal,
-        (tex) => {
-          if (disposed) return;
-          configureNormal(tex);
-          releaseDecodedImage(tex);
-          if (material && material.userData.normalUniform) {
-            const old = material.userData.normalUniform.value;
-            material.userData.normalUniform.value = tex;
-            if (old && old !== tex) disposeMap(old);
-          }
-          kick();
-          next(loadClouds);
-        },
-        undefined,
-        () => next(loadClouds)
-      );
-    };
-
-    const loadNight = () => {
-      if (disposed) return;
-      loader.load(
-        cfg.night,
-        (tex) => {
-          if (disposed) return;
-          configureNight(tex);
-          releaseDecodedImage(tex);
-          if (material && material.userData.nightUniform) {
-            const old = material.userData.nightUniform.value;
-            material.userData.nightUniform.value = tex;
-            if (old && old !== tex) disposeMap(old);
-          }
-          kick();
-          if (dayApplied) reportQuality("8k");
-          next(loadNormal);
-        },
-        undefined,
-        () => next(loadNormal)
-      );
-    };
-
-    loader.load(
-      cfg.map,
-      (tex) => {
-        if (disposed) return;
-        if (!material) {
-          next(loadNight);
-          return;
-        }
-        configureColor(tex);
-        releaseDecodedImage(tex);
-        const oldMap = material.map;
-        material.map = tex;
-        material.needsUpdate = true;
-        if (oldMap && oldMap !== tex) disposeMap(oldMap);
-        dayApplied = true;
-        tilesEnabled = true;
-        updateTiles();
-        if (mesh && mesh.geometry.parameters.widthSegments < cfg.segments) {
-          mesh.geometry.dispose();
-          mesh.geometry = new THREE.SphereGeometry(RADIUS, cfg.segments, cfg.segments);
-        }
-        kick();
-        next(loadNight);
-      },
-      undefined,
-      () => next(loadNight)
-    );
+  function flatNormal() {
+    const data = new Uint8Array([128, 128, 255, 255]);
+    const tex = new THREE.DataTexture(data, 1, 1);
+    tex.colorSpace = THREE.NoColorSpace;
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    tex.needsUpdate = true;
+    return tex;
   }
 
-  let cloudsStarted = false;
-
-  function loadClouds() {
-    if (cloudsStarted || disposed) return;
-    cloudsStarted = true;
-    const stamp = Math.floor(Date.now() / (3 * 3600 * 1000));
-    // 8192×4096 is about 170 MB on the GPU with mipmaps. Half size is the
-    // same 2:1 map, still mipmapped so the opening view does not sparkle.
-    const size = "4096x2048";
-    const url = `https://clouds.matteason.co.uk/images/${size}/clouds-alpha.png?t=${stamp}`;
+  /** The globe appears when the front squares are up, not when a small photo arrives. */
+  function loadBase() {
+    const day = flatTex(10, 30, 62);
+    const night = flatTex(0, 0, 0);
+    buildMesh(day, night, flatNormal(), { segments: SPHERE_SEGMENTS });
+    tilesEnabled = true;
+    reportQuality("8");
+    kick();
     loader.load(
-      url,
+      NORMAL_URL,
       (tex) => {
         if (disposed) return;
-        tex.colorSpace = THREE.SRGBColorSpace;
-        tex.flipY = true;
-        tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-        tex.generateMipmaps = true;
-        tex.needsUpdate = true;
+        configureNormal(tex);
         releaseDecodedImage(tex);
-        const mat = new THREE.MeshBasicMaterial({
-          map: tex,
-          transparent: true,
-          depthWrite: false,
-          color: 0xffffff,
-          opacity: 0.92,
-        });
-        mat.onBeforeCompile = (shader) => {
-          shader.uniforms.uSunDir = sunDirUniform;
-          shader.uniforms.uSunOn = sunOnUniform;
-          shader.vertexShader = shader.vertexShader.replace(
-            "#include <common>",
-            "#include <common>\nvarying vec3 vWorldN;"
-          );
-          shader.vertexShader = shader.vertexShader.replace(
-            "#include <begin_vertex>",
-            "#include <begin_vertex>\nvWorldN = normalize(mat3(modelMatrix) * normalize(position));"
-          );
-          shader.fragmentShader = shader.fragmentShader.replace(
-            "#include <common>",
-            "#include <common>\nuniform vec3 uSunDir;\nuniform float uSunOn;\nvarying vec3 vWorldN;"
-          );
-          shader.fragmentShader = shader.fragmentShader.replace(
-            "#include <alphamap_fragment>",
-            `#include <alphamap_fragment>
-            float ndl = dot(normalize(vWorldN), normalize(uSunDir));
-            float lit = uSunOn * smoothstep(-0.2, 0.35, ndl);
-            diffuseColor.a *= mix(0.22, 1.0, lit);`
-          );
-        };
-        cloudMesh = new THREE.Mesh(
-          new THREE.SphereGeometry(RADIUS * 1.012, 96, 96),
-          mat
-        );
-        cloudMesh.renderOrder = 2;
-        cloudMesh.visible = cloudsOn;
-        if (mesh) mesh.add(cloudMesh);
+        if (material && material.userData.normalUniform) {
+          const old = material.userData.normalUniform.value;
+          material.userData.normalUniform.value = tex;
+          if (old && old !== tex) disposeMap(old);
+        }
         kick();
       },
       undefined,
       () => {}
     );
+  }
+
+  function cloudStampNow() {
+    return Math.floor(Date.now() / (3 * 3600 * 1000));
+  }
+
+  function dropCloudPiece(key) {
+    const piece = cloudLive.get(key);
+    if (!piece) return;
+    cloudLive.delete(key);
+    if (piece.parent) piece.parent.remove(piece);
+    piece.geometry.dispose();
+    if (piece.material.map) disposeMap(piece.material.map);
+    piece.material.dispose();
+  }
+
+  function stopCloudLoads() {
+    for (const ctrl of cloudAbort.values()) {
+      try { ctrl.abort(); } catch (_) {}
+    }
+    cloudAbort.clear();
+    cloudLoading.clear();
+  }
+
+  function disposeClouds() {
+    stopCloudLoads();
+    cloudSkip.clear();
+    cloudFails.clear();
+    cloudRetryAt = 0;
+    for (const key of [...cloudLive.keys()]) dropCloudPiece(key);
+    if (cloudMesh && cloudMesh.parent) cloudMesh.parent.remove(cloudMesh);
+    cloudMesh = null;
+    cloudStamp = 0;
+  }
+
+  function cloudMaterial(tex) {
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      depthWrite: false,
+      color: 0xffffff,
+      opacity: 0.92,
+    });
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uSunDir = sunDirUniform;
+      shader.uniforms.uSunOn = sunOnUniform;
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <common>",
+        "#include <common>\nvarying vec3 vWorldN;"
+      );
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <begin_vertex>",
+        "#include <begin_vertex>\nvWorldN = normalize(mat3(modelMatrix) * normalize(position));"
+      );
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <common>",
+        "#include <common>\nuniform vec3 uSunDir;\nuniform float uSunOn;\nvarying vec3 vWorldN;"
+      );
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <alphamap_fragment>",
+        `#include <alphamap_fragment>
+        float ndl = dot(normalize(vWorldN), normalize(uSunDir));
+        float lit = uSunOn * smoothstep(-0.2, 0.35, ndl);
+        diffuseColor.a *= mix(0.22, 1.0, lit);`
+      );
+    };
+    return mat;
+  }
+
+  function makeCloudPatch(c, r, tex) {
+    const cols = CLOUD_LEVEL.cols;
+    const rows = CLOUD_LEVEL.rows;
+    const geo = new THREE.SphereGeometry(
+      RADIUS * 1.012,
+      48,
+      48,
+      (c / cols) * Math.PI * 2,
+      (1 / cols) * Math.PI * 2,
+      (r / rows) * Math.PI,
+      (1 / rows) * Math.PI
+    );
+    const piece = new THREE.Mesh(geo, cloudMaterial(tex));
+    piece.renderOrder = 2;
+    return piece;
+  }
+
+  function loadCloudSquare(key, stamp) {
+    if (cloudLive.has(key) || cloudLoading.has(key) || cloudSkip.has(stamp + ":" + key)) return;
+    const parts = key.split(":");
+    const c = Number(parts[1]);
+    const r = Number(parts[2]);
+    const ctrl = new AbortController();
+    cloudLoading.add(key);
+    cloudAbort.set(key, ctrl);
+    // One square at a time. The decoded picture is closed before the next
+    // one starts, so they don't pile up and kill the tab.
+    fetch(`api/cloud-square?c=${c}&r=${r}&t=${stamp}`, { signal: ctrl.signal })
+      .then((res) => {
+        if (!res.ok) throw new Error("cloud");
+        return res.blob();
+      })
+      .then((blob) => createImageBitmap(blob, { imageOrientation: "flipY" }))
+      .then((bitmap) => {
+        cloudLoading.delete(key);
+        cloudAbort.delete(key);
+        if (disposed || !cloudsOn || stamp !== cloudStamp || !cloudMesh) {
+          bitmap.close();
+          kick();
+          return;
+        }
+        const tex = new THREE.Texture(bitmap);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.flipY = false;
+        tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+        tex.generateMipmaps = true;
+        tex.minFilter = THREE.LinearMipmapLinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.needsUpdate = true;
+        releaseDecodedImage(tex);
+        if (tex.image === bitmap) {
+          bitmap.close();
+          throw new Error("upload");
+        }
+        const piece = makeCloudPatch(c, r, tex);
+        cloudMesh.add(piece);
+        cloudLive.set(key, piece);
+        kick();
+      })
+      .catch(() => {
+        cloudLoading.delete(key);
+        cloudAbort.delete(key);
+        if (ctrl.signal.aborted || disposed || !cloudsOn) {
+          kick();
+          return;
+        }
+        const n = (cloudFails.get(key) || 0) + 1;
+        cloudFails.set(key, n);
+        if (n >= 3) cloudSkip.add(stamp + ":" + key);
+        else cloudRetryAt = performance.now() + 4000;
+        kick();
+      });
+  }
+
+  function updateClouds() {
+    if (!cloudsOn || disposed || !mesh) return;
+    const stamp = cloudStampNow();
+    if (stamp !== cloudStamp) {
+      cloudStamp = stamp;
+      cloudSkip.clear();
+      cloudFails.clear();
+      cloudRetryAt = 0;
+      stopCloudLoads();
+      for (const key of [...cloudLive.keys()]) dropCloudPiece(key);
+    }
+    const at = viewLonLat();
+    if (!at) return;
+    if (!cloudMesh) {
+      cloudMesh = new THREE.Group();
+      cloudMesh.name = "clouds";
+      mesh.add(cloudMesh);
+    }
+    const want = new Set(keysOnScreen(CLOUD_LEVEL, at, viewSamples()));
+    for (const key of [...cloudLive.keys()]) {
+      if (!want.has(key)) dropCloudPiece(key);
+    }
+    if (cloudLoading.size > 0 || performance.now() < cloudRetryAt) return;
+    const { c0, r0 } = levelColRow(CLOUD_LEVEL, at.lon, at.lat);
+    const ordered = [...want].sort((a, b) => {
+      const ap = a.split(":");
+      const bp = b.split(":");
+      const da =
+        Math.min(Math.abs(Number(ap[1]) - c0), CLOUD_LEVEL.cols - Math.abs(Number(ap[1]) - c0)) +
+        Math.abs(Number(ap[2]) - r0);
+      const db =
+        Math.min(Math.abs(Number(bp[1]) - c0), CLOUD_LEVEL.cols - Math.abs(Number(bp[1]) - c0)) +
+        Math.abs(Number(bp[2]) - r0);
+      return da - db;
+    });
+    for (const key of ordered) {
+      if (cloudLive.has(key) || cloudSkip.has(stamp + ":" + key)) continue;
+      loadCloudSquare(key, stamp);
+      return;
+    }
   }
 
   function wrapCol(c, cols) {
@@ -2490,6 +2545,27 @@ export function createEarthGlobe(canvas, options = {}) {
     for (const row of rows) {
       for (const c of cols) keys.push(`${level.label}:${c}:${row}`);
     }
+    // The squares meet at a pole. From above it you see every side, so the
+    // one we were leaving out is a missing wedge. The closer photos stay a
+    // small patch; these zoomed-out squares fill that wedge.
+    if (level.cols <= 4) {
+      const dist = camDist();
+      const beta = Math.acos(THREE.MathUtils.clamp(RADIUS / Math.max(dist, 1.001), -1, 1));
+      const wholeCircle = (latDeg) => {
+        const L = THREE.MathUtils.degToRad(lat);
+        const p = THREE.MathUtils.degToRad(latDeg);
+        const far = Math.acos(
+          THREE.MathUtils.clamp(Math.sin(L) * Math.sin(p) - Math.cos(L) * Math.cos(p), -1, 1)
+        );
+        return far < beta - 0.03;
+      };
+      for (let row = 0; row < level.rows; row++) {
+        const latN = 90 - (row / level.rows) * 180;
+        const latS = 90 - ((row + 1) / level.rows) * 180;
+        if (!wholeCircle(latN) && !wholeCircle(latS) && !wholeCircle((latN + latS) / 2)) continue;
+        for (let c = 0; c < level.cols; c++) keys.push(`${level.label}:${c}:${row}`);
+      }
+    }
     return keys;
   }
 
@@ -2501,15 +2577,58 @@ export function createEarthGlobe(canvas, options = {}) {
     if (mesh && tileGroup.parent !== mesh) mesh.add(tileGroup);
   }
 
+  let blankTex = null;
+  /** 1×1 black photo used when a square does not need day or night. */
+  function sharedBlank() {
+    if (blankTex) return blankTex;
+    const data = new Uint8Array([0, 0, 0, 255]);
+    blankTex = new THREE.DataTexture(data, 1, 1, THREE.RGBAFormat);
+    blankTex.colorSpace = THREE.NoColorSpace;
+    blankTex.magFilter = THREE.LinearFilter;
+    blankTex.minFilter = THREE.LinearFilter;
+    blankTex.generateMipmaps = false;
+    blankTex.needsUpdate = true;
+    return blankTex;
+  }
+
+  function disposeOwnMap(tex) {
+    if (tex && tex !== blankTex) disposeMap(tex);
+  }
+
+  /**
+   * Day, night, or both. A square entirely in daylight does not load city
+   * lights. A square entirely in the dark does not load the day photo.
+   * The line between them loads both, before either side would be missing.
+   */
+  function tileLight(level, c, r) {
+    if (sunOnUniform.value < 0.5) return "night";
+    const lat = 90 - ((r + 0.5) / level.rows) * 180;
+    const lon = ((c + 0.5) / level.cols) * 360 - 180;
+    const n = latLonToLocal(lat, lon, 1);
+    if (mesh) {
+      mesh.updateMatrix();
+      n.applyQuaternion(mesh.quaternion);
+      n.applyQuaternion(earthTilt.quaternion);
+    }
+    const lit = n.dot(sunDir);
+    const span = (Math.PI * 2) / level.cols;
+    const half = span * 0.5 * Math.SQRT2;
+    // A small square also loads the other photo one square before the line arrives.
+    const extra = span < Math.PI / 6 ? span : 0;
+    const soon = Math.sin(Math.min(1.2, half + extra));
+    if (lit > soon) return "day";
+    if (lit < -soon) return "night";
+    return "both";
+  }
+
   function dropTile(key) {
     const piece = tileLive.get(key);
     if (!piece) return;
     tileLive.delete(key);
     if (piece.parent) piece.parent.remove(piece);
     piece.geometry.dispose();
-    disposeMap(piece.material.map);
-    const nightTex = piece.material.userData?.nightUniform?.value;
-    if (nightTex) disposeMap(nightTex);
+    disposeOwnMap(piece.material.map);
+    disposeOwnMap(piece.material.userData?.nightUniform?.value);
     piece.material.dispose();
   }
 
@@ -2520,7 +2639,7 @@ export function createEarthGlobe(canvas, options = {}) {
     for (const key of [...tileLive.keys()]) dropTile(key);
     if (tileLevel) {
       tileLevel = null;
-      reportQuality("8k");
+      reportQuality("8");
     }
   }
 
@@ -2537,10 +2656,11 @@ export function createEarthGlobe(canvas, options = {}) {
     const phiLength = (1 / level.cols) * Math.PI * 2;
     const thetaStart = (r / level.rows) * Math.PI;
     const thetaLength = (1 / level.rows) * Math.PI;
+    const segs = level.label === "8" ? 64 : 48;
     const geo = new THREE.SphereGeometry(
       RADIUS * level.radius,
-      48,
-      48,
+      segs,
+      segs,
       phiStart,
       phiLength,
       thetaStart,
@@ -2549,35 +2669,35 @@ export function createEarthGlobe(canvas, options = {}) {
     const nightU = { value: nightTex };
     const normalU = material.userData.normalUniform;
     const mat = makeTileMaterial(dayTex, nightU, normalU);
+    mat.colorWrite = photosOn;
     mat.userData.nightUniform = nightU;
     const piece = new THREE.Mesh(geo, mat);
-    // Draw before the soft globe and write depth, so the globe is not shaded
-    // again under the sharp patch. 32 is outside 16, so it has to come second.
-    piece.renderOrder = level.label === "32" ? -1 : -2;
+    // Closer squares sit further out and draw later, so they cover the ones under them.
+    const order = { 86: -1, 32: -2, 16: -3, 8: -4 };
+    piece.renderOrder = order[level.label] ?? -3;
     piece.userData.tileKey = `${level.label}:${c}:${r}`;
     return piece;
   }
 
   function loadTile(level, key) {
     if (tileLive.has(key) || tileLoading.has(key) || disposed || !material) return;
-    tileLoading.add(key);
     const parts = key.split(":");
     const c = Number(parts[1]);
     const r = Number(parts[2]);
-    let dayTex = null;
-    let nightTex = null;
-    let pending = 2;
+    const light = tileLight(level, c, r);
+    const needDay = light !== "night";
+    const needNight = light !== "day";
+    tileLoading.add(key);
+    let dayTex = needDay ? null : sharedBlank();
+    let nightTex = needNight ? null : sharedBlank();
+    let pending = (needDay ? 1 : 0) + (needNight ? 1 : 0);
     let failed = false;
 
     const abort = () => {
-      if (dayTex) {
-        dayTex.dispose();
-        dayTex = null;
-      }
-      if (nightTex) {
-        nightTex.dispose();
-        nightTex = null;
-      }
+      if (needDay) disposeOwnMap(dayTex);
+      if (needNight) disposeOwnMap(nightTex);
+      dayTex = null;
+      nightTex = null;
     };
 
     const finish = () => {
@@ -2591,7 +2711,6 @@ export function createEarthGlobe(canvas, options = {}) {
         !tileGroup ||
         !tileGroup.visible ||
         !tileWanted.has(key) ||
-        tileLevel !== level.label ||
         tileLive.has(key) ||
         !dayTex ||
         !nightTex
@@ -2600,107 +2719,221 @@ export function createEarthGlobe(canvas, options = {}) {
         kick();
         return;
       }
-      configureTileColor(dayTex);
-      configureTileNight(nightTex);
-      releaseDecodedImage(dayTex);
-      releaseDecodedImage(nightTex);
+      if (needDay) {
+        configureTileColor(dayTex);
+        releaseDecodedImage(dayTex);
+      }
+      if (needNight) {
+        configureTileNight(nightTex);
+        releaseDecodedImage(nightTex);
+      }
       ensureTileGroup();
       const piece = makeTilePatch(level, c, r, dayTex, nightTex);
+      piece.userData.light = light;
       tileGroup.add(piece);
       tileLive.set(key, piece);
       kick();
     };
 
-    loader.load(
-      tileUrl(level, c, r),
-      (tex) => {
-        dayTex = tex;
-        finish();
-      },
-      undefined,
-      () => {
-        failed = true;
-        finish();
+    if (needDay) {
+      loader.load(
+        tileUrl(level, c, r),
+        (tex) => {
+          dayTex = tex;
+          finish();
+        },
+        undefined,
+        () => {
+          failed = true;
+          finish();
+        }
+      );
+    }
+    if (needNight) {
+      loader.load(
+        nightTileUrl(level, c, r),
+        (tex) => {
+          nightTex = tex;
+          finish();
+        },
+        undefined,
+        () => {
+          failed = true;
+          finish();
+        }
+      );
+    }
+  }
+
+  /** Next closer photos start loading before the current ones would look soft. */
+  function soonLevel(dist) {
+    const close = TILE_LEVELS[86];
+    const fine = TILE_LEVELS[32];
+    const mid = TILE_LEVELS[16];
+    if (dist > close.onDist && dist <= close.onDist + 0.28) return close;
+    if (dist > fine.onDist && dist <= fine.onDist + 0.35) return fine;
+    if (dist > mid.onDist && dist <= mid.onDist + 0.45) return mid;
+    return null;
+  }
+
+  function levelColRow(level, lon, lat) {
+    let u = (lon + 180) / 360;
+    u = ((u % 1) + 1) % 1;
+    const v = THREE.MathUtils.clamp((90 - lat) / 180, 0, 0.9999);
+    return {
+      c0: Math.floor(u * level.cols),
+      r0: Math.min(level.rows - 1, Math.floor(v * level.rows)),
+    };
+  }
+
+  function keyDist(key, at) {
+    const parts = key.split(":");
+    const level = TILE_LEVELS[parts[0]];
+    if (!level) return 99;
+    const { c0, r0 } = levelColRow(level, at.lon, at.lat);
+    const c = Number(parts[1]);
+    const r = Number(parts[2]);
+    const dc = Math.min(Math.abs(c - c0), level.cols - Math.abs(c - c0));
+    return dc + Math.abs(r - r0);
+  }
+
+  function viewSamples() {
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return null;
+    const inset = 2;
+    const xs = [rect.left + inset, rect.left + rect.width / 2, rect.right - inset];
+    const ys = [rect.top + inset, rect.top + rect.height / 2, rect.bottom - inset];
+    const hits = [];
+    for (const y of ys) {
+      for (const x of xs) {
+        const hit = lonLatAt(x, y, true);
+        if (!hit) return null;
+        hits.push(hit);
       }
-    );
-    loader.load(
-      nightTileUrl(level, c, r),
-      (tex) => {
-        nightTex = tex;
-        finish();
-      },
-      undefined,
-      () => {
-        failed = true;
-        finish();
+    }
+    return hits;
+  }
+
+  // Squares the screen actually covers. When the limb is on screen, the
+  // zoomed-out set is used instead, so the edge of the earth does not go empty.
+  function keysOnScreen(level, at, samples) {
+    if (!samples) return neededTileKeys(level, at.lon, at.lat, TILE_RING);
+    let minLat = 90;
+    let maxLat = -90;
+    let minD = 180;
+    let maxD = -180;
+    for (const s of samples) {
+      if (s.lat < minLat) minLat = s.lat;
+      if (s.lat > maxLat) maxLat = s.lat;
+      let d = s.lon - at.lon;
+      while (d > 180) d -= 360;
+      while (d < -180) d += 360;
+      if (d < minD) minD = d;
+      if (d > maxD) maxD = d;
+    }
+    // Near a pole the longitudes swing wide. Keep the sampled squares only.
+    if (maxD - minD > 40 || maxLat - minLat > 40) {
+      const keys = [];
+      const seen = new Set();
+      for (const s of samples) {
+        const { c0, r0 } = levelColRow(level, s.lon, s.lat);
+        const key = `${level.label}:${c0}:${r0}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        keys.push(key);
       }
-    );
+      return keys;
+    }
+    const dLon = 360 / level.cols;
+    const dLat = 180 / level.rows;
+    const row0 = Math.max(0, Math.floor((90 - maxLat) / dLat));
+    const row1 = Math.min(level.rows - 1, Math.floor((90 - minLat) / dLat));
+    const c0 = Math.floor((at.lon + minD + 180) / dLon);
+    const c1 = Math.floor((at.lon + maxD + 180) / dLon);
+    const keys = [];
+    for (let row = row0; row <= row1; row++) {
+      for (let c = c0; c <= c1; c++) keys.push(`${level.label}:${wrapCol(c, level.cols)}:${row}`);
+    }
+    return keys;
   }
 
   function updateTiles() {
     if (disposed || !tilesEnabled || !mesh || !material) return;
     const dist = camDist();
     const level = pickTileLevel(dist);
-    if (!level) {
-      hideTiles();
-      return;
-    }
+    const soon = soonLevel(dist);
     const at = viewLonLat();
-    if (!at) {
-      hideTiles();
-      return;
-    }
-    if (tileLevel && tileLevel !== level.label) holdLevel = tileLevel;
-    tileLevel = level.label;
+    if (!at) return;
+    const samples = viewSamples();
+    const base = TILE_LEVELS[8];
+    const baseKeys = keysOnScreen(base, at, samples);
+    const shown = level || soon;
+    if (tileLevel && level && tileLevel !== level.label) holdLevel = tileLevel;
+    if (!level) holdLevel = null;
+    tileLevel = shown ? shown.label : null;
     ensureTileGroup();
     tileGroup.visible = true;
-    const want = new Set(neededTileKeys(level, at.lon, at.lat, TILE_RING));
-    let u = (at.lon + 180) / 360;
-    u = ((u % 1) + 1) % 1;
-    const v = THREE.MathUtils.clamp((90 - at.lat) / 180, 0, 0.9999);
-    const c0 = Math.floor(u * level.cols);
-    const r0 = Math.min(level.rows - 1, Math.floor(v * level.rows));
-    // Keep one extra ring so a drag doesn't flash soft 8k while neighbors load.
-    const keep = new Set(neededTileKeys(level, at.lon, at.lat, TILE_RING + 1));
-    tileWanted = want;
-    const incomingReady = [...want].every((k) => tileLive.has(k));
-    if (incomingReady) holdLevel = null;
-    // Only the center of the old size stays up. Keeping its whole drag ring
-    // plus the new tiles is enough to make Safari kill the tab.
+
+    const onScreen = shown ? new Set(keysOnScreen(shown, at, samples)) : new Set();
+    const soonKeys =
+      soon && shown !== soon
+        ? new Set(keysOnScreen(soon, at, samples))
+        : new Set();
+    tileWanted = new Set([...baseKeys, ...onScreen, ...soonKeys]);
+    const screenReady = [...onScreen].every((k) => tileLive.has(k));
+    if (screenReady) holdLevel = null;
     const holdKeep =
       holdLevel && TILE_LEVELS[holdLevel]
-        ? new Set(neededTileKeys(TILE_LEVELS[holdLevel], at.lon, at.lat, TILE_RING))
+        ? new Set(keysOnScreen(TILE_LEVELS[holdLevel], at, samples))
         : null;
+
+    for (const key of [...tileLive.keys()]) {
+      const parts = key.split(":");
+      const lv = TILE_LEVELS[parts[0]];
+      const piece = tileLive.get(key);
+      if (lv && piece && piece.userData.light !== tileLight(lv, Number(parts[1]), Number(parts[2]))) {
+        dropTile(key);
+      }
+    }
     for (const key of [...tileLive.keys()]) {
       if (holdKeep && key.split(":")[0] === holdLevel) {
         if (!holdKeep.has(key)) dropTile(key);
         continue;
       }
-      if (!keep.has(key)) dropTile(key);
+      if (!tileWanted.has(key)) dropTile(key);
     }
-    // One tile at a time. Starting the whole 3×3 at once decodes eighteen
-    // pictures on the same turn and the pinch freezes.
-    const ordered = [...want].sort((a, b) => {
-      const pa = a.split(":");
-      const pb = b.split(":");
-      const da =
-        Math.min(Math.abs(Number(pa[1]) - c0), level.cols - Math.abs(Number(pa[1]) - c0)) +
-        Math.abs(Number(pa[2]) - r0);
-      const db =
-        Math.min(Math.abs(Number(pb[1]) - c0), level.cols - Math.abs(Number(pb[1]) - c0)) +
-        Math.abs(Number(pb[2]) - r0);
-      return da - db;
-    });
+
+    const loadRank = (key) => {
+      if (onScreen.has(key)) return 0;
+      if (soonKeys.has(key)) return 1;
+      if (key.startsWith("8:")) return 2;
+      return 3;
+    };
+    const ordered = [...tileWanted].sort(
+      (a, b) => loadRank(a) - loadRank(b) || keyDist(a, at) - keyDist(b, at)
+    );
     if (tileLoading.size === 0) {
       for (const key of ordered) {
         if (!tileLive.has(key)) {
-          loadTile(level, key);
+          const lv = TILE_LEVELS[key.split(":")[0]];
+          if (lv) loadTile(lv, key);
           break;
         }
       }
     }
-    if (incomingReady) reportQuality(level.label);
-    else if (holdLevel) reportQuality(holdLevel);
+    const baseReady = baseKeys.every((k) => tileLive.has(k));
+    if (!ready && baseReady) {
+      ready = true;
+      if (typeof onReady === "function") onReady();
+    }
+    const covering = (label, keys) => {
+      const mine = [...keys].filter((k) => k.startsWith(label + ":"));
+      return mine.length > 0 && mine.every((k) => tileLive.has(k));
+    };
+    if (level && covering(level.label, onScreen)) reportQuality(level.label);
+    else if (holdLevel && holdKeep && covering(holdLevel, holdKeep)) reportQuality(holdLevel);
+    else if (covering("8", baseKeys)) reportQuality("8");
+    else reportQuality("");
   }
 
   function wrapLonDeg(lon) {
@@ -2960,7 +3193,12 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function setClouds(on) {
     cloudsOn = !!on;
-    if (cloudMesh) cloudMesh.visible = cloudsOn;
+    if (!cloudsOn) {
+      disposeClouds();
+      kick();
+      return cloudsOn;
+    }
+    updateClouds();
     kick();
     return cloudsOn;
   }
@@ -2970,6 +3208,21 @@ export function createEarthGlobe(canvas, options = {}) {
     if (riverLines) riverLines.visible = riversOn;
     kick();
     return riversOn;
+  }
+
+  function applyPhotos() {
+    if (material) material.colorWrite = photosOn;
+    if (mesh) mesh.renderOrder = photosOn ? 0 : -6;
+    for (const piece of tileLive.values()) {
+      if (piece.material) piece.material.colorWrite = photosOn;
+    }
+  }
+
+  function setPhotos(on) {
+    photosOn = !!on;
+    applyPhotos();
+    kick();
+    return photosOn;
   }
 
   /** Contiguous oval on one longitude. Stops at a gap or the equator. */
@@ -4265,6 +4518,7 @@ export function createEarthGlobe(canvas, options = {}) {
     }
     syncEarth();
     updateTiles();
+    updateClouds();
     syncRiverPixels();
     if (gridOn) updateGridLabels();
     renderer.render(scene, camera);
@@ -4274,7 +4528,7 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   applyEphemeris();
-  loadLow();
+  loadBase();
   loadSkyMoon();
   loadBorders();
   loadLakes();
@@ -4292,6 +4546,7 @@ export function createEarthGlobe(canvas, options = {}) {
     setObserver,
     setClouds,
     setRivers,
+    setPhotos,
     setBorders,
     setGrid,
     setTilt,
@@ -4329,6 +4584,7 @@ export function createEarthGlobe(canvas, options = {}) {
       window.removeEventListener("wheel", onWheel, true);
       window.removeEventListener("contextmenu", onContextMenu, true);
       hideTiles();
+      disposeClouds();
       disposePoleMarks();
       disposeCapDot();
       disposeTapDot();
