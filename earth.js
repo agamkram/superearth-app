@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e299";
+export const BUILD = "e318";
 const TEX_VER = BUILD;
 
 const LOD = {
@@ -711,7 +711,8 @@ export function createEarthGlobe(canvas, options = {}) {
     if (auroraMesh) mesh.add(auroraMesh);
     if (tileGroup) mesh.add(tileGroup);
     if (borderLines) mesh.add(borderLines);
-    if (stateLines) mesh.add(stateLines);
+    if (usStateLines) mesh.add(usStateLines);
+    if (otherStateLines) mesh.add(otherStateLines);
     if (lakeMesh) mesh.add(lakeMesh);
     if (riverLines) mesh.add(riverLines);
     if (gridGroup) mesh.add(gridGroup);
@@ -770,8 +771,9 @@ export function createEarthGlobe(canvas, options = {}) {
   let poleGeo = null;
   const poleMarks = [];
   const POLE_GEO_R = 0.006;
-  const POLE_PX_FAR = 1;
-  const POLE_PX_NEAR = 5;
+  /** Phone screen px. iPad multiplies by screen size so the mark stays the same share of the globe. */
+  const POLE_PX_FAR = 3;
+  const POLE_PX_NEAR = 7;
   const PIN_GEO_R = 0.012;
   /** Screen px: findable at home, smaller in tight so it does not sit on the city. */
   const PIN_PX_HOME = 4;
@@ -791,6 +793,23 @@ export function createEarthGlobe(canvas, options = {}) {
     { letter: "MN", lat: 85.76, lon: 139.3, stroke: "rgba(110, 220, 255, 0.95)" },
     { letter: "MS", lat: -63.85, lon: 135.08, stroke: "rgba(110, 220, 255, 0.95)" },
   ];
+  /** Geographic poles. pair is the magnetic pole on the same side of Earth. */
+  const GEO_POLES = [
+    { letter: "N", lat: 90, lon: 0, pair: "MN", stroke: "rgba(212, 222, 236, 0.95)" },
+    { letter: "S", lat: -90, lon: 0, pair: "MS", stroke: "rgba(212, 222, 236, 0.95)" },
+  ];
+
+  function surfaceKm(a, b) {
+    const rad = Math.PI / 180;
+    const p1 = a.lat * rad;
+    const p2 = b.lat * rad;
+    const dp = (b.lat - a.lat) * rad;
+    const dl = (b.lon - a.lon) * rad;
+    const h =
+      Math.sin(dp / 2) ** 2 +
+      Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+    return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(Math.max(0, 1 - h)));
+  }
 
   function makePoleBadge(letter, stroke = "rgba(255, 255, 255, 0.95)") {
     const size = 96;
@@ -857,10 +876,15 @@ export function createEarthGlobe(canvas, options = {}) {
     poleGeo = new THREE.CircleGeometry(POLE_GEO_R, 24);
     poleGroup = new THREE.Group();
     poleGroup.name = "pole-marks";
-    // Magnetic dip poles only — geographic N/S are the grid axis ends
-    for (const m of MAG_POLES) {
+    const poles = MAG_POLES.concat(GEO_POLES);
+    for (const m of poles) {
       const mark = makePoleBadge(m.letter, m.stroke);
-      mark.userData.pole = m;
+      const info = { letter: m.letter, lat: m.lat, lon: m.lon };
+      if (m.pair) {
+        const pair = MAG_POLES.find((p) => p.letter === m.pair);
+        if (pair) info.pairKm = surfaceKm(m, pair);
+      }
+      mark.userData.pole = info;
       placePoleMark(mark, m.lat, m.lon);
       poleGroup.add(mark);
       poleMarks.push(mark);
@@ -877,7 +901,15 @@ export function createEarthGlobe(canvas, options = {}) {
     if (poleMarks.length) {
       const span = Math.max(homeDist - MIN_DIST, 0.01);
       const zoomIn = 1 - THREE.MathUtils.clamp((dist - MIN_DIST) / span, 0, 1);
-      const px = THREE.MathUtils.lerp(POLE_PX_FAR, POLE_PX_NEAR, zoomIn);
+      let far = POLE_PX_FAR;
+      let near = POLE_PX_NEAR;
+      if (isTabletDisplay()) {
+        const minSide = Math.min(window.innerWidth || 0, window.innerHeight || 0);
+        const scale = THREE.MathUtils.clamp(minSide / 390, 1, 3);
+        far *= scale;
+        near *= scale;
+      }
+      const px = THREE.MathUtils.lerp(far, near, zoomIn);
       const s = (px * worldPerPx) / (POLE_GEO_R * 2);
       for (const mark of poleMarks) mark.scale.setScalar(s);
     }
@@ -1251,7 +1283,8 @@ export function createEarthGlobe(canvas, options = {}) {
   const BORDER_R = RADIUS * 1.0028;
   const STATE_R = RADIUS * 1.0030;
   let borderLines = null;
-  let stateLines = null;
+  let usStateLines = null;
+  let otherStateLines = null;
   let bordersOn = false;
 
   function disposeLineMesh(obj) {
@@ -1264,16 +1297,40 @@ export function createEarthGlobe(canvas, options = {}) {
   function disposeBorders() {
     disposeLineMesh(borderLines);
     borderLines = null;
-    disposeLineMesh(stateLines);
-    stateLines = null;
+    disposeLineMesh(usStateLines);
+    usStateLines = null;
+    disposeLineMesh(otherStateLines);
+    otherStateLines = null;
+  }
+
+  function borderXYZ(latDeg, lonDeg, radius, out, i) {
+    const lat = latDeg * (Math.PI / 180);
+    const lon = lonDeg * (Math.PI / 180);
+    const cl = Math.cos(lat);
+    out[i] = radius * cl * Math.cos(lon);
+    out[i + 1] = radius * Math.sin(lat);
+    out[i + 2] = -radius * cl * Math.sin(lon);
   }
 
   function positionsFromBorderBin(buf, radius) {
     const view = new DataView(buf);
-    let o = 0;
-    const nLines = view.getUint32(o, true);
-    o += 4;
-    const positions = [];
+    const nLines = view.getUint32(0, true);
+    let segs = 0;
+    let o = 4;
+    for (let i = 0; i < nLines; i++) {
+      const n = view.getUint32(o, true);
+      o += 4;
+      let prevLon = NaN;
+      for (let j = 0; j < n; j++) {
+        const lon = view.getFloat32(o, true);
+        o += 8;
+        if (Number.isFinite(prevLon) && Math.abs(lon - prevLon) < 180) segs += 1;
+        prevLon = lon;
+      }
+    }
+    const positions = new Float32Array(segs * 6);
+    let w = 0;
+    o = 4;
     for (let i = 0; i < nLines; i++) {
       const n = view.getUint32(o, true);
       o += 4;
@@ -1285,9 +1342,9 @@ export function createEarthGlobe(canvas, options = {}) {
         const lat = view.getFloat32(o, true);
         o += 4;
         if (Number.isFinite(prevLon) && Math.abs(lon - prevLon) < 180) {
-          const a = latLonToLocal(prevLat, prevLon, radius);
-          const b = latLonToLocal(lat, lon, radius);
-          positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+          borderXYZ(prevLat, prevLon, radius, positions, w);
+          borderXYZ(lat, lon, radius, positions, w + 3);
+          w += 6;
         }
         prevLon = lon;
         prevLat = lat;
@@ -1298,10 +1355,7 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function attachBorderMesh(positions, name, opacity) {
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(new Float32Array(positions), 3)
-    );
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     const mat = new THREE.LineBasicMaterial({
       color: 0xd4deec,
       transparent: true,
@@ -1332,23 +1386,29 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function loadBorders() {
-    loadBorderBin("borders-50m.bin", BORDER_R, "country-borders", 0.8, (lines) => {
+    loadBorderBin("borders-10m.bin", BORDER_R, "country-borders", 0.95, (lines) => {
       disposeLineMesh(borderLines);
       borderLines = lines;
     });
-    loadBorderBin("states-50m.bin", STATE_R, "state-borders", 0.8, (lines) => {
-      disposeLineMesh(stateLines);
-      stateLines = lines;
+    loadBorderBin("states-us-10m.bin", STATE_R, "us-state-borders", 0.9, (lines) => {
+      disposeLineMesh(usStateLines);
+      usStateLines = lines;
+    });
+    loadBorderBin("states-other-10m.bin", STATE_R, "other-state-borders", 0.25, (lines) => {
+      disposeLineMesh(otherStateLines);
+      otherStateLines = lines;
     });
   }
 
   function setBorders(on) {
     bordersOn = !!on;
     if (borderLines) borderLines.visible = bordersOn;
-    if (stateLines) stateLines.visible = bordersOn;
+    if (usStateLines) usStateLines.visible = bordersOn;
+    if (otherStateLines) otherStateLines.visible = bordersOn;
     kick();
     return bordersOn;
   }
+
 
   /** Just outside zoom tiles so the fill covers the photo, under border lines. */
   const LAKE_R = RADIUS * 1.0024;
@@ -1956,12 +2016,10 @@ export function createEarthGlobe(canvas, options = {}) {
     if (!gridGroup) return;
     const nameLon = -30;
     const spots = [
-      [90, nameLon, "90°N"],
       [60, nameLon, "60°N"],
       [30, nameLon, "30°N"],
       [-30, nameLon, "30°S"],
       [-60, nameLon, "60°S"],
-      [-90, nameLon, "90°S"],
       [0, 90, "90°E"],
       [0, 180, "180°"],
       [0, -90, "90°W"],
@@ -1985,7 +2043,7 @@ export function createEarthGlobe(canvas, options = {}) {
     const span = Math.max(homeDist - MIN_DIST, 0.01);
     const zoomIn = 1 - THREE.MathUtils.clamp((dist - MIN_DIST) / span, 0, 1);
     if (gridOn && zoomIn > 0.72) ensureFineGrid();
-    if (grid15) grid15.visible = gridOn && zoomIn > 0.25;
+    if (grid15) grid15.visible = gridOn;
     if (grid5) grid5.visible = gridOn && zoomIn > 0.52;
     if (grid1) grid1.visible = gridOn && zoomIn > 0.78;
     if (!gridLabels.length) return;
