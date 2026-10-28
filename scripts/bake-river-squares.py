@@ -2,12 +2,11 @@
 """Split rivers so the phone only keeps the water it can see.
 
 rivers-big.bin   rivers at or above 1000 m3/s, the whole Earth
-rivers-mid/      15–1000 m3/s, eight by four squares (same grid as tiles-16)
-rivers-close/    every smaller river, forty by twenty squares
-                 (same grid as tiles-86). Rivers of 1000 and up stay in rivers-big.bin.
+rivers-mid/      10–1000 m3/s, eight by four squares (same grid as tiles-16)
 
-rivers-10m.bin holds the rivers from 20 up. The opening view also includes
-15 to 20, read from HydroRIVERS and clipped on the same lakes.
+The same rivers show at every zoom. There is no closer set.
+rivers-10m.bin holds the rivers from 20 up. Rivers from 10 to 20 are read
+from HydroRIVERS and clipped on the same lakes.
 
 A reach that crosses a square is cut on the square edge so the pieces meet.
 A reach that crosses a lake stops at the shore. The same lakes the globe draws.
@@ -28,11 +27,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC_BIN = ROOT / "rivers-10m.bin"
 BIG_OUT = ROOT / "rivers-big.bin"
 MID_DIR = ROOT / "rivers-mid"
-CLOSE_DIR = ROOT / "rivers-close"
-BIG_FLOW = 1000.0
-# rivers-10m.bin starts at 20. The opening view goes down to 15.
+# rivers-10m.bin starts at 20. Every zoom shows rivers from 10 up.
 BIN_FLOW = 20.0
-OPENING_FLOW = 15.0
+OPENING_FLOW = 10.0
 
 HEAD = struct.Struct("<BxxxI")
 PT = struct.Struct("<ff")
@@ -588,14 +585,18 @@ def add_flow_band(squares, lo, hi):
     return added
 
 
-def extend_opening():
-    """Put rivers from 15 to 20 into the squares the opening view already draws."""
+def extend_opening(lo=None, hi=None):
+    """Add a band of rivers into the squares every zoom already draws."""
+    if lo is None:
+        lo = OPENING_FLOW
+    if hi is None:
+        hi = BIN_FLOW
     self_test()
     mid = Squares(MID_DIR, 8, 4)
     load_squares(mid)
     before = mid.lines
     print(f"opening squares already hold {before} rivers", flush=True)
-    add_flow_band(mid, OPENING_FLOW, BIN_FLOW)
+    add_flow_band(mid, lo, hi)
     print(f"  opening squares {before} -> {mid.lines}", flush=True)
     mid.write()
 
@@ -653,72 +654,6 @@ def fields_of(dbf_path):
         return header_len, rec_len, found
 
 
-def bake_close():
-    close = Squares(CLOSE_DIR, 40, 20)
-    kept = 0
-    skipped_big = 0
-    for folder in regions():
-        t0 = time.time()
-        shps = list(folder.glob("*.shp"))
-        if not shps:
-            raise SystemExit(f"no shapefile in {folder}")
-        shp_path = shps[0]
-        header_len, rec_len, (flow_off, flow_len) = fields_of(shp_path.with_suffix(".dbf"))
-        region_kept = 0
-        with open(shp_path, "rb") as shp, open(shp_path.with_suffix(".dbf"), "rb") as dbf:
-            shp.seek(100)
-            i = 0
-            while True:
-                hdr = shp.read(8)
-                if len(hdr) < 8:
-                    break
-                _rec, words = struct.unpack(">II", hdr)
-                content = shp.read(words * 2)
-                dbf.seek(header_len + i * rec_len)
-                flag = dbf.read(1)
-                raw = b""
-                if flag and flag != b"*":
-                    dbf.seek(header_len + i * rec_len + flow_off)
-                    raw = dbf.read(flow_len)
-                i += 1
-                if not content or len(content) < 44:
-                    continue
-                if struct.unpack_from("<i", content, 0)[0] != 3:
-                    continue
-                try:
-                    flow = float(raw.strip() or "0")
-                except ValueError:
-                    flow = 0.0
-                if flow >= BIG_FLOW:
-                    skipped_big += 1
-                    continue
-                nparts, npts = struct.unpack_from("<ii", content, 36)
-                if nparts < 1 or npts < 2:
-                    continue
-                parts_at = 44
-                xy_at = parts_at + 4 * nparts
-                parts = struct.unpack_from("<" + "i" * nparts, content, parts_at)
-                ends = list(parts[1:]) + [npts]
-                for a, b in zip(parts, ends):
-                    if b - a < 2:
-                        continue
-                    coords = []
-                    base = xy_at + a * 16
-                    for k in range(b - a):
-                        lon, lat = struct.unpack_from("<dd", content, base + k * 16)
-                        coords.append((lon, lat))
-                    for piece in lake_mask().cut(coords):
-                        close.add_clipped(piece, 12)
-                    region_kept += 1
-                    kept += 1
-        print(
-            f"  {shp_path.name}: {region_kept} smaller reaches in {time.time() - t0:.0f}s",
-            flush=True,
-        )
-    print(f"  close kept {kept}, left {skipped_big} big stems in the zoomed-out file", flush=True)
-    close.write()
-
-
 def self_test():
     # A segment crossing the prime meridian and the equator on the 8×4 grid.
     # Column edges are every 45°. u = lon+180, so lon 0 is u 180, the edge of column 4.
@@ -747,13 +682,11 @@ def self_test():
 
 def main():
     self_test()
-    print("big and mid from the 20 m3/s file", flush=True)
+    print("big rivers, and the opening set from the 20 file", flush=True)
     mid = split_ranked_bin(write_mid=False)
-    print("rivers from 15 to 20", flush=True)
+    print("rivers from 10 to 20", flush=True)
     add_flow_band(mid, OPENING_FLOW, BIN_FLOW)
     mid.write()
-    print("close from HydroRIVERS", flush=True)
-    bake_close()
 
 
 if __name__ == "__main__":

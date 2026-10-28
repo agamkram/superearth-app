@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e337";
+export const BUILD = "e338";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -1550,11 +1550,10 @@ export function createEarthGlobe(canvas, options = {}) {
   const RIVER_R = RADIUS * 1.0026;
   /**
    * Rivers of 1000 m3/s and up stay on for the whole Earth.
-   * Rivers of 15 m3/s and up stay on at every zoom, including the opening
-   * view, for the face of the earth in view. Every smaller river loads only up close.
+   * Rivers of 10 m3/s and up stay on at every zoom, for the face in view.
+   * Smaller rivers are not drawn.
    */
-  const RIVER_MID = { label: "mid", folder: "rivers-mid", cols: 8, rows: 4, onDist: 2.5 };
-  const RIVER_CLOSE = { label: "close", folder: "rivers-close", cols: 40, rows: 20, onDist: 1.5 };
+  const RIVER_MID = { label: "mid", folder: "rivers-mid", cols: 8, rows: 4 };
   let riverLines = null;
   let riverGroup = null;
   const riverLive = new Map();
@@ -2008,38 +2007,23 @@ export function createEarthGlobe(canvas, options = {}) {
     return keys;
   }
 
-  function riverViewKeys(level, at, samples, dist) {
-    // The 15 m3/s squares are 45° wide. The on-screen sample misses
-    // whole rivers between those points, so cover the face in view.
-    if (level === RIVER_MID) return visibleCapKeys(level, at, dist);
-    return keysOnScreen(level, at, samples);
-  }
-
   function updateRiverSquares() {
     if (disposed || !mesh || !riversOn) return;
     const at = viewLonLat();
     if (!at) return;
     const dist = camDist();
-    const samples = viewSamples();
-    const level = dist <= RIVER_CLOSE.onDist ? RIVER_CLOSE : RIVER_MID;
-    const wantList = riverViewKeys(level, at, samples, dist);
+    // These squares are 45° wide. Cover the face in view at every zoom.
+    const wantList = visibleCapKeys(RIVER_MID, at, dist);
     const want = new Set(wantList);
-    const covered = wantList.every((k) => riverLive.has(k) || riverSkip.has(k));
-    let keep = want;
-    // Keep the middle squares until the close ones covering this view are in,
-    // so the network does not vanish while the finer file arrives.
-    if (level === RIVER_CLOSE && !covered) {
-      keep = new Set([...want, ...visibleCapKeys(RIVER_MID, at, dist)]);
-    }
-    riverWanted = keep;
+    riverWanted = want;
     for (const key of [...riverLive.keys()]) {
-      if (!keep.has(key)) dropRiverSquare(key);
+      if (!want.has(key)) dropRiverSquare(key);
     }
-    if (!level || riverLoading.size > 0 || performance.now() < riverRetryAt) return;
+    if (riverLoading.size > 0 || performance.now() < riverRetryAt) return;
     const ordered = wantList
       .filter((k) => !riverLive.has(k) && !riverSkip.has(k))
-      .sort((a, b) => riverKeyDist(a, level, at) - riverKeyDist(b, level, at));
-    if (ordered.length) loadRiverSquare(level, ordered[0]);
+      .sort((a, b) => riverKeyDist(a, RIVER_MID, at) - riverKeyDist(b, RIVER_MID, at));
+    if (ordered.length) loadRiverSquare(RIVER_MID, ordered[0]);
   }
 
   function loadBigRivers() {
