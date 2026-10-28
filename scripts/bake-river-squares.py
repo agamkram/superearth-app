@@ -7,13 +7,19 @@ rivers-close/    every smaller HydroRIVERS reach, forty by twenty squares
                  (same grid as tiles-86). The big stems stay in rivers-big.bin.
 
 A reach that crosses a square is cut on the square edge so the pieces meet.
+A reach that crosses a lake stops at the shore. The same lakes the globe draws.
 """
 from __future__ import annotations
 
+import json
 import math
 import struct
 import time
 from pathlib import Path
+
+import numpy as np
+import shapefile
+from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC_BIN = ROOT / "rivers-10m.bin"
@@ -260,6 +266,213 @@ class Squares:
         )
 
 
+class LakeMask:
+    """Water from the same lakes the globe draws. River lines stop at the shore."""
+
+    def __init__(self):
+        self.step = 0.02
+        self.w = int(360 / self.step)
+        self.h = int(180 / self.step)
+        img = Image.new("L", (self.w, self.h), 0)
+        draw = ImageDraw.Draw(img)
+        ne = ROOT / ".texture-src" / "ne"
+        for name in (
+            "ne_10m_lakes_north_america.shp",
+            "ne_10m_lakes_europe.shp",
+            "ne_10m_lakes.shp",
+        ):
+            path = ne / name
+            if not path.exists():
+                raise SystemExit(f"missing {path}")
+            reader = shapefile.Reader(str(path))
+            for shp in reader.iterShapes():
+                self._paint(draw, self._polygons(shp.points, shp.parts))
+            reader.close()
+        extra = ROOT / "scripts" / "extra-lakes.json"
+        if extra.exists():
+            for item in json.loads(extra.read_text()):
+                self._paint(draw, item.get("rings") or [])
+        self.mask = np.asarray(img, dtype=np.uint8)
+        img.close()
+
+    def _polygons(self, pts, parts):
+        cuts = list(parts) + [len(pts)]
+        rings = []
+        for a, b in zip(cuts, cuts[1:]):
+            ring = [(float(x), float(y)) for x, y in pts[a:b]]
+            if len(ring) >= 4 and ring[0] == ring[-1]:
+                ring = ring[:-1]
+            if len(ring) >= 3:
+                rings.append(ring)
+        return [rings] if rings else []
+
+    def _paint(self, draw, polygons):
+        for rings in polygons:
+            if not rings:
+                continue
+            signed = [self._area(ring) for ring in rings]
+            shell = max(range(len(rings)), key=lambda i: abs(signed[i]))
+            sign = 1 if signed[shell] >= 0 else -1
+            # Shell first. A hole painted earlier would be filled back in.
+            order = [shell] + [i for i in range(len(rings)) if i != shell]
+            for i in order:
+                ring = rings[i]
+                area = signed[i]
+                pix = [self._px(lon, lat) for lon, lat in ring]
+                if len(pix) < 3:
+                    continue
+                fill = 0 if area * sign < 0 else 255
+                draw.polygon(pix, fill=fill)
+
+    def _area(self, ring):
+        a = 0.0
+        for i in range(len(ring)):
+            x1, y1 = ring[i]
+            x2, y2 = ring[(i + 1) % len(ring)]
+            a += x1 * y2 - x2 * y1
+        return a * 0.5
+
+    def _px(self, lon, lat):
+        x = int((lon + 180.0) / 360.0 * (self.w - 1))
+        y = int((90.0 - lat) / 180.0 * (self.h - 1))
+        if x < 0:
+            x = 0
+        elif x >= self.w:
+            x = self.w - 1
+        if y < 0:
+            y = 0
+        elif y >= self.h:
+            y = self.h - 1
+        return (x, y)
+
+    def inside(self, lon, lat):
+        x, y = self._px(lon, lat)
+        return self.mask[y, x] != 0
+
+    def shore(self, outside, inside_pt):
+        lo = outside
+        hi = inside_pt
+        for _ in range(14):
+            mid = ((lo[0] + hi[0]) * 0.5, (lo[1] + hi[1]) * 0.5)
+            if self.inside(mid[0], mid[1]):
+                hi = mid
+            else:
+                lo = mid
+        return lo
+
+    def cut(self, coords):
+        """Drop the part of a line that runs across open lake water."""
+        if len(coords) < 2:
+            return []
+        # A date-line jump is not a straight line across the world.
+        out = []
+        part = [coords[0]]
+        for p in coords[1:]:
+            if abs(p[0] - part[-1][0]) >= 180.0:
+                if len(part) >= 2:
+                    out.extend(self._cut_open(part))
+                part = [p]
+            else:
+                part.append(p)
+        if len(part) >= 2:
+            out.extend(self._cut_open(part))
+        return out
+
+    def _cut_open(self, coords):
+        out = []
+        cur = []
+
+        def flush():
+            if len(cur) >= 2:
+                out.append(list(cur))
+            cur.clear()
+
+        def push(p):
+            if not cur or cur[-1] != p:
+                cur.append(p)
+
+        def walk(a, b):
+            a_in = self.inside(a[0], a[1])
+            b_in = self.inside(b[0], b[1])
+            span = max(abs(a[0] - b[0]), abs(a[1] - b[1]))
+            if not a_in and not b_in and span <= self.step:
+                push(a)
+                cur.append(b)
+                return
+            steps = max(1, int(math.ceil(span / self.step)))
+            samples = []
+            any_in = a_in or b_in
+            for i in range(1, steps):
+                t = i / steps
+                p = (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+                inn = self.inside(p[0], p[1])
+                samples.append((p, inn))
+                any_in = any_in or inn
+            if not any_in:
+                push(a)
+                cur.append(b)
+                return
+            prev = a
+            prev_in = a_in
+            if not prev_in:
+                push(a)
+            for p, inn in samples + [(b, b_in)]:
+                if not prev_in and not inn:
+                    cur.append(p)
+                elif not prev_in and inn:
+                    cur.append(self.shore(prev, p))
+                    flush()
+                elif prev_in and not inn:
+                    cur.append(self.shore(p, prev))
+                    cur.append(p)
+                prev, prev_in = p, inn
+
+        for i in range(len(coords) - 1):
+            walk(coords[i], coords[i + 1])
+        flush()
+        return out
+
+
+LAKES = None
+
+
+def lake_mask():
+    global LAKES
+    if LAKES is None:
+        print("lakes", flush=True)
+        LAKES = LakeMask()
+        checks = (
+            ("Superior", -87.0, 47.7, True),
+            ("Erie", -81.2, 42.2, True),
+            ("Chicago", -87.70, 41.88, False),
+            ("Isle Royale", -88.887, 47.995, False),
+            ("Manitoulin", -82.257, 45.798, False),
+            ("Olkhon", 107.380, 53.173, False),
+        )
+        bad = []
+        for name, lon, lat, want_water in checks:
+            got = LAKES.inside(lon, lat)
+            print(f"  {name} is water: {got}", flush=True)
+            if got != want_water:
+                bad.append(name)
+        if bad:
+            raise SystemExit("lake mask failed: " + ", ".join(bad))
+        crossing = LAKES.cut([(-91.5, 47.7), (-84.8, 47.7)])
+        if len(crossing) < 2:
+            raise SystemExit("a line across Superior was not cut")
+        for part in crossing:
+            for lon, lat in part:
+                if LAKES.inside(lon, lat):
+                    raise SystemExit("a Superior crossing still has a point in the water")
+        if not LAKES.cut([(-89.2, 47.995), (-88.6, 47.995)]):
+            raise SystemExit("Isle Royale was clipped as if it were water")
+        dry = LAKES.cut([(10.0, 23.0), (12.0, 23.0)])
+        if len(dry) != 1 or len(dry[0]) != 2:
+            raise SystemExit("a dry line was densified or cut")
+        print("  lake clip ok", flush=True)
+    return LAKES
+
+
 def write_big(lines):
     tmp = BIG_OUT.with_suffix(".bin.tmp")
     with open(tmp, "wb") as f:
@@ -295,10 +508,13 @@ def split_ranked_bin():
             lon, lat = struct.unpack_from("<ff", data, o)
             o += 8
             coords.append((lon, lat))
+        kept = lake_mask().cut(coords)
         if rank <= 1:
-            big.append((1, coords))
+            for piece in kept:
+                big.append((1, piece))
         else:
-            mid.add_clipped(coords, 12)
+            for piece in kept:
+                mid.add_clipped(piece, 12)
     write_big(big)
     mid.write()
 
@@ -378,7 +594,8 @@ def bake_close():
                     for k in range(b - a):
                         lon, lat = struct.unpack_from("<dd", content, base + k * 16)
                         coords.append((lon, lat))
-                    close.add_clipped(coords, 12)
+                    for piece in lake_mask().cut(coords):
+                        close.add_clipped(piece, 12)
                     region_kept += 1
                     kept += 1
         print(

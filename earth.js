@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e335";
+export const BUILD = "e336";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -1550,8 +1550,8 @@ export function createEarthGlobe(canvas, options = {}) {
   const RIVER_R = RADIUS * 1.0026;
   /**
    * Big rivers (1000 m3/s and up) stay on for the whole Earth.
-   * The 20 m3/s set loads per square from the middle zooms.
-   * Every smaller river loads per square only at the closest zoom.
+   * The 20 m3/s set stays on at every zoom, including zoomed out, for the
+   * face of the earth in view. Every smaller river loads only up close.
    */
   const RIVER_MID = { label: "mid", folder: "rivers-mid", cols: 8, rows: 4, onDist: 2.5 };
   const RIVER_CLOSE = { label: "close", folder: "rivers-close", cols: 40, rows: 20, onDist: 1.5 };
@@ -1966,21 +1966,70 @@ export function createEarthGlobe(canvas, options = {}) {
       });
   }
 
+  function visibleCapKeys(level, at, dist) {
+    const alpha = Math.acos(
+      THREE.MathUtils.clamp(RADIUS / Math.max(dist, 1.001), -1, 1)
+    );
+    const dLat = 180 / level.rows;
+    const dLon = 360 / level.cols;
+    const lat0 = THREE.MathUtils.degToRad(at.lat);
+    const keys = [];
+    const seen = new Set();
+    for (let r = 0; r < level.rows; r++) {
+      const midLat = 90 - (r + 0.5) * dLat;
+      const along = Math.abs(at.lat - midLat) * Math.PI / 180;
+      const pad = (dLat * Math.PI) / 180 * 0.6;
+      if (along > alpha + pad) continue;
+      const p = THREE.MathUtils.degToRad(midLat);
+      const denom = Math.cos(lat0) * Math.cos(p);
+      let halfCols;
+      if (Math.abs(denom) < 1e-6) {
+        halfCols = level.cols;
+      } else {
+        const cosD =
+          (Math.cos(Math.min(Math.PI, alpha + pad)) - Math.sin(lat0) * Math.sin(p)) / denom;
+        if (cosD <= -1) halfCols = level.cols;
+        else if (cosD >= 1) halfCols = 0;
+        else halfCols = Math.ceil(Math.acos(THREE.MathUtils.clamp(cosD, -1, 1)) / THREE.MathUtils.degToRad(dLon));
+      }
+      const c0 = levelColRow(level, at.lon, midLat).c0;
+      const push = (c) => {
+        const key = `${level.label}:${c}:${r}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        keys.push(key);
+      };
+      if (halfCols * 2 + 1 >= level.cols) {
+        for (let c = 0; c < level.cols; c++) push(c);
+      } else {
+        for (let dc = -halfCols; dc <= halfCols; dc++) push(wrapCol(c0 + dc, level.cols));
+      }
+    }
+    return keys;
+  }
+
+  function riverViewKeys(level, at, samples, dist) {
+    // The 20 m3/s squares are 45° wide. The on-screen sample misses
+    // whole rivers between those points, so cover the face in view.
+    if (level === RIVER_MID) return visibleCapKeys(level, at, dist);
+    return keysOnScreen(level, at, samples);
+  }
+
   function updateRiverSquares() {
     if (disposed || !mesh || !riversOn) return;
     const at = viewLonLat();
     if (!at) return;
     const dist = camDist();
     const samples = viewSamples();
-    const level = dist <= RIVER_CLOSE.onDist ? RIVER_CLOSE : dist <= RIVER_MID.onDist ? RIVER_MID : null;
-    const wantList = level ? keysOnScreen(level, at, samples) : [];
+    const level = dist <= RIVER_CLOSE.onDist ? RIVER_CLOSE : RIVER_MID;
+    const wantList = riverViewKeys(level, at, samples, dist);
     const want = new Set(wantList);
     const covered = wantList.every((k) => riverLive.has(k) || riverSkip.has(k));
     let keep = want;
     // Keep the middle squares until the close ones covering this view are in,
     // so the network does not vanish while the finer file arrives.
     if (level === RIVER_CLOSE && !covered) {
-      keep = new Set([...want, ...keysOnScreen(RIVER_MID, at, samples)]);
+      keep = new Set([...want, ...visibleCapKeys(RIVER_MID, at, dist)]);
     }
     riverWanted = keep;
     for (const key of [...riverLive.keys()]) {
