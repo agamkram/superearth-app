@@ -179,8 +179,8 @@ function createStarfield() {
   return points;
 }
 
-/** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e342";
+/** Cache-bust for textures and earth.js. Bump when those change. */
+export const BUILD = "e343";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -266,9 +266,7 @@ const TAP_MAX_MS = 450;
 export function createEarthGlobe(canvas, options = {}) {
   const {
     onReady = null,
-    onQuality = null,
     onPhase = null,
-    onZoom = null,
     onTap = null,
   } = options;
   const surface =
@@ -354,18 +352,11 @@ export function createEarthGlobe(canvas, options = {}) {
   let tileLevel = null;
   /** Previous size kept on screen until the new size's center tiles are ready. */
   let holdLevel = null;
-  let qualityLevel = "";
   const _tileLocal = new THREE.Vector3();
   const _tileHit = new THREE.Vector3();
   const _tileNdc = new THREE.Vector2(0, 0);
   const _tileRay = new THREE.Raycaster();
   const _earthSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), RADIUS);
-
-  function reportQuality(level) {
-    if (qualityLevel === level) return;
-    qualityLevel = level;
-    if (typeof onQuality === "function") onQuality(level);
-  }
 
   function pickTileLevel(dist) {
     if (dist <= TILE_LEVELS[86].onDist) return TILE_LEVELS[86];
@@ -2440,7 +2431,6 @@ export function createEarthGlobe(canvas, options = {}) {
     const night = flatTex(0, 0, 0);
     buildMesh(day, night, flatNormal(), { segments: SPHERE_SEGMENTS });
     tilesEnabled = true;
-    reportQuality("8");
     kick();
     loader.load(
       NORMAL_URL,
@@ -2821,10 +2811,7 @@ export function createEarthGlobe(canvas, options = {}) {
     holdLevel = null;
     if (tileGroup) tileGroup.visible = false;
     for (const key of [...tileLive.keys()]) dropTile(key);
-    if (tileLevel) {
-      tileLevel = null;
-      reportQuality("8");
-    }
+    tileLevel = null;
   }
 
   function tileUrl(level, c, r) {
@@ -3117,14 +3104,6 @@ export function createEarthGlobe(canvas, options = {}) {
       ready = true;
       if (typeof onReady === "function") onReady();
     }
-    const covering = (label, keys) => {
-      const mine = [...keys].filter((k) => k.startsWith(label + ":"));
-      return mine.length > 0 && mine.every((k) => tileLive.has(k));
-    };
-    if (level && covering(level.label, onScreen)) reportQuality(level.label);
-    else if (holdLevel && holdKeep && covering(holdLevel, holdKeep)) reportQuality(holdLevel);
-    else if (covering("8", baseKeys)) reportQuality("8");
-    else reportQuality("");
   }
 
   function wrapLonDeg(lon) {
@@ -3884,11 +3863,6 @@ export function createEarthGlobe(canvas, options = {}) {
     camera.far = Math.max(STAR_RADIUS + 40, dist + 40);
     camera.updateProjectionMatrix();
     updatePoleScale();
-    if (typeof onZoom === "function") {
-      const span = Math.max(homeDist - MIN_DIST, 0.01);
-      const zoomIn = 1 - THREE.MathUtils.clamp((dist - MIN_DIST) / span, 0, 1);
-      onZoom(dist, zoomIn);
-    }
     kick();
   }
 
@@ -4754,7 +4728,6 @@ export function createEarthGlobe(canvas, options = {}) {
       writeCamera();
       syncEarth();
       prevCamDist = camDist();
-      kick();
     }
     applyCanvasPanTransform();
   }
