@@ -1,0 +1,19 @@
+name: Warm the cloud squares
+
+on:
+  schedule:
+    # Twenty minutes after each new three-hour photograph, in UTC.
+    - cron: "20 */3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: warm-clouds
+  cancel-in-progress: false
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/warm-clouds.sh
