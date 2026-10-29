@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e340";
+export const BUILD = "e341";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -1534,8 +1534,8 @@ export function createEarthGlobe(canvas, options = {}) {
   const RIVER_R = RADIUS * 1.0026;
   /**
    * Rivers of 1000 m3/s and up stay on for the whole Earth.
-   * Rivers of 10 m3/s and up stay on at every zoom, for the face in view.
-   * Smaller rivers are not drawn.
+   * Rivers of 10 m3/s and up load for the face in view first, then the rest,
+   * and stay loaded when you turn. Smaller rivers are not drawn.
    */
   const RIVER_MID = { label: "mid", folder: "rivers-mid", cols: 8, rows: 4 };
   let riverLines = null;
@@ -1991,23 +1991,32 @@ export function createEarthGlobe(canvas, options = {}) {
     return keys;
   }
 
+  function allRiverKeys() {
+    const keys = [];
+    for (let r = 0; r < RIVER_MID.rows; r++) {
+      for (let c = 0; c < RIVER_MID.cols; c++) keys.push(`${RIVER_MID.label}:${c}:${r}`);
+    }
+    return keys;
+  }
+
   function updateRiverSquares() {
     if (disposed || !mesh || !riversOn) return;
     const at = viewLonLat();
     if (!at) return;
     const dist = camDist();
-    // These squares are 45° wide. Cover the face in view at every zoom.
-    const wantList = visibleCapKeys(RIVER_MID, at, dist);
-    const want = new Set(wantList);
-    riverWanted = want;
-    for (const key of [...riverLive.keys()]) {
-      if (!want.has(key)) dropRiverSquare(key);
-    }
+    const face = new Set(visibleCapKeys(RIVER_MID, at, dist));
+    const byDist = (a, b) => riverKeyDist(a, RIVER_MID, at) - riverKeyDist(b, RIVER_MID, at);
+    const pending = allRiverKeys().filter((k) => !riverLive.has(k) && !riverSkip.has(k));
+    riverWanted = new Set(allRiverKeys());
+    // A piece that has loaded stays, including after it goes around the back.
     if (riverLoading.size > 0 || performance.now() < riverRetryAt) return;
-    const ordered = wantList
-      .filter((k) => !riverLive.has(k) && !riverSkip.has(k))
-      .sort((a, b) => riverKeyDist(a, RIVER_MID, at) - riverKeyDist(b, RIVER_MID, at));
-    if (ordered.length) loadRiverSquare(RIVER_MID, ordered[0]);
+    pending.sort((a, b) => {
+      const af = face.has(a) ? 0 : 1;
+      const bf = face.has(b) ? 0 : 1;
+      if (af !== bf) return af - bf;
+      return byDist(a, b);
+    });
+    if (pending.length) loadRiverSquare(RIVER_MID, pending[0]);
   }
 
   function loadBigRivers() {
