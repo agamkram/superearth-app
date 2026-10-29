@@ -108,9 +108,10 @@ DEFAULT_PORT = 8916
 CERT = ROOT / ".local-cert.pem"
 KEY = ROOT / ".local-key.pem"
 _CLOUD_DIR = Path(tempfile.gettempdir()) / "superearth-cloud-squares"
+_CLOUD_COLS = 4
+_CLOUD_ROWS = 2
 _cloud_lock = threading.Lock()
 _cloud_open = {"stamp": None, "im": None}
-_cloud_jobs = set()
 
 
 def _cloud_picture(stamp):
@@ -142,50 +143,36 @@ def _cloud_picture(stamp):
     return im
 
 
-def _cut_one_locked(c, r, stamp, cols, rows):
-    dest = _CLOUD_DIR / f"{stamp}-c{c}r{r}-{cols}x{rows}.png"
+def _square_path(stamp, c, r):
+    return _CLOUD_DIR / f"{stamp}-c{c}r{r}-{_CLOUD_COLS}x{_CLOUD_ROWS}.png"
+
+
+def _cut_all_locked(stamp):
+    """Cut the eight pieces once. The picture stays open for that one pass."""
+    im = _cloud_picture(stamp)
+    tw, th = im.size[0] // _CLOUD_COLS, im.size[1] // _CLOUD_ROWS
+    for r in range(_CLOUD_ROWS):
+        for c in range(_CLOUD_COLS):
+            dest = _square_path(stamp, c, r)
+            if dest.is_file() and dest.stat().st_size > 1000:
+                continue
+            tile = im.crop((c * tw, r * th, (c + 1) * tw, (r + 1) * th))
+            buf = io.BytesIO()
+            tile.save(buf, "PNG", compress_level=1)
+            tile.close()
+            dest.write_bytes(buf.getvalue())
+
+
+def _cloud_square_png(c, r, stamp):
+    """One of the eight cloud pieces. The phone never sees the whole picture."""
+    _CLOUD_DIR.mkdir(parents=True, exist_ok=True)
+    dest = _square_path(stamp, c, r)
     if dest.is_file() and dest.stat().st_size > 1000:
         return dest.read_bytes()
-    im = _cloud_picture(stamp)
-    tw, th = im.size[0] // cols, im.size[1] // rows
-    tile = im.crop((c * tw, r * th, (c + 1) * tw, (r + 1) * th))
-    buf = io.BytesIO()
-    tile.save(buf, "PNG", compress_level=1)
-    tile.close()
-    data = buf.getvalue()
-    dest.write_bytes(data)
-    return data
-
-
-def _cut_rest(stamp, cols, rows):
-    """Cut the other far squares while the phone is busy with the first one."""
-    try:
-        if cols * rows > 8:
-            return
-        for r in range(rows):
-            for c in range(cols):
-                with _cloud_lock:
-                    _cut_one_locked(c, r, stamp, cols, rows)
-    finally:
-        with _cloud_lock:
-            _cloud_jobs.discard(stamp)
-
-
-_CLOUD_GRIDS = {(4, 2), (8, 4), (16, 8)}
-
-
-def _cloud_square_png(c, r, stamp, cols, rows):
-    """One square of the sharp cloud photo. The phone never sees the whole picture."""
-    _CLOUD_DIR.mkdir(parents=True, exist_ok=True)
     with _cloud_lock:
-        data = _cut_one_locked(c, r, stamp, cols, rows)
-        # Only the zoomed-out grid is small enough to cut ahead. A close view
-        # asks for a few squares, not all 128.
-        job = f"{stamp}:{cols}x{rows}"
-        if job not in _cloud_jobs:
-            _cloud_jobs.add(job)
-            threading.Thread(target=_cut_rest, args=(stamp, cols, rows), daemon=True).start()
-        return data
+        if not (dest.is_file() and dest.stat().st_size > 1000):
+            _cut_all_locked(stamp)
+        return dest.read_bytes()
 
 
 class ThreadingHTTPServer(socketserver.ThreadingMixIn, HTTPServer):
@@ -236,13 +223,13 @@ class Handler(SimpleHTTPRequestHandler):
             c, r, cols, rows, stamp = -1, -1, 0, 0, ""
         if (
             not stamp.isdigit()
-            or (cols, rows) not in _CLOUD_GRIDS
+            or (cols, rows) != (_CLOUD_COLS, _CLOUD_ROWS)
             or not (0 <= c < cols and 0 <= r < rows)
         ):
             self.send_error(400)
             return
         try:
-            data = _cloud_square_png(c, r, stamp, cols, rows)
+            data = _cloud_square_png(c, r, stamp)
         except Exception:
             self.send_error(502)
             return

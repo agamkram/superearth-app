@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e339";
+export const BUILD = "e340";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -342,25 +342,9 @@ export function createEarthGlobe(canvas, options = {}) {
   const cloudSkip = new Set();
   const cloudFails = new Map();
   let cloudRetryAt = 0;
-  let cloudLevelLabel = "";
-  // Same 8192 cloud picture. Far squares are large. Close squares are small
-  // pieces of that picture, so a zoomed-in view does not hold a 90° square.
-  const CLOUD_FAR = { label: "cfar", cols: 4, rows: 2 };
-  const CLOUD_MID = { label: "cmid", cols: 8, rows: 4, onDist: 2.5 };
-  const CLOUD_CLOSE = { label: "cclose", cols: 16, rows: 8, onDist: 1.5 };
-
-  function pickCloudLevel(dist) {
-    if (dist <= CLOUD_CLOSE.onDist) return CLOUD_CLOSE;
-    if (dist <= CLOUD_MID.onDist) return CLOUD_MID;
-    return CLOUD_FAR;
-  }
-
-  function cloudLevelByLabel(label) {
-    if (label === CLOUD_CLOSE.label) return CLOUD_CLOSE;
-    if (label === CLOUD_MID.label) return CLOUD_MID;
-    if (label === CLOUD_FAR.label) return CLOUD_FAR;
-    return null;
-  }
+  // One cloud picture, eight pieces, at every zoom. Smaller pieces are the
+  // same picture cut again, so they are not used.
+  const CLOUDS = { label: "cfar", cols: 4, rows: 2 };
   let tileGroup = null;
   const tileLive = new Map();
   const tileLoading = new Set();
@@ -2494,7 +2478,6 @@ export function createEarthGlobe(canvas, options = {}) {
     cloudSkip.clear();
     cloudFails.clear();
     cloudRetryAt = 0;
-    cloudLevelLabel = "";
     for (const key of [...cloudLive.keys()]) dropCloudPiece(key);
     if (cloudMesh && cloudMesh.parent) cloudMesh.parent.remove(cloudMesh);
     cloudMesh = null;
@@ -2620,7 +2603,6 @@ export function createEarthGlobe(canvas, options = {}) {
       cloudSkip.clear();
       cloudFails.clear();
       cloudRetryAt = 0;
-      cloudLevelLabel = "";
       stopCloudLoads();
       for (const key of [...cloudLive.keys()]) dropCloudPiece(key);
     }
@@ -2632,37 +2614,27 @@ export function createEarthGlobe(canvas, options = {}) {
       mesh.add(cloudMesh);
     }
     const samples = viewSamples();
-    const level = pickCloudLevel(camDist());
-    const wantList = keysOnScreen(level, at, samples);
+    const wantList = keysOnScreen(CLOUDS, at, samples);
     const want = new Set(wantList);
-    const ready = wantList.every(
-      (k) => cloudLive.has(k) || cloudSkip.has(stamp + ":" + k)
-    );
-    let keep = want;
-    if (!ready && cloudLevelLabel && cloudLevelLabel !== level.label) {
-      const prev = cloudLevelByLabel(cloudLevelLabel);
-      if (prev) keep = new Set([...want, ...keysOnScreen(prev, at, samples)]);
-    }
-    if (ready) cloudLevelLabel = level.label;
     for (const key of [...cloudLive.keys()]) {
-      if (!keep.has(key)) dropCloudPiece(key);
+      if (!want.has(key)) dropCloudPiece(key);
     }
     if (cloudLoading.size > 0 || performance.now() < cloudRetryAt) return;
-    const { c0, r0 } = levelColRow(level, at.lon, at.lat);
+    const { c0, r0 } = levelColRow(CLOUDS, at.lon, at.lat);
     const ordered = [...want].sort((a, b) => {
       const ap = a.split(":");
       const bp = b.split(":");
       const da =
-        Math.min(Math.abs(Number(ap[1]) - c0), level.cols - Math.abs(Number(ap[1]) - c0)) +
+        Math.min(Math.abs(Number(ap[1]) - c0), CLOUDS.cols - Math.abs(Number(ap[1]) - c0)) +
         Math.abs(Number(ap[2]) - r0);
       const db =
-        Math.min(Math.abs(Number(bp[1]) - c0), level.cols - Math.abs(Number(bp[1]) - c0)) +
+        Math.min(Math.abs(Number(bp[1]) - c0), CLOUDS.cols - Math.abs(Number(bp[1]) - c0)) +
         Math.abs(Number(bp[2]) - r0);
       return da - db;
     });
     for (const key of ordered) {
       if (cloudLive.has(key) || cloudSkip.has(stamp + ":" + key)) continue;
-      loadCloudSquare(level, key, stamp);
+      loadCloudSquare(CLOUDS, key, stamp);
       return;
     }
   }
