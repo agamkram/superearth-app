@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e345";
+export const BUILD = "e346";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -333,8 +333,15 @@ export function createEarthGlobe(canvas, options = {}) {
   let cloudMesh = null;
   let cloudsOn = false;
   let photosOn = true;
-  let cloudStamp = 0;
+  /** Stamp of the set being painted. Empty until a published set is chosen. */
+  let cloudShown = "";
+  /** Published set the job has finished. Null until ready.json answers. */
+  let cloudInfo = null;
+  let cloudReadyAt = 0;
+  let cloudReadyFlight = null;
   const cloudLive = new Map();
+  const cloudStage = new Map();
+  let cloudStageStamp = "";
   const cloudLoading = new Set();
   const cloudAbort = new Map();
   const cloudSkip = new Set();
@@ -342,9 +349,8 @@ export function createEarthGlobe(canvas, options = {}) {
   let cloudRetryAt = 0;
   /** Next square's file, still compressed. One decoded picture at a time. */
   const cloudBlob = new Map();
-  // One cloud picture, eight pieces, at every zoom. Smaller pieces are the
-  // same picture cut again, so they are not used. A loaded piece stays
-  // after it goes around the back.
+  // One cloud picture, eight pieces, at every zoom. The finished set stays
+  // up until the next eight are ready, then the whole sky changes together.
   const CLOUDS = { label: "cfar", cols: 4, rows: 2 };
   let tileGroup = null;
   const tileLive = new Map();
@@ -2453,10 +2459,6 @@ export function createEarthGlobe(canvas, options = {}) {
     );
   }
 
-  function cloudStampNow() {
-    return Math.floor(Date.now() / (3 * 3600 * 1000));
-  }
-
   function dropCloudPiece(key) {
     const piece = cloudLive.get(key);
     if (!piece) return;
@@ -2484,7 +2486,10 @@ export function createEarthGlobe(canvas, options = {}) {
     for (const key of [...cloudLive.keys()]) dropCloudPiece(key);
     if (cloudMesh && cloudMesh.parent) cloudMesh.parent.remove(cloudMesh);
     cloudMesh = null;
-    cloudStamp = 0;
+    cloudShown = "";
+    cloudStageStamp = "";
+    for (const piece of cloudStage.values()) disposeCloudMesh(piece);
+    cloudStage.clear();
   }
 
   function cloudMaterial(tex) {
@@ -2538,13 +2543,13 @@ export function createEarthGlobe(canvas, options = {}) {
     return piece;
   }
 
-  function cloudSquareUrl(level, c, r, stamp) {
-    return `api/cloud-square?c=${c}&r=${r}&cols=${level.cols}&rows=${level.rows}&t=${stamp}&v=la`;
+  function cloudSquareUrl(c, r, info) {
+    return `https://cdn.jsdelivr.net/gh/agamkram/superearth-app@${info.sha}/${info.stamp}-c${c}r${r}.png`;
   }
 
-  function fetchCloudBlob(level, key, stamp, ctrl) {
+  function fetchCloudBlob(key, info, ctrl) {
     const parts = key.split(":");
-    return fetch(cloudSquareUrl(level, Number(parts[1]), Number(parts[2]), stamp), {
+    return fetch(cloudSquareUrl(Number(parts[1]), Number(parts[2]), info), {
       signal: ctrl.signal,
     }).then((res) => {
       if (!res.ok) throw new Error("cloud");
@@ -2552,23 +2557,24 @@ export function createEarthGlobe(canvas, options = {}) {
     });
   }
 
-  function prefetchCloud(level, key, stamp) {
-    if (!key || cloudLive.has(key) || cloudLoading.has(key) || cloudSkip.has(stamp + ":" + key)) return;
+  function prefetchCloud(key, info, have) {
+    if (!key || have.has(key) || cloudLoading.has(key) || cloudSkip.has(info.stamp + ":" + key)) return;
     const hit = cloudBlob.get(key);
-    if (hit && hit.stamp === stamp) return;
+    if (hit && hit.stamp === info.stamp) return;
     const ctrl = new AbortController();
     cloudAbort.set("pre:" + key, ctrl);
-    const promise = fetchCloudBlob(level, key, stamp, ctrl);
+    const promise = fetchCloudBlob(key, info, ctrl);
     promise.catch(() => {
       const cur = cloudBlob.get(key);
       if (cur && cur.promise === promise) cloudBlob.delete(key);
       if (cloudAbort.get("pre:" + key) === ctrl) cloudAbort.delete("pre:" + key);
     });
-    cloudBlob.set(key, { stamp, promise });
+    cloudBlob.set(key, { stamp: info.stamp, promise });
   }
 
-  function loadCloudSquare(level, key, stamp, nextKey) {
-    if (cloudLive.has(key) || cloudLoading.has(key) || cloudSkip.has(stamp + ":" + key)) return;
+  function loadCloudSquare(level, key, info, nextKey, staged) {
+    const have = staged ? cloudStage : cloudLive;
+    if (have.has(key) || cloudLoading.has(key) || cloudSkip.has(info.stamp + ":" + key)) return;
     const parts = key.split(":");
     const c = Number(parts[1]);
     const r = Number(parts[2]);
@@ -2576,7 +2582,7 @@ export function createEarthGlobe(canvas, options = {}) {
     const pre = cloudBlob.get(key);
     let ctrl;
     let blobPromise;
-    if (pre && pre.stamp === stamp) {
+    if (pre && pre.stamp === info.stamp) {
       cloudBlob.delete(key);
       blobPromise = pre.promise;
       ctrl = cloudAbort.get("pre:" + key) || new AbortController();
@@ -2585,17 +2591,18 @@ export function createEarthGlobe(canvas, options = {}) {
     } else {
       ctrl = new AbortController();
       cloudAbort.set(key, ctrl);
-      blobPromise = fetchCloudBlob(level, key, stamp, ctrl);
+      blobPromise = fetchCloudBlob(key, info, ctrl);
     }
     // The next file downloads while this picture is decoded. The decoded
     // bitmap is closed before another one is opened.
-    prefetchCloud(level, nextKey, stamp);
+    prefetchCloud(nextKey, info, have);
     blobPromise
       .then((blob) => createImageBitmap(blob, { imageOrientation: "flipY" }))
       .then((bitmap) => {
         cloudLoading.delete(key);
         cloudAbort.delete(key);
-        if (disposed || !cloudsOn || stamp !== cloudStamp || !cloudMesh) {
+        const still = staged ? cloudStageStamp === info.stamp : cloudShown === info.stamp;
+        if (disposed || !cloudsOn || !still || !cloudMesh) {
           bitmap.close();
           kick();
           return;
@@ -2614,8 +2621,18 @@ export function createEarthGlobe(canvas, options = {}) {
           throw new Error("upload");
         }
         const piece = makeCloudPatch(level, c, r, tex);
-        cloudMesh.add(piece);
-        cloudLive.set(key, piece);
+        if (staged) {
+          if (cloudStageStamp !== info.stamp) {
+            disposeCloudMesh(piece);
+            kick();
+            return;
+          }
+          cloudStage.set(key, piece);
+          if (cloudStage.size === 8) swapCloudSet(info.stamp);
+        } else {
+          cloudMesh.add(piece);
+          cloudLive.set(key, piece);
+        }
         kick();
       })
       .catch(() => {
@@ -2627,7 +2644,7 @@ export function createEarthGlobe(canvas, options = {}) {
         }
         const n = (cloudFails.get(key) || 0) + 1;
         cloudFails.set(key, n);
-        if (n >= 3) cloudSkip.add(stamp + ":" + key);
+        if (n >= 3) cloudSkip.add(info.stamp + ":" + key);
         else cloudRetryAt = performance.now() + 4000;
         kick();
       });
@@ -2641,26 +2658,58 @@ export function createEarthGlobe(canvas, options = {}) {
     return keys;
   }
 
-  function updateClouds() {
-    if (!cloudsOn || disposed || !mesh) return;
-    const stamp = cloudStampNow();
-    if (stamp !== cloudStamp) {
-      cloudStamp = stamp;
-      cloudSkip.clear();
-      cloudFails.clear();
-      cloudRetryAt = 0;
-      stopCloudLoads();
-      for (const key of [...cloudLive.keys()]) dropCloudPiece(key);
+  function disposeCloudMesh(piece) {
+    if (!piece) return;
+    if (piece.parent) piece.parent.remove(piece);
+    piece.geometry.dispose();
+    if (piece.material.map) disposeMap(piece.material.map);
+    piece.material.dispose();
+  }
+
+  function clearCloudStage() {
+    for (const piece of cloudStage.values()) disposeCloudMesh(piece);
+    cloudStage.clear();
+    cloudStageStamp = "";
+  }
+
+  function swapCloudSet(stamp) {
+    for (const key of [...cloudLive.keys()]) dropCloudPiece(key);
+    if (!cloudMesh) return;
+    for (const [key, piece] of cloudStage) {
+      cloudMesh.add(piece);
+      cloudLive.set(key, piece);
     }
-    const at = viewLonLat();
-    if (!at) return;
-    if (!cloudMesh) {
-      cloudMesh = new THREE.Group();
-      cloudMesh.name = "clouds";
-      mesh.add(cloudMesh);
-    }
-    // A piece that has loaded stays, including after it goes around the back.
-    if (cloudLoading.size > 0 || performance.now() < cloudRetryAt) return;
+    cloudStage.clear();
+    cloudStageStamp = "";
+    cloudShown = stamp;
+    kick();
+  }
+
+  function pullCloudReady() {
+    if (cloudReadyFlight) return;
+    cloudReadyAt = performance.now() + 10 * 60 * 1000;
+    const ctrl = new AbortController();
+    cloudAbort.set("ready", ctrl);
+    // The minute keeps a stale "not there yet" answer from sticking.
+    const readyUrl =
+      "https://raw.githubusercontent.com/agamkram/superearth-app/cloud-tiles/ready.json?t=" +
+      Math.floor(Date.now() / 60000);
+    cloudReadyFlight = fetch(readyUrl, { cache: "no-store", signal: ctrl.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const stamp = String((data && data.stamp) || "");
+        const sha = String((data && data.sha) || "");
+        if (/^\d+$/.test(stamp) && /^[0-9a-f]{40}$/.test(sha)) cloudInfo = { stamp, sha };
+      })
+      .catch(() => {})
+      .finally(() => {
+        cloudReadyFlight = null;
+        cloudAbort.delete("ready");
+        kick();
+      });
+  }
+
+  function nextCloudKey(info, have, at) {
     const face = new Set(visibleCapKeys(CLOUDS, at, camDist()));
     const { c0, r0 } = levelColRow(CLOUDS, at.lon, at.lat);
     const distOf = (key) => {
@@ -2671,7 +2720,7 @@ export function createEarthGlobe(canvas, options = {}) {
       );
     };
     const pending = allCloudKeys().filter(
-      (k) => !cloudLive.has(k) && !cloudSkip.has(stamp + ":" + k)
+      (k) => !have.has(k) && !cloudSkip.has(info.stamp + ":" + k)
     );
     pending.sort((a, b) => {
       const af = face.has(a) ? 0 : 1;
@@ -2679,7 +2728,50 @@ export function createEarthGlobe(canvas, options = {}) {
       if (af !== bf) return af - bf;
       return distOf(a) - distOf(b);
     });
-    if (pending.length) loadCloudSquare(CLOUDS, pending[0], stamp, pending[1]);
+    if (!pending.length) return null;
+    return { key: pending[0], after: pending[1] };
+  }
+
+  function updateClouds() {
+    if (!cloudsOn || disposed || !mesh) return;
+    if (!cloudInfo || performance.now() >= cloudReadyAt) pullCloudReady();
+    if (!cloudInfo) return;
+    const info = cloudInfo;
+    const at = viewLonLat();
+    if (!at) return;
+    if (!cloudMesh) {
+      cloudMesh = new THREE.Group();
+      cloudMesh.name = "clouds";
+      mesh.add(cloudMesh);
+    }
+    // One decoded picture at a time. A finished set stays until the next is whole.
+    if (cloudLoading.size > 0 || performance.now() < cloudRetryAt) return;
+    if (cloudShown === info.stamp && cloudLive.size === 8) return;
+    if (cloudShown && cloudShown !== info.stamp && cloudLive.size === 8) {
+      if (cloudStageStamp !== info.stamp) {
+        clearCloudStage();
+        cloudStageStamp = info.stamp;
+        cloudFails.clear();
+        cloudRetryAt = 0;
+      }
+      if (cloudStage.size === 8) {
+        swapCloudSet(info.stamp);
+        return;
+      }
+      const next = nextCloudKey(info, cloudStage, at);
+      if (next) loadCloudSquare(CLOUDS, next.key, info, next.after, true);
+      return;
+    }
+    if (cloudShown !== info.stamp) {
+      stopCloudLoads();
+      for (const key of [...cloudLive.keys()]) dropCloudPiece(key);
+      clearCloudStage();
+      cloudShown = info.stamp;
+      cloudSkip.clear();
+      cloudFails.clear();
+    }
+    const next = nextCloudKey(info, cloudLive, at);
+    if (next) loadCloudSquare(CLOUDS, next.key, info, next.after, false);
   }
 
   function wrapCol(c, cols) {
@@ -3412,6 +3504,7 @@ export function createEarthGlobe(canvas, options = {}) {
       kick();
       return cloudsOn;
     }
+    cloudReadyAt = 0;
     updateClouds();
     kick();
     return cloudsOn;

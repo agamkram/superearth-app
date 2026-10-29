@@ -1,11 +1,5 @@
 {
   "framework": null,
-  "functions": {
-    "api/cloud-square.js": {
-      "maxDuration": 60,
-      "memory": 1024
-    }
-  },
   "headers": [
     {
       "source": "/(.*)\\.(jpg|jpeg|webp|gif|geojson|woff2?)",

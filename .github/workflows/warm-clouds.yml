@@ -1,19 +1,39 @@
-name: Warm the cloud squares
+name: Publish the cloud squares
 
 on:
   schedule:
-    # Twenty minutes after each new three-hour photograph, in UTC.
-    - cron: "20 */3 * * *"
+    # Every hour. Most hours the set is already published and the job stops.
+    # A missed hour tries again, so a failure does not leave one photograph up for days.
+    - cron: "15 * * * *"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 concurrency:
-  group: warm-clouds
+  group: publish-clouds
   cancel-in-progress: false
 
 jobs:
-  warm:
+  publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - run: bash scripts/warm-clouds.sh
+        with:
+          fetch-depth: 1
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pillow==11.3.0
+      - id: cut
+        run: |
+          python3 scripts/publish-clouds.py /tmp/cloud-tiles
+          if [ -f /tmp/cloud-tiles/SKIP ]; then
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=0" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.cut.outputs.skip != '1'
+        run: bash scripts/push-cloud-tiles.sh /tmp/cloud-tiles
