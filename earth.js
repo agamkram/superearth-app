@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e344";
+export const BUILD = "e345";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -340,6 +340,8 @@ export function createEarthGlobe(canvas, options = {}) {
   const cloudSkip = new Set();
   const cloudFails = new Map();
   let cloudRetryAt = 0;
+  /** Next square's file, still compressed. One decoded picture at a time. */
+  const cloudBlob = new Map();
   // One cloud picture, eight pieces, at every zoom. Smaller pieces are the
   // same picture cut again, so they are not used. A loaded piece stays
   // after it goes around the back.
@@ -2471,6 +2473,7 @@ export function createEarthGlobe(canvas, options = {}) {
     }
     cloudAbort.clear();
     cloudLoading.clear();
+    cloudBlob.clear();
   }
 
   function disposeClouds() {
@@ -2535,24 +2538,59 @@ export function createEarthGlobe(canvas, options = {}) {
     return piece;
   }
 
-  function loadCloudSquare(level, key, stamp) {
+  function cloudSquareUrl(level, c, r, stamp) {
+    return `api/cloud-square?c=${c}&r=${r}&cols=${level.cols}&rows=${level.rows}&t=${stamp}&v=la`;
+  }
+
+  function fetchCloudBlob(level, key, stamp, ctrl) {
+    const parts = key.split(":");
+    return fetch(cloudSquareUrl(level, Number(parts[1]), Number(parts[2]), stamp), {
+      signal: ctrl.signal,
+    }).then((res) => {
+      if (!res.ok) throw new Error("cloud");
+      return res.blob();
+    });
+  }
+
+  function prefetchCloud(level, key, stamp) {
+    if (!key || cloudLive.has(key) || cloudLoading.has(key) || cloudSkip.has(stamp + ":" + key)) return;
+    const hit = cloudBlob.get(key);
+    if (hit && hit.stamp === stamp) return;
+    const ctrl = new AbortController();
+    cloudAbort.set("pre:" + key, ctrl);
+    const promise = fetchCloudBlob(level, key, stamp, ctrl);
+    promise.catch(() => {
+      const cur = cloudBlob.get(key);
+      if (cur && cur.promise === promise) cloudBlob.delete(key);
+      if (cloudAbort.get("pre:" + key) === ctrl) cloudAbort.delete("pre:" + key);
+    });
+    cloudBlob.set(key, { stamp, promise });
+  }
+
+  function loadCloudSquare(level, key, stamp, nextKey) {
     if (cloudLive.has(key) || cloudLoading.has(key) || cloudSkip.has(stamp + ":" + key)) return;
     const parts = key.split(":");
     const c = Number(parts[1]);
     const r = Number(parts[2]);
-    const ctrl = new AbortController();
     cloudLoading.add(key);
-    cloudAbort.set(key, ctrl);
-    // One square at a time. The decoded picture is closed before the next
-    // one starts, so they don't pile up and kill the tab.
-    fetch(
-      `api/cloud-square?c=${c}&r=${r}&cols=${level.cols}&rows=${level.rows}&t=${stamp}`,
-      { signal: ctrl.signal }
-    )
-      .then((res) => {
-        if (!res.ok) throw new Error("cloud");
-        return res.blob();
-      })
+    const pre = cloudBlob.get(key);
+    let ctrl;
+    let blobPromise;
+    if (pre && pre.stamp === stamp) {
+      cloudBlob.delete(key);
+      blobPromise = pre.promise;
+      ctrl = cloudAbort.get("pre:" + key) || new AbortController();
+      cloudAbort.delete("pre:" + key);
+      cloudAbort.set(key, ctrl);
+    } else {
+      ctrl = new AbortController();
+      cloudAbort.set(key, ctrl);
+      blobPromise = fetchCloudBlob(level, key, stamp, ctrl);
+    }
+    // The next file downloads while this picture is decoded. The decoded
+    // bitmap is closed before another one is opened.
+    prefetchCloud(level, nextKey, stamp);
+    blobPromise
       .then((blob) => createImageBitmap(blob, { imageOrientation: "flipY" }))
       .then((bitmap) => {
         cloudLoading.delete(key);
@@ -2641,7 +2679,7 @@ export function createEarthGlobe(canvas, options = {}) {
       if (af !== bf) return af - bf;
       return distOf(a) - distOf(b);
     });
-    if (pending.length) loadCloudSquare(CLOUDS, pending[0], stamp);
+    if (pending.length) loadCloudSquare(CLOUDS, pending[0], stamp, pending[1]);
   }
 
   function wrapCol(c, cols) {

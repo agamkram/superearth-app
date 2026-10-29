@@ -147,20 +147,18 @@ def _square_path(stamp, c, r):
     return _CLOUD_DIR / f"{stamp}-c{c}r{r}-{_CLOUD_COLS}x{_CLOUD_ROWS}.png"
 
 
-def _cut_all_locked(stamp):
-    """Cut the eight pieces once. The picture stays open for that one pass."""
+def _cut_one_locked(stamp, c, r):
+    """Cut the square that was asked for. The other seven wait their turn."""
     im = _cloud_picture(stamp)
     tw, th = im.size[0] // _CLOUD_COLS, im.size[1] // _CLOUD_ROWS
-    for r in range(_CLOUD_ROWS):
-        for c in range(_CLOUD_COLS):
-            dest = _square_path(stamp, c, r)
-            if dest.is_file() and dest.stat().st_size > 1000:
-                continue
-            tile = im.crop((c * tw, r * th, (c + 1) * tw, (r + 1) * th))
-            buf = io.BytesIO()
-            tile.save(buf, "PNG", compress_level=1)
-            tile.close()
-            dest.write_bytes(buf.getvalue())
+    dest = _square_path(stamp, c, r)
+    tile = im.crop((c * tw, r * th, (c + 1) * tw, (r + 1) * th))
+    buf = io.BytesIO()
+    tile.save(buf, "PNG", compress_level=6)
+    tile.close()
+    part = dest.with_suffix(".part")
+    part.write_bytes(buf.getvalue())
+    part.replace(dest)
 
 
 def _cloud_square_png(c, r, stamp):
@@ -171,7 +169,7 @@ def _cloud_square_png(c, r, stamp):
         return dest.read_bytes()
     with _cloud_lock:
         if not (dest.is_file() and dest.stat().st_size > 1000):
-            _cut_all_locked(stamp)
+            _cut_one_locked(stamp, c, r)
         return dest.read_bytes()
 
 
