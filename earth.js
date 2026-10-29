@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e343";
+export const BUILD = "e344";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -341,7 +341,8 @@ export function createEarthGlobe(canvas, options = {}) {
   const cloudFails = new Map();
   let cloudRetryAt = 0;
   // One cloud picture, eight pieces, at every zoom. Smaller pieces are the
-  // same picture cut again, so they are not used.
+  // same picture cut again, so they are not used. A loaded piece stays
+  // after it goes around the back.
   const CLOUDS = { label: "cfar", cols: 4, rows: 2 };
   let tileGroup = null;
   const tileLive = new Map();
@@ -2594,6 +2595,14 @@ export function createEarthGlobe(canvas, options = {}) {
       });
   }
 
+  function allCloudKeys() {
+    const keys = [];
+    for (let r = 0; r < CLOUDS.rows; r++) {
+      for (let c = 0; c < CLOUDS.cols; c++) keys.push(`${CLOUDS.label}:${c}:${r}`);
+    }
+    return keys;
+  }
+
   function updateClouds() {
     if (!cloudsOn || disposed || !mesh) return;
     const stamp = cloudStampNow();
@@ -2612,30 +2621,27 @@ export function createEarthGlobe(canvas, options = {}) {
       cloudMesh.name = "clouds";
       mesh.add(cloudMesh);
     }
-    const samples = viewSamples();
-    const wantList = keysOnScreen(CLOUDS, at, samples);
-    const want = new Set(wantList);
-    for (const key of [...cloudLive.keys()]) {
-      if (!want.has(key)) dropCloudPiece(key);
-    }
+    // A piece that has loaded stays, including after it goes around the back.
     if (cloudLoading.size > 0 || performance.now() < cloudRetryAt) return;
+    const face = new Set(visibleCapKeys(CLOUDS, at, camDist()));
     const { c0, r0 } = levelColRow(CLOUDS, at.lon, at.lat);
-    const ordered = [...want].sort((a, b) => {
-      const ap = a.split(":");
-      const bp = b.split(":");
-      const da =
-        Math.min(Math.abs(Number(ap[1]) - c0), CLOUDS.cols - Math.abs(Number(ap[1]) - c0)) +
-        Math.abs(Number(ap[2]) - r0);
-      const db =
-        Math.min(Math.abs(Number(bp[1]) - c0), CLOUDS.cols - Math.abs(Number(bp[1]) - c0)) +
-        Math.abs(Number(bp[2]) - r0);
-      return da - db;
+    const distOf = (key) => {
+      const p = key.split(":");
+      return (
+        Math.min(Math.abs(Number(p[1]) - c0), CLOUDS.cols - Math.abs(Number(p[1]) - c0)) +
+        Math.abs(Number(p[2]) - r0)
+      );
+    };
+    const pending = allCloudKeys().filter(
+      (k) => !cloudLive.has(k) && !cloudSkip.has(stamp + ":" + k)
+    );
+    pending.sort((a, b) => {
+      const af = face.has(a) ? 0 : 1;
+      const bf = face.has(b) ? 0 : 1;
+      if (af !== bf) return af - bf;
+      return distOf(a) - distOf(b);
     });
-    for (const key of ordered) {
-      if (cloudLive.has(key) || cloudSkip.has(stamp + ":" + key)) continue;
-      loadCloudSquare(CLOUDS, key, stamp);
-      return;
-    }
+    if (pending.length) loadCloudSquare(CLOUDS, pending[0], stamp);
   }
 
   function wrapCol(c, cols) {
