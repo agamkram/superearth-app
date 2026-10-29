@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e338";
+export const BUILD = "e339";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -3034,8 +3034,7 @@ export function createEarthGlobe(canvas, options = {}) {
       if (d < minD) minD = d;
       if (d > maxD) maxD = d;
     }
-    // Near a pole the longitudes swing wide. Keep the sampled squares only.
-    if (maxD - minD > 40 || maxLat - minLat > 40) {
+    const sampled = () => {
       const keys = [];
       const seen = new Set();
       for (const s of samples) {
@@ -3046,7 +3045,12 @@ export function createEarthGlobe(canvas, options = {}) {
         keys.push(key);
       }
       return keys;
-    }
+    };
+    // The closest photos are small. A wide view keeps the squares under the
+    // sample points, and the coarser photo stays underneath the gaps.
+    // Wider squares fill the whole view. A 40° span is a normal mid zoom,
+    // and leaving the squares between the samples empty shows the blue globe.
+    if (level.cols >= 40 && (maxD - minD > 40 || maxLat - minLat > 40)) return sampled();
     const dLon = 360 / level.cols;
     const dLat = 180 / level.rows;
     const row0 = Math.max(0, Math.floor((90 - maxLat) / dLat));
@@ -3057,6 +3061,7 @@ export function createEarthGlobe(canvas, options = {}) {
     for (let row = row0; row <= row1; row++) {
       for (let c = c0; c <= c1; c++) keys.push(`${level.label}:${wrapCol(c, level.cols)}:${row}`);
     }
+    if (keys.length > 24) return sampled();
     return keys;
   }
 
@@ -3070,7 +3075,7 @@ export function createEarthGlobe(canvas, options = {}) {
     const samples = viewSamples();
     const base = TILE_LEVELS[8];
     const shown = level || soon;
-    if (tileLevel && level && tileLevel !== level.label) holdLevel = tileLevel;
+    if (tileLevel && level && tileLevel !== level.label && tileLevel !== "8") holdLevel = tileLevel;
     if (!level) holdLevel = null;
     tileLevel = shown ? shown.label : null;
     ensureTileGroup();
@@ -3082,13 +3087,9 @@ export function createEarthGlobe(canvas, options = {}) {
         ? new Set(keysOnScreen(soon, at, samples))
         : new Set();
     const screenReady = [...onScreen].every((k) => tileLive.has(k));
-    // The coarse squares stay only while the sharper ones are still arriving,
-    // or while the limb is on screen and the close set does not cover the edge.
-    const limb = !samples;
-    const baseKeys =
-      !shown || shown.label === base.label || limb || !screenReady
-        ? keysOnScreen(base, at, samples)
-        : [];
+    // The far photos stay under the closer ones. Taking them off once the
+    // closer set looks complete leaves a blue square whenever you move.
+    const baseKeys = keysOnScreen(base, at, samples);
     tileWanted = new Set([...baseKeys, ...onScreen, ...soonKeys]);
     if (screenReady) holdLevel = null;
     const holdKeep =
