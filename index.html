@@ -370,7 +370,7 @@
     .tool-strip {
       display: flex;
       align-items: stretch;
-      gap: 4px;
+      gap: 3px;
       flex: 1 1 auto;
       justify-self: stretch;
       width: 100%;
@@ -417,8 +417,46 @@
       cursor: pointer;
       touch-action: manipulation;
       line-height: 1;
-      padding: 0 0.28rem;
+      padding: 0 0.08rem;
       -webkit-tap-highlight-color: transparent;
+    }
+
+    .cards-toggle {
+      flex: 0 0 auto;
+      width: 1rem;
+      height: 100%;
+      min-height: 0;
+      padding: 0;
+      border: none;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .cards-toggle svg {
+      display: block;
+      width: 10px;
+      height: 10px;
+      transform-origin: 50% 50%;
+    }
+
+    .cards-toggle:active {
+      background: rgba(255, 255, 255, 0.16);
+    }
+
+    .loc-bar.is-cards-collapsed .cards-toggle svg {
+      transform: rotate(180deg);
+    }
+
+    .loc-bar.is-cards-collapsed .m-grid,
+    .loc-bar.is-cards-collapsed .metrics-section + .metrics-section {
+      display: none;
     }
 
     /* On only — no hover “third” look */
@@ -1295,7 +1333,7 @@
 
   <header class="chrome">
     <h1 class="app-title">SuperEarth</h1>
-    <span class="build-mark" id="build-mark">e341</span>
+    <span class="build-mark" id="build-mark">e342</span>
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
@@ -1377,6 +1415,25 @@
             aria-pressed="false"
           >
             Orbit
+          </button>
+          <button
+            type="button"
+            class="cards-toggle"
+            id="cards-toggle"
+            title="Hide the cards"
+            aria-label="Hide the cards"
+            aria-expanded="true"
+          >
+            <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+              <path
+                d="M2.2 4.1 L6 7.9 L9.8 4.1"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
           </button>
         </div>
       </div>
@@ -1555,7 +1612,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe, BUILD } from "./earth.js?v=e341";
+    import { createEarthGlobe, BUILD } from "./earth.js?v=e342";
     import {
       loadPlaces,
       placeAt,
@@ -1605,6 +1662,8 @@
     const gridBtn = document.getElementById("grid-btn");
     const tiltBtn = document.getElementById("tilt-btn");
     const orbitBtn = document.getElementById("orbit-btn");
+    const cardsToggle = document.getElementById("cards-toggle");
+    const locBar = document.getElementById("loc-bar");
 
     /** @type {import("leaflet").Map | null} */
     let locationMap = null;
@@ -3031,6 +3090,26 @@
       orbitBtn.addEventListener("click", (e) => {
         e.preventDefault();
         setOrbitUi(!orbitOn);
+      });
+    }
+
+    function setCardsCollapsed(collapsed) {
+      if (!locBar) return;
+      locBar.classList.toggle("is-cards-collapsed", collapsed);
+      if (cardsToggle) {
+        const label = collapsed ? "Show the cards" : "Hide the cards";
+        cardsToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        cardsToggle.title = label;
+        cardsToggle.setAttribute("aria-label", label);
+      }
+      requestAnimationFrame(() => {
+        globeRef.current?.refitChrome?.();
+      });
+    }
+    if (cardsToggle) {
+      cardsToggle.addEventListener("click", (e) => {
+        e.preventDefault();
+        setCardsCollapsed(!locBar.classList.contains("is-cards-collapsed"));
       });
     }
 

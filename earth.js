@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust + on-screen build mark. Bump when assets or earth.js change. */
-export const BUILD = "e341";
+export const BUILD = "e342";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -4726,6 +4726,39 @@ export function createEarthGlobe(canvas, options = {}) {
     if (oneFinger || twoFinger || tilting || orbiting) kick();
   }
 
+  /** Bar height changed (cards folded). Keep a zoomed view; refit the opening pose. */
+  function refitChrome() {
+    const prevHome = homeDist;
+    const dist = camDist();
+    const centered = target.lengthSq() < 1e-4;
+    const atOpening =
+      centered &&
+      Math.abs(dist - prevHome) / Math.max(prevHome, 0.01) < 0.03;
+    homeDist = computeHomeDistance(
+      width || window.innerWidth || 1,
+      height || window.innerHeight || 1
+    );
+    homeLiftY = homeScreenOffsetY();
+    const next = THREE.MathUtils.clamp(
+      atOpening ? homeDist : dist,
+      MIN_DIST,
+      maxCamDist()
+    );
+    if (Math.abs(next - dist) > 1e-3) {
+      if (next >= homeDist - 1e-4) {
+        target.set(0, 0, 0);
+        clearScreenPan();
+      }
+      readSpherical();
+      spherical.radius = next;
+      writeCamera();
+      syncEarth();
+      prevCamDist = camDist();
+      kick();
+    }
+    applyCanvasPanTransform();
+  }
+
   applyEphemeris();
   loadBase();
   loadSkyMoon();
@@ -4741,6 +4774,7 @@ export function createEarthGlobe(canvas, options = {}) {
   return {
     resize,
     fitToHost,
+    refitChrome,
     resetView,
     setObserver,
     setClouds,
