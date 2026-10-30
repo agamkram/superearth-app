@@ -28,7 +28,9 @@ git add ready.json
 git commit -q -m "Clouds ${STAMP} ready"
 if [ -n "${GITHUB_ACTIONS:-}" ]; then
   git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-  git -c http.extraheader="AUTHORIZATION: bearer ${GITHUB_TOKEN}" push --force origin HEAD:cloud-tiles
+  # GitHub's git host wants the job token as basic auth, same as actions/checkout.
+  basic=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')
+  git -c http.extraheader="AUTHORIZATION: basic ${basic}" push --force origin HEAD:cloud-tiles
 else
   git remote add origin "$(git -C "$ROOT" remote get-url origin)"
   git push --force origin HEAD:cloud-tiles
