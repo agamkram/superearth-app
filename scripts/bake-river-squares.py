@@ -2,10 +2,10 @@
 """Split rivers so the phone only keeps the water it can see.
 
 rivers-big.bin   rivers at or above 1000 m3/s, the whole Earth
-rivers-mid/      10–1000 m3/s, eight by four squares (same grid as tiles-16)
+rivers-mid/      5–1000 m3/s, eight by four squares (same grid as tiles-16)
 
 The same rivers show at every zoom. There is no closer set.
-rivers-10m.bin holds the rivers from 20 up. Rivers from 10 to 20 are read
+rivers-10m.bin holds the rivers from 20 up. Rivers from 5 to 20 are read
 from HydroRIVERS and clipped on the same lakes.
 
 A reach that crosses a square is cut on the square edge so the pieces meet.
@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import math
 import struct
+import sys
 import time
 from pathlib import Path
 
@@ -27,9 +28,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC_BIN = ROOT / "rivers-10m.bin"
 BIG_OUT = ROOT / "rivers-big.bin"
 MID_DIR = ROOT / "rivers-mid"
-# rivers-10m.bin starts at 20. Every zoom shows rivers from 10 up.
+# rivers-10m.bin starts at 20. Every zoom shows rivers from 5 up.
 BIN_FLOW = 20.0
-OPENING_FLOW = 10.0
+OPENING_FLOW = 5.0
 
 HEAD = struct.Struct("<BxxxI")
 PT = struct.Struct("<ff")
@@ -684,10 +685,15 @@ def main():
     self_test()
     print("big rivers, and the opening set from the 20 file", flush=True)
     mid = split_ranked_bin(write_mid=False)
-    print("rivers from 10 to 20", flush=True)
+    print(f"rivers from {OPENING_FLOW:g} to {BIN_FLOW:g}", flush=True)
     add_flow_band(mid, OPENING_FLOW, BIN_FLOW)
     mid.write()
 
 
 if __name__ == "__main__":
-    main()
+    # `band 5 10` adds one missing slice into the squares already on disk.
+    # A full run rebuilds from the 20 file, then adds 5–20. Do not stack them.
+    if len(sys.argv) == 4 and sys.argv[1] == "band":
+        extend_opening(float(sys.argv[2]), float(sys.argv[3]))
+    else:
+        main()
