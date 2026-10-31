@@ -181,7 +181,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e352";
+export const BUILD = "e353";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -4782,8 +4782,8 @@ export function createEarthGlobe(canvas, options = {}) {
    * Hairlines, faint, and many of them: a veil, not ticks or ribbons.
    */
   const WIND_R = 1.016;
-  const WIND_N = 4800;
-  const WIND_TRAIL = 36;
+  const WIND_N = 8000;
+  const WIND_TRAIL = 60;
   const WIND_STEP = 0.2;
   const WIND_HOUR = 10800;
   const WIND_SEGS = WIND_TRAIL - 1;
@@ -4837,7 +4837,7 @@ export function createEarthGlobe(canvas, options = {}) {
   function spawnWind(i) {
     windLats[i] = Math.asin(Math.random() * 2 - 1) * (180 / Math.PI);
     windLons[i] = Math.random() * 360 - 180;
-    windAge[i] = 14 + Math.random() * 18;
+    windAge[i] = 22 + Math.random() * 26;
     windAcc[i] = 0;
     windFill[i] = 0;
     windSlot[i] = 0;
