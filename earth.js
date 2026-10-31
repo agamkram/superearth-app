@@ -181,7 +181,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e371";
+export const BUILD = "e372";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -4780,7 +4780,7 @@ export function createEarthGlobe(canvas, options = {}) {
    * Latest GFS wind. Loaded only while W is on, then dropped.
    * Three real hours pass each second so the streams can be seen.
    * One-pixel lines. Each piece is the path the air took.
-   * The soft slider spreads a sharp turn over more forecast squares.
+   * Sharp turns are spread across 6 forecast squares.
    * A frame only rewrites the moving tip.
    */
   const WIND_R = 1.016;
@@ -4791,7 +4791,7 @@ export function createEarthGlobe(canvas, options = {}) {
   const WIND_TEX_W = 4800;
   const WIND_TEX_ROWS = 10;
   let windStep = 6 / (12 * (WIND_HOUR / 1000));
-  let windSoft = 3;
+  const windSoft = 6;
   const WIND_LEVELS = ["10 m", "jet"];
   let windOn = false;
   let windLevel = 0;
@@ -5254,18 +5254,6 @@ export function createEarthGlobe(canvas, options = {}) {
     };
   }
 
-  function setWindSoft(n) {
-    let next = Math.round(Number(n));
-    if (!Number.isFinite(next)) next = 3;
-    next = Math.max(3, Math.min(9, next));
-    if (next === windSoft && windU[windLevel]) return windSoft;
-    windSoft = next;
-    if (windBuf) buildWindFields();
-    if (windLines) resetWindField();
-    if (windOn) kick();
-    return windSoft;
-  }
-
   function setWindLook(opts) {
     if (!opts) return;
     if (opts.trails != null) windTrailSet = Math.max(1, Math.min(WIND_MAX, opts.trails | 0));
@@ -5445,7 +5433,6 @@ export function createEarthGlobe(canvas, options = {}) {
     setAuroraShown,
     setSun,
     setWind,
-    setWindSoft,
     setWindLook,
     windHere,
     setCapitalMark,
