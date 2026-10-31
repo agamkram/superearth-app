@@ -1453,13 +1453,13 @@
           <input
             id="soft-slide"
             type="range"
-            min="0"
-            max="3"
+            min="3"
+            max="9"
             step="1"
-            value="1"
-            title="How far a sharp turn is spread. Raw is the file. Let go and the streams rebuild."
+            value="3"
+            title="How far a sharp turn is spread. Higher is softer. Let go and the streams rebuild."
           />
-          <span class="piece-read" id="soft-read">1</span>
+          <span class="piece-read" id="soft-read">3</span>
         </div>
       </div>
       <div class="m-grid m-grid-rise" aria-label="Location sunrise solar noon sunset">
@@ -1637,7 +1637,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e370";
+    import { createEarthGlobe } from "./earth.js?v=e371";
     import {
       loadPlaces,
       placeAt,
@@ -3169,15 +3169,12 @@
         applyWind(next);
       });
     }
-    function softLabel(v) {
-      return String(v) === "0" ? "raw" : String(v);
-    }
     if (softSlide) {
       softSlide.addEventListener("input", () => {
-        if (softRead) softRead.textContent = softLabel(softSlide.value);
+        if (softRead) softRead.textContent = softSlide.value;
       });
       softSlide.addEventListener("change", () => {
-        if (softRead) softRead.textContent = softLabel(softSlide.value);
+        if (softRead) softRead.textContent = softSlide.value;
         if (globeRef.current && globeRef.current.setWindSoft) {
           globeRef.current.setWindSoft(Number(softSlide.value));
         }

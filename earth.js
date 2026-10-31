@@ -181,7 +181,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e370";
+export const BUILD = "e371";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -4791,7 +4791,7 @@ export function createEarthGlobe(canvas, options = {}) {
   const WIND_TEX_W = 4800;
   const WIND_TEX_ROWS = 10;
   let windStep = 6 / (12 * (WIND_HOUR / 1000));
-  let windSoft = 1;
+  let windSoft = 3;
   const WIND_LEVELS = ["10 m", "jet"];
   let windOn = false;
   let windLevel = 0;
@@ -5256,8 +5256,8 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function setWindSoft(n) {
     let next = Math.round(Number(n));
-    if (!Number.isFinite(next)) next = 1;
-    next = Math.max(0, Math.min(3, next));
+    if (!Number.isFinite(next)) next = 3;
+    next = Math.max(3, Math.min(9, next));
     if (next === windSoft && windU[windLevel]) return windSoft;
     windSoft = next;
     if (windBuf) buildWindFields();
