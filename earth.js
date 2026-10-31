@@ -181,7 +181,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e354";
+export const BUILD = "e356";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -4811,6 +4811,7 @@ export function createEarthGlobe(canvas, options = {}) {
   let windSu = null;
   let windSv = null;
   let windT = 0;
+  let windWarmLeft = 0;
   const _wA = [0, 0, 0];
   const _wLL = [0, 0];
 
@@ -4836,6 +4837,7 @@ export function createEarthGlobe(canvas, options = {}) {
     windH = null;
     windSu = null;
     windSv = null;
+    windWarmLeft = 0;
   }
 
   function spawnWind(i) {
@@ -4983,8 +4985,46 @@ export function createEarthGlobe(canvas, options = {}) {
     }
   }
 
+  function advanceWind(dt, commit) {
+    for (let i = 0; i < WIND_N; i++) {
+      const uv = windSample(windLats[i], windLons[i]);
+      const u = uv[0];
+      const v = uv[1];
+      if (windFill[i] === 0) {
+        windSu[i] = u;
+        windSv[i] = v;
+      } else {
+        windSu[i] = windSu[i] * 0.82 + u * 0.18;
+        windSv[i] = windSv[i] * 0.82 + v * 0.18;
+      }
+      stepWind(windLats[i], windLons[i], windSu[i], windSv[i], dt, WIND_HOUR, _wLL);
+      windLats[i] = _wLL[0];
+      windLons[i] = _wLL[1];
+      noteWind(i, windLats[i], windLons[i], commit);
+    }
+  }
+
+  function revealWind() {
+    for (let i = 0; i < WIND_N; i++) {
+      const uv = windSample(windLats[i], windLons[i]);
+      const spd = Math.hypot(uv[0], uv[1]);
+      paintWind(i, 0.1 + 0.28 * Math.min(1, spd / 10));
+      windAcc[i] = Math.random() * WIND_STEP;
+    }
+    windLines.geometry.attributes.position.needsUpdate = true;
+    windLines.geometry.attributes.fade.needsUpdate = true;
+    windT = 0;
+  }
+
   function updateWind(now) {
     if (!windOn || !windLines || !windU[windLevel]) return;
+    if (windWarmLeft > 0) {
+      const batch = Math.min(10, windWarmLeft);
+      for (let n = 0; n < batch; n++) advanceWind(WIND_STEP, true);
+      windWarmLeft -= batch;
+      if (windWarmLeft <= 0) revealWind();
+      return;
+    }
     const t = typeof now === "number" ? now : performance.now();
     if (!windT) windT = t;
     const dt = Math.min(0.05, (t - windT) / 1000);
@@ -5058,12 +5098,14 @@ export function createEarthGlobe(canvas, options = {}) {
       if (typeof onWind === "function") onWind();
       return;
     }
+    const turningOn = !windOn;
     const switched = windOn && windLevel !== level;
     windLevel = level;
     windOn = true;
     if (windBuf) {
       ensureWindLines();
-      if (switched && windLats) {
+      if (turningOn) windWarmLeft = WIND_TRAIL;
+      else if (switched && windLats) {
         for (let i = 0; i < WIND_N; i++) spawnWind(i);
       }
       kick();
@@ -5081,6 +5123,7 @@ export function createEarthGlobe(canvas, options = {}) {
         adoptWind(buf);
         if (!windOn) return;
         ensureWindLines();
+        windWarmLeft = WIND_TRAIL;
         kick();
         if (typeof onWind === "function") onWind();
       })
