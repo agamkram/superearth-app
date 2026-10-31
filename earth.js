@@ -4,6 +4,7 @@
  */
 import * as THREE from "three";
 import { loadOvationPrime, makeAuroraColor } from "./ovation.js?v=e223";
+import { earthPoint, sampleUV, stepWind, windFrom } from "./wind.mjs?v=e349";
 
 const RADIUS = 1;
 const HOME_FILL = 0.9;
@@ -180,7 +181,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e348";
+export const BUILD = "e349";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -268,6 +269,7 @@ export function createEarthGlobe(canvas, options = {}) {
     onReady = null,
     onPhase = null,
     onTap = null,
+    onWind = null,
   } = options;
   const surface =
     (typeof document !== "undefined" && document.getElementById("touch-plane")) ||
@@ -1285,16 +1287,12 @@ export function createEarthGlobe(canvas, options = {}) {
 
   /**
    * Geographic → mesh-local. Matches SphereGeometry: lon 0 faces +X, north is +Y.
+   * The formula lives in wind.mjs so the wind step uses this same frame.
    */
+  const _earthOut = [0, 0, 0];
   function latLonToLocal(latDeg, lonDeg, r = RADIUS * 1.014) {
-    const lat = THREE.MathUtils.degToRad(latDeg);
-    const lon = THREE.MathUtils.degToRad(lonDeg);
-    const cl = Math.cos(lat);
-    return new THREE.Vector3(
-      r * cl * Math.cos(lon),
-      r * Math.sin(lat),
-      -r * cl * Math.sin(lon)
-    );
+    earthPoint(latDeg, lonDeg, r, _earthOut);
+    return new THREE.Vector3(_earthOut[0], _earthOut[1], _earthOut[2]);
   }
 
   /**
@@ -4777,6 +4775,213 @@ export function createEarthGlobe(canvas, options = {}) {
     return orbiting;
   }
 
+  /**
+   * Latest GFS wind. Loaded only while W is on, then dropped.
+   * Motion is sped up (one real hour per second) so the flow can be seen.
+   * The readout stays the true meters per second.
+   */
+  const WIND_R = 1.016;
+  const WIND_N = 4200;
+  const WIND_HOUR = 3600;
+  const WIND_LEVELS = ["10 m", "jet"];
+  let windOn = false;
+  let windLevel = 0;
+  let windToken = 0;
+  let windBuf = null;
+  let windU = [null, null];
+  let windV = [null, null];
+  let windNlon = 0;
+  let windNlat = 0;
+  let windScale = 100;
+  let windCycle = 0;
+  let windLines = null;
+  let windPos = null;
+  let windCol = null;
+  let windLats = null;
+  let windLons = null;
+  let windAge = null;
+  let windT = 0;
+  const _wA = [0, 0, 0];
+  const _wB = [0, 0, 0];
+  const _wLL = [0, 0];
+
+  function disposeWind() {
+    windOn = false;
+    windBuf = null;
+    windU = [null, null];
+    windV = [null, null];
+    if (windLines) {
+      if (windLines.parent) windLines.parent.remove(windLines);
+      windLines.geometry.dispose();
+      windLines.material.dispose();
+      windLines = null;
+    }
+    windPos = null;
+    windCol = null;
+    windLats = null;
+    windLons = null;
+    windAge = null;
+  }
+
+  function spawnWind(i) {
+    windLats[i] = Math.asin(Math.random() * 2 - 1) * (180 / Math.PI);
+    windLons[i] = Math.random() * 360 - 180;
+    windAge[i] = 4 + Math.random() * 8;
+  }
+
+  function ensureWindLines() {
+    if (windLines || !mesh) return;
+    windLats = new Float32Array(WIND_N);
+    windLons = new Float32Array(WIND_N);
+    windAge = new Float32Array(WIND_N);
+    for (let i = 0; i < WIND_N; i++) spawnWind(i);
+    windPos = new Float32Array(WIND_N * 2 * 3);
+    windCol = new Float32Array(WIND_N * 2 * 3);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(windPos, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(windCol, 3));
+    const mat = new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.92,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    windLines = new THREE.LineSegments(geo, mat);
+    windLines.name = "wind";
+    windLines.frustumCulled = false;
+    windLines.renderOrder = 5;
+    mesh.add(windLines);
+    windT = 0;
+  }
+
+  function adoptWind(buf) {
+    const view = new DataView(buf);
+    const magic =
+      String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
+    if (magic !== "WND1") throw new Error("wind " + magic);
+    windNlon = view.getUint16(4, true);
+    windNlat = view.getUint16(6, true);
+    const nlev = view.getUint16(8, true);
+    windScale = view.getUint16(10, true) || 100;
+    windCycle = view.getUint32(12, true);
+    const plane = windNlon * windNlat;
+    if (nlev < 2 || buf.byteLength < 16 + plane * 4 * 2) throw new Error("wind short");
+    windBuf = buf;
+    for (let lev = 0; lev < 2; lev++) {
+      const uAt = 16 + lev * plane * 4;
+      windU[lev] = new Int16Array(buf, uAt, plane);
+      windV[lev] = new Int16Array(buf, uAt + plane * 2, plane);
+    }
+  }
+
+  function windSample(lat, lon) {
+    const raw = sampleUV(windU[windLevel], windV[windLevel], lat, lon, windNlon, windNlat);
+    return [raw[0] / windScale, raw[1] / windScale];
+  }
+
+  function updateWind(now) {
+    if (!windOn || !windLines || !windU[windLevel]) return;
+    const t = typeof now === "number" ? now : performance.now();
+    if (!windT) windT = t;
+    const dt = Math.min(0.05, (t - windT) / 1000);
+    windT = t;
+    if (dt <= 0) return;
+    const pos = windPos;
+    const col = windCol;
+    for (let i = 0; i < WIND_N; i++) {
+      windAge[i] -= dt;
+      if (windAge[i] <= 0) spawnWind(i);
+      const lat = windLats[i];
+      const lon = windLons[i];
+      const uv = windSample(lat, lon);
+      const u = uv[0];
+      const v = uv[1];
+      stepWind(lat, lon, u, v, dt, WIND_HOUR, _wLL);
+      windLats[i] = _wLL[0];
+      windLons[i] = _wLL[1];
+      const spd = Math.hypot(u, v);
+      const deg = Math.min(3.2, Math.max(0.7, spd * 0.08));
+      const backDt = spd > 0.05 ? (deg * 111111) / (spd * WIND_HOUR) : 0;
+      stepWind(windLats[i], windLons[i], u, v, -backDt, WIND_HOUR, _wLL);
+      earthPoint(_wLL[0], _wLL[1], WIND_R, _wA);
+      earthPoint(windLats[i], windLons[i], WIND_R, _wB);
+      const o = i * 6;
+      pos[o] = _wA[0];
+      pos[o + 1] = _wA[1];
+      pos[o + 2] = _wA[2];
+      pos[o + 3] = _wB[0];
+      pos[o + 4] = _wB[1];
+      pos[o + 5] = _wB[2];
+      const k = Math.min(1, spd / 30);
+      const c = 0.82 + 0.18 * k;
+      col[o] = col[o + 3] = 0.72 * c;
+      col[o + 1] = col[o + 4] = 0.82 * c;
+      col[o + 2] = col[o + 5] = 0.94 * c;
+    }
+    windLines.geometry.attributes.position.needsUpdate = true;
+    windLines.geometry.attributes.color.needsUpdate = true;
+  }
+
+  function windHere() {
+    if (!windOn) return null;
+    if (!windU[windLevel]) return { loading: true, level: windLevel };
+    const uv = windSample(observerLat, observerLon);
+    const said = windFrom(uv[0], uv[1]);
+    return {
+      loading: false,
+      level: windLevel,
+      levelName: WIND_LEVELS[windLevel],
+      u: uv[0],
+      v: uv[1],
+      speed: said.speed,
+      from: said.from,
+      cycle: windCycle,
+    };
+  }
+
+  function setWind(level) {
+    if (level < 0) {
+      windToken++;
+      disposeWind();
+      kick();
+      if (typeof onWind === "function") onWind();
+      return;
+    }
+    const switched = windOn && windLevel !== level;
+    windLevel = level;
+    windOn = true;
+    if (windBuf) {
+      ensureWindLines();
+      if (switched && windLats) {
+        for (let i = 0; i < WIND_N; i++) spawnWind(i);
+      }
+      kick();
+      if (typeof onWind === "function") onWind();
+      return;
+    }
+    const token = ++windToken;
+    fetch(new URL(`./wind.bin?v=${TEX_VER}`, import.meta.url))
+      .then((res) => {
+        if (!res.ok) throw new Error("wind " + res.status);
+        return res.arrayBuffer();
+      })
+      .then((buf) => {
+        if (disposed || token !== windToken) return;
+        adoptWind(buf);
+        if (!windOn) return;
+        ensureWindLines();
+        kick();
+        if (typeof onWind === "function") onWind();
+      })
+      .catch(() => {
+        if (token !== windToken) return;
+        disposeWind();
+        if (typeof onWind === "function") onWind();
+      });
+    kick();
+  }
+
   function kick() {
     if (disposed || animId) return;
     if (typeof document !== "undefined" && document.hidden) return;
@@ -4831,10 +5036,11 @@ export function createEarthGlobe(canvas, options = {}) {
     updateRiverSquares();
     syncRiverPixels();
     if (gridOn) updateGridLabels();
+    if (windOn) updateWind(t);
     renderer.render(scene, camera);
     // Idle when still. Real Earth spin is invisible frame-to-frame; the page
-    // refreshes Live on a timer. Keep looping only while dragging, tipping, or orbiting.
-    if (oneFinger || twoFinger || tilting || orbiting) kick();
+    // refreshes Live on a timer. Keep looping only while dragging, tipping, orbiting, or the wind is on.
+    if (oneFinger || twoFinger || tilting || orbiting || windOn) kick();
   }
 
   /** Bar height changed (cards folded). Keep a zoomed view; refit the opening pose. */
@@ -4898,6 +5104,8 @@ export function createEarthGlobe(canvas, options = {}) {
     setAurora,
     setAuroraShown,
     setSun,
+    setWind,
+    windHere,
     setCapitalMark,
     hideCapitalMark,
     setTapMark,
@@ -4928,6 +5136,7 @@ export function createEarthGlobe(canvas, options = {}) {
       window.removeEventListener("contextmenu", onContextMenu, true);
       hideTiles();
       disposeClouds();
+      disposeWind();
       disposePoleMarks();
       disposeCapDot();
       disposeTapDot();
