@@ -279,8 +279,12 @@
       min-width: 0;
     }
 
+    .wind-sliders .wind-slide:last-child:nth-child(odd) {
+      grid-column: 1 / -1;
+    }
+
     .wind-slide span {
-      flex: 0 0 2.35rem;
+      flex: 0 0 3.15rem;
       font-family: var(--font);
       font-size: 0.58rem;
       font-weight: 600;
@@ -1387,11 +1391,11 @@
     <div class="wind-sliders" id="wind-sliders" hidden>
       <label class="wind-slide" title="How many streaks">
         <span>Trails</span>
-        <input id="wind-trails" type="range" min="2000" max="12000" step="500" value="12000" />
+        <input id="wind-trails" type="range" min="2000" max="20000" step="1000" value="12000" />
       </label>
       <label class="wind-slide" title="How long each streak is">
         <span>Length</span>
-        <input id="wind-length" type="range" min="30" max="199" step="1" value="199" />
+        <input id="wind-length" type="range" min="30" max="279" step="1" value="199" />
       </label>
       <label class="wind-slide" title="How fast the tail disappears">
         <span>Fade</span>
@@ -1400,6 +1404,10 @@
       <label class="wind-slide" title="How visible the slow wind is">
         <span>Light</span>
         <input id="wind-light" type="range" min="2" max="50" step="1" value="10" />
+      </label>
+      <label class="wind-slide" title="How long a slow streak is allowed to be, so quiet air over land still shows">
+        <span>Density</span>
+        <input id="wind-density" type="range" min="0" max="100" step="1" value="0" />
       </label>
     </div>
     <div class="metrics-panel">
@@ -1683,7 +1691,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e357";
+    import { createEarthGlobe } from "./earth.js?v=e358";
     import {
       loadPlaces,
       placeAt,
@@ -1733,6 +1741,7 @@
     const windLength = document.getElementById("wind-length");
     const windFade = document.getElementById("wind-fade");
     const windLight = document.getElementById("wind-light");
+    const windDensity = document.getElementById("wind-density");
     const riversBtn = document.getElementById("rivers-btn");
     const blackBtn = document.getElementById("black-btn");
     const bordersBtn = document.getElementById("borders-btn");
@@ -2860,6 +2869,7 @@
         length: windLength ? Number(windLength.value) : 199,
         fade: windFade ? Number(windFade.value) / 100 : 1,
         light: windLight ? Number(windLight.value) / 100 : 0.1,
+        density: windDensity ? Number(windDensity.value) : 0,
       });
     }
 
@@ -3232,7 +3242,7 @@
         applyWind(next);
       });
     }
-    for (const slider of [windTrails, windLength, windFade, windLight]) {
+    for (const slider of [windTrails, windLength, windFade, windLight, windDensity]) {
       if (!slider) continue;
       slider.addEventListener("input", () => pushWindLook());
     }
