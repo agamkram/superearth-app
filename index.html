@@ -247,9 +247,7 @@
     .loc-bar input[type="range"],
     .loc-bar .cycle,
     .loc-bar .cycle-controls,
-    .loc-bar .slider-track,
-    .loc-bar .wind-sliders,
-    .loc-bar .wind-slide {
+    .loc-bar .slider-track {
       pointer-events: auto;
       touch-action: manipulation;
     }
@@ -263,79 +261,6 @@
       --m-row-h: 1.7rem;
       --m-cell-pad: 2px 0.4rem;
       --m-cell-gap: 1px;
-    }
-
-    .wind-sliders {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0.08rem 0.55rem;
-      padding: 0 0.2rem;
-    }
-
-    .wind-slide {
-      display: flex;
-      align-items: center;
-      gap: 0.28rem;
-      min-width: 0;
-    }
-
-    .wind-sliders .wind-slide:last-child:nth-child(odd) {
-      grid-column: 1 / -1;
-    }
-
-    .wind-slide span {
-      flex: 0 0 3.15rem;
-      font-family: var(--font);
-      font-size: 0.58rem;
-      font-weight: 600;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--dim);
-      line-height: 1;
-    }
-
-    .wind-slide input[type="range"] {
-      -webkit-appearance: none;
-      appearance: none;
-      flex: 1 1 auto;
-      min-width: 0;
-      height: 16px;
-      margin: 0;
-      background: transparent;
-      cursor: pointer;
-      touch-action: pan-x;
-    }
-
-    .wind-slide input[type="range"]::-webkit-slider-runnable-track {
-      height: 2px;
-      border-radius: 1px;
-      background: rgba(200, 212, 232, 0.35);
-    }
-
-    .wind-slide input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 11px;
-      height: 11px;
-      margin-top: -4.5px;
-      border-radius: 50%;
-      border: 1px solid rgba(255, 255, 255, 0.4);
-      background: #e8edf7;
-    }
-
-    .wind-slide input[type="range"]::-moz-range-track {
-      height: 2px;
-      border-radius: 1px;
-      background: rgba(200, 212, 232, 0.35);
-      border: none;
-    }
-
-    .wind-slide input[type="range"]::-moz-range-thumb {
-      width: 11px;
-      height: 11px;
-      border-radius: 50%;
-      border: 1px solid rgba(255, 255, 255, 0.4);
-      background: #e8edf7;
     }
 
     .metrics-panel {
@@ -1388,28 +1313,6 @@
   <p class="status" id="status" data-state="loading">Loading surface…</p>
 
   <div class="loc-bar" id="loc-bar">
-    <div class="wind-sliders" id="wind-sliders" hidden>
-      <label class="wind-slide" title="How many streaks">
-        <span>Trails</span>
-        <input id="wind-trails" type="range" min="24000" max="48000" step="1000" value="24000" />
-      </label>
-      <label class="wind-slide" title="How long each streak is">
-        <span>Length</span>
-        <input id="wind-length" type="range" min="30" max="279" step="1" value="199" />
-      </label>
-      <label class="wind-slide" title="How fast the tail disappears">
-        <span>Fade</span>
-        <input id="wind-fade" type="range" min="40" max="250" step="5" value="100" />
-      </label>
-      <label class="wind-slide" title="How visible the slow wind is">
-        <span>Light</span>
-        <input id="wind-light" type="range" min="2" max="50" step="1" value="10" />
-      </label>
-      <label class="wind-slide" title="Adds more streaks everywhere, on top of Trails">
-        <span>Density</span>
-        <input id="wind-density" type="range" min="0" max="100" step="1" value="0" />
-      </label>
-    </div>
     <div class="metrics-panel">
       <section class="metrics-section" aria-label="Local">
       <div class="loc-strip">
@@ -1691,7 +1594,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e361";
+    import { createEarthGlobe } from "./earth.js?v=e365";
     import {
       loadPlaces,
       placeAt,
@@ -1736,12 +1639,6 @@
     const auroraBtn = document.getElementById("aurora-btn");
     const cloudsBtn = document.getElementById("clouds-btn");
     const windBtn = document.getElementById("wind-btn");
-    const windSliders = document.getElementById("wind-sliders");
-    const windTrails = document.getElementById("wind-trails");
-    const windLength = document.getElementById("wind-length");
-    const windFade = document.getElementById("wind-fade");
-    const windLight = document.getElementById("wind-light");
-    const windDensity = document.getElementById("wind-density");
     const riversBtn = document.getElementById("rivers-btn");
     const blackBtn = document.getElementById("black-btn");
     const bordersBtn = document.getElementById("borders-btn");
@@ -2855,22 +2752,10 @@
       const here = globeRef.current && globeRef.current.windHere && globeRef.current.windHere();
       if (here) return;
       windLevel = -1;
-      if (windSliders) windSliders.hidden = true;
       if (windBtn) {
         windBtn.setAttribute("aria-pressed", "false");
         windBtn.title = "Show the latest wind";
       }
-    }
-
-    function pushWindLook() {
-      if (!globeRef.current || !globeRef.current.setWindLook) return;
-      globeRef.current.setWindLook({
-        trails: windTrails ? Number(windTrails.value) : 24000,
-        length: windLength ? Number(windLength.value) : 199,
-        fade: windFade ? Number(windFade.value) / 100 : 1,
-        light: windLight ? Number(windLight.value) / 100 : 0.1,
-        density: windDensity ? Number(windDensity.value) / 100 : 0,
-      });
     }
 
     function applyWind(level) {
@@ -2878,14 +2763,8 @@
       const on = level >= 0;
       if (windBtn) {
         windBtn.setAttribute("aria-pressed", on ? "true" : "false");
-        windBtn.title = !on
-          ? "Show the latest wind"
-          : level === 0
-            ? "Showing wind 10 m up. Tap for the jet."
-            : "Showing the jet. Tap to hide.";
+        windBtn.title = on ? "Hide the wind" : "Show the latest wind";
       }
-      if (windSliders) windSliders.hidden = !on;
-      if (on) pushWindLook();
       if (globeRef.current && globeRef.current.setWind) globeRef.current.setWind(level);
     }
 
@@ -3238,13 +3117,9 @@
     if (windBtn) {
       windBtn.addEventListener("click", (e) => {
         e.preventDefault();
-        const next = windLevel < 0 ? 0 : windLevel === 0 ? 1 : -1;
+        const next = windLevel < 0 ? 0 : -1;
         applyWind(next);
       });
-    }
-    for (const slider of [windTrails, windLength, windFade, windLight, windDensity]) {
-      if (!slider) continue;
-      slider.addEventListener("input", () => pushWindLook());
     }
     if (riversBtn) {
       riversBtn.addEventListener("click", (e) => {
