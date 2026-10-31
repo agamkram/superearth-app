@@ -1311,7 +1311,6 @@
   </header>
 
   <p class="status" id="status" data-state="loading">Loading surface…</p>
-  <p class="status" id="wind-read" hidden></p>
 
   <div class="loc-bar" id="loc-bar">
     <div class="metrics-panel">
@@ -1640,7 +1639,6 @@
     const auroraBtn = document.getElementById("aurora-btn");
     const cloudsBtn = document.getElementById("clouds-btn");
     const windBtn = document.getElementById("wind-btn");
-    const windRead = document.getElementById("wind-read");
     const riversBtn = document.getElementById("rivers-btn");
     const blackBtn = document.getElementById("black-btn");
     const bordersBtn = document.getElementById("borders-btn");
@@ -2721,7 +2719,6 @@
       metricsRaf = requestAnimationFrame(() => {
         metricsRaf = 0;
         paintMetrics(info);
-        showWindRead();
       });
     }
 
@@ -2749,45 +2746,16 @@
     let riversOn = false;
     let blackOn = false;
     let windLevel = -1;
-    let windErrorUntil = 0;
 
-    function fmtWindCycle(n) {
-      const s = String(n).padStart(10, "0");
-      const mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][
-        Number(s.slice(4, 6)) - 1
-      ];
-      return `${s.slice(8, 10)}z ${Number(s.slice(6, 8))} ${mon}`;
-    }
-
-    function windLine(w) {
-      if (!w || w.loading) return "Loading wind…";
-      const when = fmtWindCycle(w.cycle);
-      const where = w.level === 1 ? "jet" : "10 m up";
-      if (w.from === "calm") return `Calm · ${where} · GFS ${when}`;
-      return `${Math.round(w.speed)} m/s from the ${w.from} · ${where} · GFS ${when}`;
-    }
-
-    function showWindRead() {
-      if (!windRead) return;
-      if (windLevel < 0) {
-        if (performance.now() < windErrorUntil) return;
-        windRead.hidden = true;
-        return;
-      }
+    function noteWind() {
+      if (windLevel < 0) return;
       const here = globeRef.current && globeRef.current.windHere && globeRef.current.windHere();
-      if (!here) {
-        windLevel = -1;
-        windErrorUntil = performance.now() + 2500;
-        if (windBtn) {
-          windBtn.setAttribute("aria-pressed", "false");
-          windBtn.title = "Show the latest wind";
-        }
-        windRead.hidden = false;
-        windRead.textContent = "Wind didn’t load";
-        return;
+      if (here) return;
+      windLevel = -1;
+      if (windBtn) {
+        windBtn.setAttribute("aria-pressed", "false");
+        windBtn.title = "Show the latest wind";
       }
-      windRead.hidden = false;
-      windRead.textContent = windLine(here);
     }
 
     function applyWind(level) {
@@ -2802,7 +2770,6 @@
             : "Showing the jet. Tap to hide.";
       }
       if (globeRef.current && globeRef.current.setWind) globeRef.current.setWind(level);
-      showWindRead();
     }
 
     function setAuroraOn(on) {
@@ -2932,7 +2899,7 @@
 
     loadPlaces().catch(() => {});
     const globe = globeRef.current = createEarthGlobe(canvas, {
-      onWind: showWindRead,
+      onWind: noteWind,
       onReady() {
         canvas.classList.add("is-ready");
         status.textContent = "";
