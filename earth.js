@@ -181,7 +181,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e356";
+export const BUILD = "e357";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -4812,6 +4812,10 @@ export function createEarthGlobe(canvas, options = {}) {
   let windSv = null;
   let windT = 0;
   let windWarmLeft = 0;
+  let windCount = WIND_N;
+  let windShow = WIND_SEGS;
+  let windFadePow = 1;
+  let windFloor = 0.1;
   const _wA = [0, 0, 0];
   const _wLL = [0, 0];
 
@@ -4974,8 +4978,13 @@ export function createEarthGlobe(canvas, options = {}) {
       const bx = windH[ob], by = windH[ob + 1], bz = windH[ob + 2];
       const dx = bx - ax, dy = by - ay, dz = bz - az;
       const jump = dx * dx + dy * dy + dz * dz > 0.05;
-      const f0 = jump ? 0 : (s / WIND_SEGS) * head;
-      const f1 = jump ? 0 : ((s + 1) / WIND_SEGS) * head;
+      const drawn = Math.min(windShow, Math.max(1, n - 1));
+      const first = Math.max(0, n - 1 - drawn);
+      const shown = s >= first && s < n - 1;
+      const t0 = shown ? (s - first) / drawn : 0;
+      const t1 = shown ? (s - first + 1) / drawn : 0;
+      const f0 = !shown || jump ? 0 : Math.pow(t0, windFadePow) * head;
+      const f1 = !shown || jump ? 0 : Math.pow(t1, windFadePow) * head;
       const p0 = vi * 3;
       const p1 = (vi + 1) * 3;
       windPos[p0] = ax; windPos[p0 + 1] = ay; windPos[p0 + 2] = az;
@@ -5008,7 +5017,7 @@ export function createEarthGlobe(canvas, options = {}) {
     for (let i = 0; i < WIND_N; i++) {
       const uv = windSample(windLats[i], windLons[i]);
       const spd = Math.hypot(uv[0], uv[1]);
-      paintWind(i, 0.1 + 0.28 * Math.min(1, spd / 10));
+      if (i < windCount) paintWind(i, windFloor + 0.28 * Math.min(1, spd / 10));
       windAcc[i] = Math.random() * WIND_STEP;
     }
     windLines.geometry.attributes.position.needsUpdate = true;
@@ -5054,10 +5063,9 @@ export function createEarthGlobe(canvas, options = {}) {
       const commit = windAcc[i] >= WIND_STEP;
       if (commit) windAcc[i] = 0;
       noteWind(i, windLats[i], windLons[i], commit);
+      if (i >= windCount) continue;
       if (commit || windFill[i] < 3) {
-        const spd = Math.hypot(u, v);
-        const head = 0.1 + 0.28 * Math.min(1, spd / 10);
-        paintWind(i, head);
+        paintWind(i, windFloor + 0.28 * Math.min(1, Math.hypot(u, v) / 10));
       } else if (windFill[i] >= 2) {
         const n = windFill[i];
         const newest = (windSlot[i] - 1 + WIND_TRAIL) % WIND_TRAIL;
@@ -5088,6 +5096,27 @@ export function createEarthGlobe(canvas, options = {}) {
       from: said.from,
       cycle: windCycle,
     };
+  }
+
+  function setWindLook(opts) {
+    if (!opts) return;
+    if (opts.trails != null) {
+      const next = Math.max(1, Math.min(WIND_N, opts.trails | 0));
+      if (windFade && next < windCount) {
+        for (let i = next; i < windCount; i++) clearWindDraw(i);
+      }
+      windCount = next;
+    }
+    if (opts.length != null) windShow = Math.max(1, Math.min(WIND_SEGS, opts.length | 0));
+    if (opts.fade != null) windFadePow = opts.fade;
+    if (opts.light != null) windFloor = opts.light;
+    if (!windLines || !windU[windLevel] || windWarmLeft > 0) return;
+    for (let i = 0; i < windCount; i++) {
+      const uv = windSample(windLats[i], windLons[i]);
+      paintWind(i, windFloor + 0.28 * Math.min(1, Math.hypot(uv[0], uv[1]) / 10));
+    }
+    windLines.geometry.attributes.position.needsUpdate = true;
+    windLines.geometry.attributes.fade.needsUpdate = true;
   }
 
   function setWind(level) {
@@ -5258,6 +5287,7 @@ export function createEarthGlobe(canvas, options = {}) {
     setAuroraShown,
     setSun,
     setWind,
+    setWindLook,
     windHere,
     setCapitalMark,
     hideCapitalMark,
