@@ -5,27 +5,33 @@ Two fields, both on the public 0.25° grid:
   0  wind 10 m above the ground
   1  wind at 175 hPa (the jet)
 
-The phone loads this file only while W is on. Run again to refresh.
+With no arguments, writes wind.bin in the app folder.
+With a folder argument, writes wind.bin and CYCLE there for publishing.
+If that forecast is already published, writes SKIP and does not download.
 """
 
+import json
 import os
 import struct
+import sys
 import tempfile
+import time
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import numpy as np
 
-os.environ.setdefault(
-    "ECCODES_HOME",
-    os.path.expanduser(
-        "~/Library/Python/3.9/lib/python/site-packages/ecmwflibs"
-    ),
+_mac_eccodes = os.path.expanduser(
+    "~/Library/Python/3.9/lib/python/site-packages/ecmwflibs"
 )
+if os.path.isdir(_mac_eccodes):
+    os.environ.setdefault("ECCODES_HOME", _mac_eccodes)
 
 import eccodes  # noqa: E402
 
 BASE = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
+READY = "https://raw.githubusercontent.com/agamkram/superearth-app/wind-data/ready.json"
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "wind.bin")
 NLON = 1440
 NLAT = 721
@@ -115,9 +121,33 @@ def field_from(gid):
     return vals.reshape(NLAT, NLON)
 
 
+def published_cycle():
+    try:
+        req = urllib.request.Request(
+            READY + "?t=" + str(int(time.time())),
+            headers={"User-Agent": "SuperEarth"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as res:
+            data = json.loads(res.read().decode())
+        return str(data.get("cycle") or "")
+    except Exception:
+        return ""
+
+
 def main():
+    out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else None
     ymd, cc = latest_cycle()
+    cycle = f"{ymd}{cc}"
     print(f"GFS {ymd} {cc}z", flush=True)
+    if out_dir is not None:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for old in out_dir.iterdir():
+            if old.is_file():
+                old.unlink()
+        if published_cycle() == cycle:
+            (out_dir / "SKIP").write_text(cycle)
+            print("already published", cycle)
+            return
     raw = messages(ymd, cc)
     planes = {("u", 0): None, ("v", 0): None, ("u", 1): None, ("v", 1): None}
     tmp = tempfile.NamedTemporaryFile(suffix=".grib", delete=False)
@@ -169,13 +199,16 @@ def main():
 
     yyyymmddhh = int(ymd) * 100 + int(cc)
     header = struct.pack("<4sHHHH I", b"WND1", NLON, NLAT, 2, SCALE, yyyymmddhh)
-    with open(OUT, "wb") as f:
+    dest = out_dir / "wind.bin" if out_dir is not None else Path(OUT)
+    with open(dest, "wb") as f:
         f.write(header)
         for lev in (0, 1):
             for comp in ("u", "v"):
                 scaled = np.rint(planes[(comp, lev)] * SCALE).astype(np.int32)
                 np.clip(scaled, -32767, 32767).astype("<i2").tofile(f)
-    print(f"wrote {OUT} ({os.path.getsize(OUT)} bytes) cycle {yyyymmddhh}")
+    if out_dir is not None:
+        (out_dir / "CYCLE").write_text(cycle)
+    print(f"wrote {dest} ({dest.stat().st_size} bytes) cycle {yyyymmddhh}")
 
 
 if __name__ == "__main__":

@@ -181,7 +181,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e373";
+export const BUILD = "e374";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -4780,6 +4780,7 @@ export function createEarthGlobe(canvas, options = {}) {
    * Latest GFS wind. Loaded only while W is on, then dropped.
    * Three real hours pass each second so the streams can be seen.
    * One-pixel lines. Each piece is the path the air took.
+   * A newer forecast replaces this one while W is on.
    * Sharp turns are spread across 6 forecast squares.
    * A frame only rewrites the moving tip.
    */
@@ -4826,6 +4827,11 @@ export function createEarthGlobe(canvas, options = {}) {
   let windWarm = 0;
   let windFull = false;
   let windClock = 0;
+  let windReadyAt = 0;
+  let windReadyFlight = null;
+  let windFileFlight = null;
+  let windFileAt = 0;
+  let windInfo = null;
   const _wLL = [0, 0];
   const uWindHead = { value: 0 };
   const uWindShow = { value: 60 };
@@ -5003,6 +5009,13 @@ export function createEarthGlobe(canvas, options = {}) {
     windBuf = null;
     windU = [null, null];
     windV = [null, null];
+    windInfo = null;
+    windReadyAt = 0;
+    windFileAt = 0;
+    if (windReadyFlight) windReadyFlight.abort();
+    windReadyFlight = null;
+    if (windFileFlight) windFileFlight.abort();
+    windFileFlight = null;
     disposeWindMesh();
   }
 
@@ -5207,8 +5220,63 @@ export function createEarthGlobe(canvas, options = {}) {
     return [raw[0] / windScale, raw[1] / windScale];
   }
 
+  function pullWindReady() {
+    if (windReadyFlight) return;
+    windReadyAt = performance.now() + 10 * 60 * 1000;
+    const ctrl = new AbortController();
+    windReadyFlight = ctrl;
+    const readyUrl =
+      "https://raw.githubusercontent.com/agamkram/superearth-app/wind-data/ready.json?t=" +
+      Math.floor(Date.now() / 60000);
+    fetch(readyUrl, { cache: "no-store", signal: ctrl.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const cycle = String((data && data.cycle) || "");
+        const sha = String((data && data.sha) || "");
+        if (/^\d{10}$/.test(cycle) && /^[0-9a-f]{40}$/.test(sha)) windInfo = { cycle, sha };
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (windReadyFlight === ctrl) windReadyFlight = null;
+        kick();
+      });
+  }
+
+  function pullFreshWind() {
+    if (!windOn || !windInfo || windFileFlight || !windBuf) return;
+    if (String(windCycle) === windInfo.cycle) return;
+    if (performance.now() < windFileAt) return;
+    windFileAt = performance.now() + 60 * 1000;
+    const info = windInfo;
+    const token = ++windToken;
+    const ctrl = new AbortController();
+    windFileFlight = ctrl;
+    fetch(`https://cdn.jsdelivr.net/gh/agamkram/superearth-app@${info.sha}/wind.bin`, {
+      signal: ctrl.signal,
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("wind " + res.status);
+        return res.arrayBuffer();
+      })
+      .then((buf) => {
+        if (disposed || token !== windToken || !windOn) return;
+        adoptWind(buf);
+        ensureWindLines();
+        if (windLines) resetWindField();
+        kick();
+        if (typeof onWind === "function") onWind();
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (windFileFlight === ctrl) windFileFlight = null;
+      });
+  }
+
   function updateWind(now) {
-    if (!windOn || !windU[windLevel]) return;
+    if (!windOn) return;
+    if (!windReadyFlight && performance.now() >= windReadyAt) pullWindReady();
+    pullFreshWind();
+    if (!windU[windLevel]) return;
     if (!windLines) {
       ensureWindLines();
       if (!windLines) return;

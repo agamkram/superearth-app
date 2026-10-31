@@ -1,0 +1,41 @@
+name: Publish the wind
+
+on:
+  schedule:
+    # Every hour. Most hours the forecast is already published and the job stops.
+    # A missed hour tries again, so a failure does not leave one forecast up for days.
+    - cron: "45 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-wind
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy eccodes
+      - id: cut
+        run: |
+          python3 scripts/bake-wind.py /tmp/wind-data
+          if [ -f /tmp/wind-data/SKIP ]; then
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=0" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.cut.outputs.skip != '1'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/push-wind.sh /tmp/wind-data
