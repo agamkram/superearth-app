@@ -1405,7 +1405,7 @@
         <span>Light</span>
         <input id="wind-light" type="range" min="2" max="50" step="1" value="10" />
       </label>
-      <label class="wind-slide" title="How long a slow streak is allowed to be, so quiet air over land still shows">
+      <label class="wind-slide" title="Adds more streaks everywhere, on top of Trails">
         <span>Density</span>
         <input id="wind-density" type="range" min="0" max="100" step="1" value="0" />
       </label>
@@ -1691,7 +1691,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e358";
+    import { createEarthGlobe } from "./earth.js?v=e359";
     import {
       loadPlaces,
       placeAt,
@@ -2869,7 +2869,7 @@
         length: windLength ? Number(windLength.value) : 199,
         fade: windFade ? Number(windFade.value) / 100 : 1,
         light: windLight ? Number(windLight.value) / 100 : 0.1,
-        density: windDensity ? Number(windDensity.value) : 0,
+        density: windDensity ? Number(windDensity.value) / 100 : 0,
       });
     }
 
