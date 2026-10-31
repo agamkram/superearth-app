@@ -181,7 +181,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e367";
+export const BUILD = "e368";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -4780,17 +4780,17 @@ export function createEarthGlobe(canvas, options = {}) {
    * Latest GFS wind. Loaded only while W is on, then dropped.
    * Three real hours pass each second so the streams can be seen.
    * One-pixel lines. Each piece is the path the air took.
-   * Pieces are about 6 km, so a turn follows the air.
+   * The piece slider sets how long each straight bit is.
    * A frame only rewrites the moving tip.
    */
   const WIND_R = 1.016;
   const WIND_MAX = 48000;
-  const WIND_SEGS = 240;
+  const WIND_SEGS = 400;
   const WIND_SUB = 1;
-  const WIND_STEP = 0.05;
   const WIND_HOUR = 10800;
-  const WIND_TEX_W = 1500;
-  const WIND_TEX_ROWS = 32;
+  const WIND_TEX_W = 4800;
+  const WIND_TEX_ROWS = 10;
+  let windStep = 6 / (12 * (WIND_HOUR / 1000));
   const WIND_LEVELS = ["10 m", "jet"];
   let windOn = false;
   let windLevel = 0;
@@ -4833,7 +4833,7 @@ export function createEarthGlobe(canvas, options = {}) {
   function windShowSegs() {
     const t = Math.max(0, Math.min(1, (windShow - 30) / (279 - 30)));
     const seconds = (4 + t * (42 - 4)) * 0.3;
-    return Math.max(1, Math.min(WIND_SEGS - 1, seconds / WIND_STEP));
+    return Math.max(1, Math.min(WIND_SEGS - 1, seconds / windStep));
   }
 
   function syncWindDraw() {
@@ -4976,7 +4976,7 @@ export function createEarthGlobe(canvas, options = {}) {
       writeKey(0, i, windLats[i], windLons[i], windHereBright(uv[0], uv[1]), false);
       windLive[i] = 1;
     }
-    windWarm = WIND_SEGS - 1;
+    windWarm = Math.round(windShowSegs());
     windFull = true;
   }
 
@@ -5166,7 +5166,7 @@ export function createEarthGlobe(canvas, options = {}) {
     if (windWarm > 0) {
       const batch = 6;
       for (let n = 0; n < batch && windWarm > 0; n++) {
-        stepWindAll(WIND_STEP, true);
+        stepWindAll(windStep, true);
         windWarm--;
       }
       windClock = t;
@@ -5178,7 +5178,7 @@ export function createEarthGlobe(canvas, options = {}) {
     windClock = t;
     if (dt <= 0) return;
     windAcc += dt;
-    const commit = windAcc >= WIND_STEP;
+    const commit = windAcc >= windStep;
     if (commit) windAcc = 0;
     stepWindAll(dt, commit);
   }
@@ -5198,6 +5198,16 @@ export function createEarthGlobe(canvas, options = {}) {
       from: said.from,
       cycle: windCycle,
     };
+  }
+
+  function setWindPiece(km) {
+    const n = Math.max(3, Math.min(24, Math.round(Number(km) || 6)));
+    windStep = n / (12 * (WIND_HOUR / 1000));
+    uWindShow.value = windShowSegs();
+    syncWindDraw();
+    if (windLines) resetWindField();
+    if (windOn) kick();
+    return n;
   }
 
   function setWindLook(opts) {
@@ -5379,6 +5389,7 @@ export function createEarthGlobe(canvas, options = {}) {
     setAuroraShown,
     setSun,
     setWind,
+    setWindPiece,
     setWindLook,
     windHere,
     setCapitalMark,

@@ -253,7 +253,8 @@
     }
 
     /* Horizontal scrub must win over page/globe pan on iPad Safari */
-    .loc-bar #phase-slider {
+    .loc-bar #phase-slider,
+    .loc-bar #piece-slide {
       touch-action: pan-x;
     }
 
@@ -340,6 +341,35 @@
       flex: 0 0 auto;
       width: max-content;
       min-width: max-content;
+    }
+
+    .piece-row {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      height: 1.4rem;
+      min-height: 1.4rem;
+      padding: 0 0.1rem;
+      pointer-events: auto;
+    }
+
+    .piece-row label,
+    .piece-read {
+      flex: 0 0 auto;
+      font-family: var(--font);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--dim);
+    }
+
+    .piece-row input {
+      flex: 1 1 auto;
+      min-width: 4rem;
+      height: 1.4rem;
+      margin: 0;
+      accent-color: #c5d7ea;
     }
 
     .tool-strip {
@@ -1418,6 +1448,19 @@
             </svg>
           </button>
         </div>
+        <div class="piece-row">
+          <label for="piece-slide">Piece</label>
+          <input
+            id="piece-slide"
+            type="range"
+            min="3"
+            max="24"
+            step="1"
+            value="6"
+            title="Length of each straight piece. Let go and the streams rebuild. 12 was the earlier look."
+          />
+          <span class="piece-read" id="piece-read">6 km</span>
+        </div>
       </div>
       <div class="m-grid m-grid-rise" aria-label="Location sunrise solar noon sunset">
         <div class="m-cell loc-cell">
@@ -1594,7 +1637,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e367";
+    import { createEarthGlobe } from "./earth.js?v=e368";
     import {
       loadPlaces,
       placeAt,
@@ -1639,6 +1682,8 @@
     const auroraBtn = document.getElementById("aurora-btn");
     const cloudsBtn = document.getElementById("clouds-btn");
     const windBtn = document.getElementById("wind-btn");
+    const pieceSlide = document.getElementById("piece-slide");
+    const pieceRead = document.getElementById("piece-read");
     const riversBtn = document.getElementById("rivers-btn");
     const blackBtn = document.getElementById("black-btn");
     const bordersBtn = document.getElementById("borders-btn");
@@ -2766,6 +2811,9 @@
         windBtn.title = on ? "Hide the wind" : "Show the latest wind";
       }
       if (globeRef.current && globeRef.current.setWind) globeRef.current.setWind(level);
+      if (level >= 0 && pieceSlide && globeRef.current && globeRef.current.setWindPiece) {
+        globeRef.current.setWindPiece(Number(pieceSlide.value));
+      }
     }
 
     function setAuroraOn(on) {
@@ -3119,6 +3167,17 @@
         e.preventDefault();
         const next = windLevel < 0 ? 0 : -1;
         applyWind(next);
+      });
+    }
+    if (pieceSlide) {
+      pieceSlide.addEventListener("input", () => {
+        if (pieceRead) pieceRead.textContent = pieceSlide.value + " km";
+      });
+      pieceSlide.addEventListener("change", () => {
+        if (pieceRead) pieceRead.textContent = pieceSlide.value + " km";
+        if (globeRef.current && globeRef.current.setWindPiece) {
+          globeRef.current.setWindPiece(Number(pieceSlide.value));
+        }
       });
     }
     if (riversBtn) {
