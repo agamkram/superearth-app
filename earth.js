@@ -4,7 +4,7 @@
  */
 import * as THREE from "three";
 import { loadOvationPrime, makeAuroraColor } from "./ovation.js?v=e223";
-import { earthPoint, sampleUV, stepWind, windFrom } from "./wind.mjs?v=e350";
+import { earthPoint, sampleUV, stepWind, windFrom } from "./wind.mjs?v=e351";
 
 const RADIUS = 1;
 const HOME_FILL = 0.9;
@@ -181,7 +181,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e350";
+export const BUILD = "e352";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -4777,15 +4777,15 @@ export function createEarthGlobe(canvas, options = {}) {
 
   /**
    * Latest GFS wind. Loaded only while W is on, then dropped.
-   * One real hour passes each second so the flow can be seen.
-   * A streak is the path that particle has already flown, not a separate tick.
-   * Ribbons are a couple of screen pixels wide because Safari draws lines as hairlines.
+   * Three real hours pass each second so the streams can be seen.
+   * Each wisp is the path that particle has already flown.
+   * Hairlines, faint, and many of them: a veil, not ticks or ribbons.
    */
   const WIND_R = 1.016;
-  const WIND_N = 520;
-  const WIND_TRAIL = 26;
-  const WIND_STEP = 0.22;
-  const WIND_HOUR = 3600;
+  const WIND_N = 4800;
+  const WIND_TRAIL = 36;
+  const WIND_STEP = 0.2;
+  const WIND_HOUR = 10800;
   const WIND_SEGS = WIND_TRAIL - 1;
   const WIND_LEVELS = ["10 m", "jet"];
   let windOn = false;
@@ -4800,8 +4800,6 @@ export function createEarthGlobe(canvas, options = {}) {
   let windCycle = 0;
   let windLines = null;
   let windPos = null;
-  let windNext = null;
-  let windSide = null;
   let windFade = null;
   let windLats = null;
   let windLons = null;
@@ -4809,13 +4807,10 @@ export function createEarthGlobe(canvas, options = {}) {
   let windAcc = null;
   let windFill = null;
   let windSlot = null;
-  let windHistLat = null;
-  let windHistLon = null;
+  let windH = null;
   let windT = 0;
   const _wA = [0, 0, 0];
-  const _wB = [0, 0, 0];
   const _wLL = [0, 0];
-  const _windPx = new THREE.Vector2(1, 1);
 
   function disposeWind() {
     windOn = false;
@@ -4829,8 +4824,6 @@ export function createEarthGlobe(canvas, options = {}) {
       windLines = null;
     }
     windPos = null;
-    windNext = null;
-    windSide = null;
     windFade = null;
     windLats = null;
     windLons = null;
@@ -4838,37 +4831,39 @@ export function createEarthGlobe(canvas, options = {}) {
     windAcc = null;
     windFill = null;
     windSlot = null;
-    windHistLat = null;
-    windHistLon = null;
+    windH = null;
   }
 
   function spawnWind(i) {
     windLats[i] = Math.asin(Math.random() * 2 - 1) * (180 / Math.PI);
     windLons[i] = Math.random() * 360 - 180;
-    windAge[i] = 16 + Math.random() * 20;
+    windAge[i] = 14 + Math.random() * 18;
     windAcc[i] = 0;
     windFill[i] = 0;
     windSlot[i] = 0;
   }
 
+  function writeHist(i, slot) {
+    const o = (i * WIND_TRAIL + slot) * 3;
+    windH[o] = _wA[0];
+    windH[o + 1] = _wA[1];
+    windH[o + 2] = _wA[2];
+  }
+
   function noteWind(i, lat, lon, commit) {
-    const base = i * WIND_TRAIL;
+    earthPoint(lat, lon, WIND_R, _wA);
     if (windFill[i] === 0) {
-      windHistLat[base] = lat;
-      windHistLon[base] = lon;
+      writeHist(i, 0);
       windFill[i] = 1;
       windSlot[i] = 1;
       return;
     }
     let newest = windSlot[i] - 1;
     if (newest < 0) newest = WIND_TRAIL - 1;
-    windHistLat[base + newest] = lat;
-    windHistLon[base + newest] = lon;
+    writeHist(i, newest);
     if (!commit) return;
-    const slot = windSlot[i];
-    windHistLat[base + slot] = lat;
-    windHistLon[base + slot] = lon;
-    windSlot[i] = (slot + 1) % WIND_TRAIL;
+    writeHist(i, windSlot[i]);
+    windSlot[i] = (windSlot[i] + 1) % WIND_TRAIL;
     if (windFill[i] < WIND_TRAIL) windFill[i]++;
   }
 
@@ -4880,63 +4875,39 @@ export function createEarthGlobe(canvas, options = {}) {
     windAcc = new Float32Array(WIND_N);
     windFill = new Uint8Array(WIND_N);
     windSlot = new Uint8Array(WIND_N);
-    windHistLat = new Float32Array(WIND_N * WIND_TRAIL);
-    windHistLon = new Float32Array(WIND_N * WIND_TRAIL);
+    windH = new Float32Array(WIND_N * WIND_TRAIL * 3);
     for (let i = 0; i < WIND_N; i++) spawnWind(i);
-    const verts = WIND_N * WIND_SEGS * 6;
+    const verts = WIND_N * WIND_SEGS * 2;
     windPos = new Float32Array(verts * 3);
-    windNext = new Float32Array(verts * 3);
-    windSide = new Float32Array(verts);
     windFade = new Float32Array(verts);
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(windPos, 3));
-    geo.setAttribute("nextPosition", new THREE.BufferAttribute(windNext, 3));
-    geo.setAttribute("side", new THREE.BufferAttribute(windSide, 1));
     geo.setAttribute("fade", new THREE.BufferAttribute(windFade, 1));
     const mat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
       depthTest: true,
-      side: THREE.DoubleSide,
+      blending: THREE.NormalBlending,
       toneMapped: false,
-      uniforms: {
-        uResolution: { value: new THREE.Vector2(1, 1) },
-        uWidth: { value: 2.4 },
-      },
       vertexShader: `
-        attribute vec3 nextPosition;
-        attribute float side;
         attribute float fade;
-        uniform vec2 uResolution;
-        uniform float uWidth;
         varying float vFade;
         void main() {
-          vec4 ca = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          vec4 cb = projectionMatrix * modelViewMatrix * vec4(nextPosition, 1.0);
-          vec2 aPx = (ca.xy / ca.w) * uResolution * 0.5;
-          vec2 bPx = (cb.xy / cb.w) * uResolution * 0.5;
-          vec2 dir = bPx - aPx;
-          float len2 = dot(dir, dir);
-          dir = len2 > 1e-8 ? dir * inversesqrt(len2) : vec2(1.0, 0.0);
-          vec2 nrm = vec2(-dir.y, dir.x);
-          vec2 off = nrm * side * uWidth * 2.0 / uResolution;
-          gl_Position = ca;
-          gl_Position.xy += off * ca.w;
           vFade = fade;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
       fragmentShader: `
         varying float vFade;
         void main() {
-          if (vFade < 0.02) discard;
-          gl_FragColor = vec4(0.9, 0.95, 1.0, vFade);
+          gl_FragColor = vec4(0.78, 0.88, 1.0, vFade);
         }
       `,
     });
-    windLines = new THREE.Mesh(geo, mat);
+    windLines = new THREE.LineSegments(geo, mat);
     windLines.name = "wind";
     windLines.frustumCulled = false;
-    windLines.renderOrder = 12;
+    windLines.renderOrder = 8;
     mesh.add(windLines);
     windT = 0;
   }
@@ -4966,18 +4937,6 @@ export function createEarthGlobe(canvas, options = {}) {
     return [raw[0] / windScale, raw[1] / windScale];
   }
 
-  function writeWindVert(vi, px, py, pz, nx, ny, nz, side, fade) {
-    const p = vi * 3;
-    windPos[p] = px;
-    windPos[p + 1] = py;
-    windPos[p + 2] = pz;
-    windNext[p] = nx;
-    windNext[p + 1] = ny;
-    windNext[p + 2] = nz;
-    windSide[vi] = side;
-    windFade[vi] = fade;
-  }
-
   function updateWind(now) {
     if (!windOn || !windLines || !windU[windLevel]) return;
     const t = typeof now === "number" ? now : performance.now();
@@ -4985,9 +4944,6 @@ export function createEarthGlobe(canvas, options = {}) {
     const dt = Math.min(0.05, (t - windT) / 1000);
     windT = t;
     if (dt <= 0) return;
-    renderer.getDrawingBufferSize(_windPx);
-    windLines.material.uniforms.uResolution.value.copy(_windPx);
-    const stride = WIND_SEGS * 6;
     for (let i = 0; i < WIND_N; i++) {
       windAge[i] -= dt;
       if (windAge[i] <= 0) spawnWind(i);
@@ -5002,40 +4958,38 @@ export function createEarthGlobe(canvas, options = {}) {
       if (commit) windAcc[i] = 0;
       noteWind(i, windLats[i], windLons[i], commit);
       const spd = Math.hypot(u, v);
-      const gain = Math.min(1, spd / 8);
+      const head = 0.1 + 0.28 * Math.min(1, spd / 10);
       const n = windFill[i];
       const start = (windSlot[i] - n + WIND_TRAIL) % WIND_TRAIL;
-      const baseVert = i * stride;
+      const base = i * WIND_TRAIL;
+      const vbase = i * WIND_SEGS * 2;
       for (let s = 0; s < WIND_SEGS; s++) {
-        const vi = baseVert + s * 6;
+        const vi = vbase + s * 2;
         if (s >= n - 1) {
-          for (let k = 0; k < 6; k++) windFade[vi + k] = 0;
+          windFade[vi] = 0;
+          windFade[vi + 1] = 0;
           continue;
         }
         const ia = (start + s) % WIND_TRAIL;
         const ib = (start + s + 1) % WIND_TRAIL;
-        const ba = i * WIND_TRAIL;
-        earthPoint(windHistLat[ba + ia], windHistLon[ba + ia], WIND_R, _wA);
-        earthPoint(windHistLat[ba + ib], windHistLon[ba + ib], WIND_R, _wB);
-        const dx = _wB[0] - _wA[0];
-        const dy = _wB[1] - _wA[1];
-        const dz = _wB[2] - _wA[2];
-        const jump = dx * dx + dy * dy + dz * dz > 0.04;
-        const fade0 = jump ? 0 : (s / WIND_SEGS) * (0.12 + 0.82 * gain);
-        const fade1 = jump ? 0 : ((s + 1) / WIND_SEGS) * (0.12 + 0.82 * gain);
-        writeWindVert(vi, _wA[0], _wA[1], _wA[2], _wB[0], _wB[1], _wB[2], -1, fade0);
-        writeWindVert(vi + 1, _wA[0], _wA[1], _wA[2], _wB[0], _wB[1], _wB[2], 1, fade0);
-        writeWindVert(vi + 2, _wB[0], _wB[1], _wB[2], _wA[0], _wA[1], _wA[2], 1, fade1);
-        writeWindVert(vi + 3, _wA[0], _wA[1], _wA[2], _wB[0], _wB[1], _wB[2], 1, fade0);
-        writeWindVert(vi + 4, _wB[0], _wB[1], _wB[2], _wA[0], _wA[1], _wA[2], -1, fade1);
-        writeWindVert(vi + 5, _wB[0], _wB[1], _wB[2], _wA[0], _wA[1], _wA[2], 1, fade1);
+        const oa = (base + ia) * 3;
+        const ob = (base + ib) * 3;
+        const ax = windH[oa], ay = windH[oa + 1], az = windH[oa + 2];
+        const bx = windH[ob], by = windH[ob + 1], bz = windH[ob + 2];
+        const dx = bx - ax, dy = by - ay, dz = bz - az;
+        const jump = dx * dx + dy * dy + dz * dz > 0.05;
+        const f0 = jump ? 0 : (s / WIND_SEGS) * head;
+        const f1 = jump ? 0 : ((s + 1) / WIND_SEGS) * head;
+        const p0 = vi * 3;
+        const p1 = (vi + 1) * 3;
+        windPos[p0] = ax; windPos[p0 + 1] = ay; windPos[p0 + 2] = az;
+        windPos[p1] = bx; windPos[p1 + 1] = by; windPos[p1 + 2] = bz;
+        windFade[vi] = f0;
+        windFade[vi + 1] = f1;
       }
     }
-    const geo = windLines.geometry.attributes;
-    geo.position.needsUpdate = true;
-    geo.nextPosition.needsUpdate = true;
-    geo.side.needsUpdate = true;
-    geo.fade.needsUpdate = true;
+    windLines.geometry.attributes.position.needsUpdate = true;
+    windLines.geometry.attributes.fade.needsUpdate = true;
   }
 
   function windHere() {
