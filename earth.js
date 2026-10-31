@@ -181,7 +181,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e366";
+export const BUILD = "e367";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -4825,7 +4825,6 @@ export function createEarthGlobe(canvas, options = {}) {
   let windWarm = 0;
   let windFull = false;
   let windClock = 0;
-  const _wA = [0, 0, 0];
   const _wLL = [0, 0];
   const uWindHead = { value: 0 };
   const uWindShow = { value: 60 };
@@ -4860,7 +4859,7 @@ export function createEarthGlobe(canvas, options = {}) {
     for (let i = prev; i < windCount; i++) {
       spawnWind(i);
       windBirth[i] = 0;
-      for (let s = 0; s < WIND_SEGS; s++) windKeys[(s * WIND_MAX + i) * 4] = -32768;
+      for (let s = 0; s < WIND_SEGS; s++) windKeys[(s * WIND_MAX + i) * 2] = -1000;
     }
     windFull = true;
     syncWindDraw();
@@ -4875,23 +4874,10 @@ export function createEarthGlobe(canvas, options = {}) {
     windLive[i] = 0;
   }
 
-  function packLat(deg) {
-    const n = Math.round((deg / 90) * 32767);
-    return n < -32767 ? -32767 : n > 32767 ? 32767 : n;
-  }
-
-  function packLon(deg) {
-    const n = Math.round((deg / 180) * 32767);
-    return n < -32767 ? -32767 : n > 32767 ? 32767 : n;
-  }
-
   function writeKey(slot, i, lat, lon, bright, birth) {
-    const o = (slot * WIND_MAX + i) * 4;
-    const b = Math.round(bright * 1000);
-    windKeys[o] = packLat(lat);
-    windKeys[o + 1] = packLon(lon);
-    windKeys[o + 2] = birth ? -b : b;
-    windKeys[o + 3] = 0;
+    const o = (slot * WIND_MAX + i) * 2;
+    windKeys[o] = birth ? lat + 360 : lat;
+    windKeys[o + 1] = Math.round(lon * 1000) + bright;
   }
 
   function windHereBright(u, v) {
@@ -4915,7 +4901,7 @@ export function createEarthGlobe(canvas, options = {}) {
     gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
     gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
     renderer.state.bindTexture(gl.TEXTURE_2D, glTex);
-    const row = WIND_MAX * 4;
+    const row = WIND_MAX * 2;
     for (let s = 0; s < slots.length; s++) {
       const slot = slots[s];
       gl.texSubImage2D(
@@ -4925,8 +4911,8 @@ export function createEarthGlobe(canvas, options = {}) {
         slot * WIND_TEX_ROWS,
         WIND_TEX_W,
         WIND_TEX_ROWS,
-        gl.RGBA_INTEGER,
-        gl.SHORT,
+        gl.RG,
+        gl.FLOAT,
         windKeys.subarray(slot * row, slot * row + row)
       );
     }
@@ -4949,7 +4935,14 @@ export function createEarthGlobe(canvas, options = {}) {
       windLats[i] = _wLL[0];
       windLons[i] = _wLL[1];
       if (!windLive[i]) continue;
-      writeKey(slot, i, windLats[i], windLons[i], windHereBright(windSu[i], windSv[i]), windBirth[i]);
+      writeKey(
+        slot,
+        i,
+        windLats[i],
+        windLons[i],
+        windHereBright(windSu[i], windSv[i]),
+        windBirth[i]
+      );
     }
     const dirty = [slot];
     if (commit) {
@@ -4973,7 +4966,7 @@ export function createEarthGlobe(canvas, options = {}) {
     windAcc = 0;
     windClock = 0;
     uWindHead.value = 0;
-    if (windKeys) windKeys.fill(-32768);
+    if (windKeys) windKeys.fill(-1000);
     if (windBirth) windBirth.fill(0);
     for (let i = 0; i < WIND_MAX; i++) spawnWind(i);
     for (let i = 0; i < windCount; i++) {
@@ -5014,8 +5007,8 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function ensureWindLines() {
     if (!mesh || windLines) return;
-    windKeys = new Int16Array(WIND_TEX_W * WIND_TEX_ROWS * WIND_SEGS * 4);
-    windKeys.fill(-32768);
+    windKeys = new Float32Array(WIND_TEX_W * WIND_TEX_ROWS * WIND_SEGS * 2);
+    windKeys.fill(-1000);
     windBirth = new Uint8Array(WIND_MAX);
     windLats = new Float32Array(WIND_MAX);
     windLons = new Float32Array(WIND_MAX);
@@ -5027,10 +5020,9 @@ export function createEarthGlobe(canvas, options = {}) {
       windKeys,
       WIND_TEX_W,
       WIND_TEX_ROWS * WIND_SEGS,
-      THREE.RGBAIntegerFormat,
-      THREE.ShortType
+      THREE.RGFormat,
+      THREE.FloatType
     );
-    windTex.internalFormat = "RGBA16I";
     windTex.flipY = false;
     windTex.generateMipmaps = false;
     windTex.magFilter = THREE.NearestFilter;
@@ -5060,22 +5052,22 @@ export function createEarthGlobe(canvas, options = {}) {
       },
       vertexShader: `
         attribute float aId;
-        uniform isampler2D uKeys;
+        uniform sampler2D uKeys;
         uniform float uHead;
         uniform float uShow;
         uniform float uFadePow;
         varying float vFade;
-        ivec4 keyAt(int behind) {
-          if (behind < 0 || behind >= ${WIND_SEGS}) return ivec4(-32768, 0, 0, 0);
+        vec2 keyAt(int behind) {
+          if (behind < 0 || behind >= ${WIND_SEGS}) return vec2(-1000.0, 0.0);
           int slot = int(mod(uHead - float(behind) + ${WIND_SEGS}.0, ${WIND_SEGS}.0));
           int particle = int(aId + 0.5);
           int x = particle - (particle / ${WIND_TEX_W}) * ${WIND_TEX_W};
           int y = slot * ${WIND_TEX_ROWS} + (particle / ${WIND_TEX_W});
-          return texelFetch(uKeys, ivec2(x, y), 0);
+          return texelFetch(uKeys, ivec2(x, y), 0).rg;
         }
-        vec3 onGlobe(int latI, int lonI) {
-          float lat = float(latI) * (1.5707963 / 32767.0);
-          float lon = float(lonI) * (3.14159265 / 32767.0);
+        vec3 onGlobe(float latDeg, float lonDeg) {
+          float lat = radians(latDeg);
+          float lon = radians(lonDeg);
           float cl = cos(lat);
           return vec3(cl * cos(lon), sin(lat), -cl * sin(lon));
         }
@@ -5088,11 +5080,15 @@ export function createEarthGlobe(canvas, options = {}) {
           float age1 = float(pair + 1) / sub;
           float age = which == 0 ? age0 : min(age1, uShow);
           float along = which == 0 ? 0.0 : clamp((min(age1, uShow) - age0) / max(age1 - age0, 0.0001), 0.0, 1.0);
-          ivec4 k0 = keyAt(span);
-          ivec4 k1 = keyAt(span + 1);
-          bool hide = age0 >= uShow || k0.r == -32768 || k1.r == -32768 || k0.b < 0;
-          vec3 b = onGlobe(k0.r, k0.g);
-          vec3 c = onGlobe(k1.r, k1.g);
+          vec2 k0 = keyAt(span);
+          vec2 k1 = keyAt(span + 1);
+          bool hide = age0 >= uShow || k0.x < -180.0 || k1.x < -180.0 || k0.x > 180.0;
+          float lat0 = k0.x > 180.0 ? k0.x - 360.0 : k0.x;
+          float lat1 = k1.x > 180.0 ? k1.x - 360.0 : k1.x;
+          float lon0 = floor(k0.y) / 1000.0;
+          float lon1 = floor(k1.y) / 1000.0;
+          vec3 b = onGlobe(lat0, lon0);
+          vec3 c = onGlobe(lat1, lon1);
           if (!hide && dot(b, c) < 0.99) hide = true;
           if (hide) {
             vFade = 0.0;
@@ -5101,7 +5097,9 @@ export function createEarthGlobe(canvas, options = {}) {
           }
           vec3 p = mix(b, c, along);
           p *= (${WIND_R} / length(p));
-          float br = mix(abs(float(k0.b)), abs(float(k1.b)), along) * 0.001;
+          float br0 = k0.y - floor(k0.y);
+          float br1 = k1.y - floor(k1.y);
+          float br = mix(br0, br1, along);
           float fade = 1.0 - age / uShow;
           vFade = fade <= 0.0 ? 0.0 : pow(fade, uFadePow) * br;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
