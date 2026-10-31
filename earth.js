@@ -180,7 +180,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e347";
+export const BUILD = "e348";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -1534,8 +1534,8 @@ export function createEarthGlobe(canvas, options = {}) {
   const RIVER_R = RADIUS * 1.0026;
   /**
    * Rivers of 1000 m3/s and up stay on for the whole Earth.
-   * Rivers of 5 m3/s and up load for the face in view first, then the rest,
-   * and stay loaded when you turn. Smaller rivers are not drawn.
+   * Rivers of 100 cfs (2.83 m3/s) and up load for the face in view first,
+   * then the rest, and stay loaded when you turn. Smaller rivers are not drawn.
    */
   const RIVER_MID = { label: "mid", folder: "rivers-mid", cols: 8, rows: 4 };
   let riverLines = null;

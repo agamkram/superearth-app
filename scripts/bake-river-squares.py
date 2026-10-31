@@ -2,11 +2,11 @@
 """Split rivers so the phone only keeps the water it can see.
 
 rivers-big.bin   rivers at or above 1000 m3/s, the whole Earth
-rivers-mid/      5–1000 m3/s, eight by four squares (same grid as tiles-16)
+rivers-mid/      100 cfs up to 1000 m3/s, eight by four squares (same grid as tiles-16)
 
 The same rivers show at every zoom. There is no closer set.
-rivers-10m.bin holds the rivers from 20 up. Rivers from 5 to 20 are read
-from HydroRIVERS and clipped on the same lakes.
+rivers-10m.bin holds the rivers from 20 m3/s up. Rivers from 100 cfs to 20 m3/s
+are read from HydroRIVERS and clipped on the same lakes.
 
 A reach that crosses a square is cut on the square edge so the pieces meet.
 A reach that crosses a lake stops at the shore. The same lakes the globe draws.
@@ -28,9 +28,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC_BIN = ROOT / "rivers-10m.bin"
 BIG_OUT = ROOT / "rivers-big.bin"
 MID_DIR = ROOT / "rivers-mid"
-# rivers-10m.bin starts at 20. Every zoom shows rivers from 5 up.
+# rivers-10m.bin starts at 20. Every zoom shows rivers from 100 cfs up.
+# HydroRIVERS stores cubic meters a second. 1 cubic foot is 0.028316846592 m3.
 BIN_FLOW = 20.0
-OPENING_FLOW = 5.0
+OPENING_FLOW = 100 * 0.028316846592
 
 HEAD = struct.Struct("<BxxxI")
 PT = struct.Struct("<ff")
