@@ -254,7 +254,7 @@
 
     /* Horizontal scrub must win over page/globe pan on iPad Safari */
     .loc-bar #phase-slider,
-    .loc-bar #piece-slide {
+    .loc-bar #soft-slide {
       touch-action: pan-x;
     }
 
@@ -1449,17 +1449,17 @@
           </button>
         </div>
         <div class="piece-row">
-          <label for="piece-slide">Piece</label>
+          <label for="soft-slide">Soft</label>
           <input
-            id="piece-slide"
+            id="soft-slide"
             type="range"
-            min="3"
-            max="24"
+            min="0"
+            max="3"
             step="1"
-            value="6"
-            title="Length of each straight piece. Let go and the streams rebuild. 12 was the earlier look."
+            value="1"
+            title="How far a sharp turn is spread. Raw is the file. Let go and the streams rebuild."
           />
-          <span class="piece-read" id="piece-read">6 km</span>
+          <span class="piece-read" id="soft-read">1</span>
         </div>
       </div>
       <div class="m-grid m-grid-rise" aria-label="Location sunrise solar noon sunset">
@@ -1637,7 +1637,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e369";
+    import { createEarthGlobe } from "./earth.js?v=e370";
     import {
       loadPlaces,
       placeAt,
@@ -1682,8 +1682,8 @@
     const auroraBtn = document.getElementById("aurora-btn");
     const cloudsBtn = document.getElementById("clouds-btn");
     const windBtn = document.getElementById("wind-btn");
-    const pieceSlide = document.getElementById("piece-slide");
-    const pieceRead = document.getElementById("piece-read");
+    const softSlide = document.getElementById("soft-slide");
+    const softRead = document.getElementById("soft-read");
     const riversBtn = document.getElementById("rivers-btn");
     const blackBtn = document.getElementById("black-btn");
     const bordersBtn = document.getElementById("borders-btn");
@@ -2811,8 +2811,8 @@
         windBtn.title = on ? "Hide the wind" : "Show the latest wind";
       }
       if (globeRef.current && globeRef.current.setWind) globeRef.current.setWind(level);
-      if (level >= 0 && pieceSlide && globeRef.current && globeRef.current.setWindPiece) {
-        globeRef.current.setWindPiece(Number(pieceSlide.value));
+      if (level >= 0 && softSlide && globeRef.current && globeRef.current.setWindSoft) {
+        globeRef.current.setWindSoft(Number(softSlide.value));
       }
     }
 
@@ -3169,14 +3169,17 @@
         applyWind(next);
       });
     }
-    if (pieceSlide) {
-      pieceSlide.addEventListener("input", () => {
-        if (pieceRead) pieceRead.textContent = pieceSlide.value + " km";
+    function softLabel(v) {
+      return String(v) === "0" ? "raw" : String(v);
+    }
+    if (softSlide) {
+      softSlide.addEventListener("input", () => {
+        if (softRead) softRead.textContent = softLabel(softSlide.value);
       });
-      pieceSlide.addEventListener("change", () => {
-        if (pieceRead) pieceRead.textContent = pieceSlide.value + " km";
-        if (globeRef.current && globeRef.current.setWindPiece) {
-          globeRef.current.setWindPiece(Number(pieceSlide.value));
+      softSlide.addEventListener("change", () => {
+        if (softRead) softRead.textContent = softLabel(softSlide.value);
+        if (globeRef.current && globeRef.current.setWindSoft) {
+          globeRef.current.setWindSoft(Number(softSlide.value));
         }
       });
     }

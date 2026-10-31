@@ -181,7 +181,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e369";
+export const BUILD = "e370";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -4780,7 +4780,7 @@ export function createEarthGlobe(canvas, options = {}) {
    * Latest GFS wind. Loaded only while W is on, then dropped.
    * Three real hours pass each second so the streams can be seen.
    * One-pixel lines. Each piece is the path the air took.
-   * The piece slider sets how long each straight bit is.
+   * The soft slider spreads a sharp turn over more forecast squares.
    * A frame only rewrites the moving tip.
    */
   const WIND_R = 1.016;
@@ -4791,6 +4791,7 @@ export function createEarthGlobe(canvas, options = {}) {
   const WIND_TEX_W = 4800;
   const WIND_TEX_ROWS = 10;
   let windStep = 6 / (12 * (WIND_HOUR / 1000));
+  let windSoft = 1;
   const WIND_LEVELS = ["10 m", "jet"];
   let windOn = false;
   let windLevel = 0;
@@ -5141,23 +5142,34 @@ export function createEarthGlobe(canvas, options = {}) {
     const plane = windNlon * windNlat;
     if (nlev < 2 || buf.byteLength < 16 + plane * 4 * 2) throw new Error("wind short");
     windBuf = buf;
+    buildWindFields();
+  }
+
+  function buildWindFields() {
+    if (!windBuf) return;
+    const plane = windNlon * windNlat;
     for (let lev = 0; lev < 2; lev++) {
       const uAt = 16 + lev * plane * 4;
-      const rawU = new Int16Array(buf, uAt, plane);
-      const rawV = new Int16Array(buf, uAt + plane * 2, plane);
-      windU[lev] = softenWind(rawU, windNlon, windNlat);
-      windV[lev] = softenWind(rawV, windNlon, windNlat);
+      const rawU = new Int16Array(windBuf, uAt, plane);
+      const rawV = new Int16Array(windBuf, uAt + plane * 2, plane);
+      if (windSoft <= 0) {
+        windU[lev] = rawU;
+        windV[lev] = rawV;
+      } else {
+        windU[lev] = softenWind(rawU, windNlon, windNlat, windSoft);
+        windV[lev] = softenWind(rawV, windNlon, windNlat, windSoft);
+      }
     }
   }
 
-  // Neighbors in the file can almost reverse. Softening by one forecast
-  // square turns that pinch into a curve. The two winds are still there.
-  function softenWind(src, nlon, nlat) {
-    const radius = 3;
+  // Neighbors in the file can almost reverse. Softening by a few forecast
+  // squares turns that pinch into a curve. The two winds are still there.
+  function softenWind(src, nlon, nlat, sigma) {
+    const radius = Math.max(1, Math.round(sigma * 3));
     const weight = new Float32Array(radius * 2 + 1);
     let sum = 0;
     for (let i = -radius; i <= radius; i++) {
-      const w = Math.exp(-0.5 * i * i);
+      const w = Math.exp(-0.5 * (i / sigma) * (i / sigma));
       weight[i + radius] = w;
       sum += w;
     }
@@ -5242,14 +5254,16 @@ export function createEarthGlobe(canvas, options = {}) {
     };
   }
 
-  function setWindPiece(km) {
-    const n = Math.max(3, Math.min(24, Math.round(Number(km) || 6)));
-    windStep = n / (12 * (WIND_HOUR / 1000));
-    uWindShow.value = windShowSegs();
-    syncWindDraw();
+  function setWindSoft(n) {
+    let next = Math.round(Number(n));
+    if (!Number.isFinite(next)) next = 1;
+    next = Math.max(0, Math.min(3, next));
+    if (next === windSoft && windU[windLevel]) return windSoft;
+    windSoft = next;
+    if (windBuf) buildWindFields();
     if (windLines) resetWindField();
     if (windOn) kick();
-    return n;
+    return windSoft;
   }
 
   function setWindLook(opts) {
@@ -5431,7 +5445,7 @@ export function createEarthGlobe(canvas, options = {}) {
     setAuroraShown,
     setSun,
     setWind,
-    setWindPiece,
+    setWindSoft,
     setWindLook,
     windHere,
     setCapitalMark,
