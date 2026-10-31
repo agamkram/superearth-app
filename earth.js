@@ -181,7 +181,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e372";
+export const BUILD = "e373";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -4785,7 +4785,7 @@ export function createEarthGlobe(canvas, options = {}) {
    */
   const WIND_R = 1.016;
   const WIND_MAX = 48000;
-  const WIND_SEGS = 400;
+  const WIND_SEGS = 200;
   const WIND_SUB = 1;
   const WIND_HOUR = 10800;
   const WIND_TEX_W = 4800;
