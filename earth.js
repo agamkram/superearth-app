@@ -181,7 +181,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e368";
+export const BUILD = "e369";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -5143,9 +5143,51 @@ export function createEarthGlobe(canvas, options = {}) {
     windBuf = buf;
     for (let lev = 0; lev < 2; lev++) {
       const uAt = 16 + lev * plane * 4;
-      windU[lev] = new Int16Array(buf, uAt, plane);
-      windV[lev] = new Int16Array(buf, uAt + plane * 2, plane);
+      const rawU = new Int16Array(buf, uAt, plane);
+      const rawV = new Int16Array(buf, uAt + plane * 2, plane);
+      windU[lev] = softenWind(rawU, windNlon, windNlat);
+      windV[lev] = softenWind(rawV, windNlon, windNlat);
     }
+  }
+
+  // Neighbors in the file can almost reverse. Softening by one forecast
+  // square turns that pinch into a curve. The two winds are still there.
+  function softenWind(src, nlon, nlat) {
+    const radius = 3;
+    const weight = new Float32Array(radius * 2 + 1);
+    let sum = 0;
+    for (let i = -radius; i <= radius; i++) {
+      const w = Math.exp(-0.5 * i * i);
+      weight[i + radius] = w;
+      sum += w;
+    }
+    for (let i = 0; i < weight.length; i++) weight[i] /= sum;
+    const wide = new Float32Array(src.length);
+    const out = new Float32Array(src.length);
+    for (let y = 0; y < nlat; y++) {
+      const row = y * nlon;
+      for (let x = 0; x < nlon; x++) {
+        let acc = 0;
+        for (let i = 0; i < weight.length; i++) {
+          const xx = (x + i - radius + nlon) % nlon;
+          acc += src[row + xx] * weight[i];
+        }
+        wide[row + x] = acc;
+      }
+    }
+    for (let y = 0; y < nlat; y++) {
+      for (let x = 0; x < nlon; x++) {
+        let acc = 0;
+        for (let i = 0; i < weight.length; i++) {
+          let yy = y + i - radius;
+          if (yy < 0) yy = 0;
+          else if (yy >= nlat) yy = nlat - 1;
+          acc += wide[yy * nlon + x] * weight[i];
+        }
+        out[y * nlon + x] = acc;
+      }
+    }
+    return out;
   }
 
   function windSample(lat, lon) {
