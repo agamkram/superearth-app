@@ -1349,8 +1349,8 @@
             type="button"
             class="vision-btn"
             id="rivers-btn"
-            title="Hide rivers"
-            aria-pressed="true"
+            title="Show rivers"
+            aria-pressed="false"
           >
             Rivers
           </button>
@@ -1595,7 +1595,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e353";
+    import { createEarthGlobe } from "./earth.js?v=e354";
     import {
       loadPlaces,
       placeAt,
@@ -2746,7 +2746,7 @@
 
     let auroraOn = true;
     let cloudsOn = false;
-    let riversOn = true;
+    let riversOn = false;
     let blackOn = false;
     let windLevel = -1;
     let windErrorUntil = 0;
