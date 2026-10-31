@@ -181,7 +181,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e359";
+export const BUILD = "e360";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -4782,7 +4782,7 @@ export function createEarthGlobe(canvas, options = {}) {
    * Hairlines, faint, and many of them: a veil, not ticks or ribbons.
    */
   const WIND_R = 1.016;
-  const WIND_N = 28000;
+  const WIND_N = 48000;
   const WIND_TRAIL = 280;
   const WIND_STEP = 0.08;
   const WIND_HOUR = 10800;
@@ -4812,9 +4812,9 @@ export function createEarthGlobe(canvas, options = {}) {
   let windSv = null;
   let windT = 0;
   let windWarmLeft = 0;
-  let windTrailSet = 12000;
+  let windTrailSet = 24000;
   let windDensityMul = 0;
-  let windCount = 12000;
+  let windCount = 24000;
   let windShow = 199;
   let windFadePow = 1;
   let windFloor = 0.1;
@@ -5102,7 +5102,7 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function setWindLook(opts) {
     if (!opts) return;
-    if (opts.trails != null) windTrailSet = Math.max(1, Math.min(20000, opts.trails | 0));
+    if (opts.trails != null) windTrailSet = Math.max(1, Math.min(WIND_N, opts.trails | 0));
     if (opts.density != null) windDensityMul = Math.max(0, opts.density);
     if (opts.trails != null || opts.density != null) {
       const next = Math.max(1, Math.min(WIND_N, Math.round(windTrailSet * (1 + windDensityMul))));

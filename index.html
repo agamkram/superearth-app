@@ -1391,7 +1391,7 @@
     <div class="wind-sliders" id="wind-sliders" hidden>
       <label class="wind-slide" title="How many streaks">
         <span>Trails</span>
-        <input id="wind-trails" type="range" min="2000" max="20000" step="1000" value="12000" />
+        <input id="wind-trails" type="range" min="24000" max="48000" step="1000" value="24000" />
       </label>
       <label class="wind-slide" title="How long each streak is">
         <span>Length</span>
@@ -1691,7 +1691,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e359";
+    import { createEarthGlobe } from "./earth.js?v=e360";
     import {
       loadPlaces,
       placeAt,
@@ -2865,7 +2865,7 @@
     function pushWindLook() {
       if (!globeRef.current || !globeRef.current.setWindLook) return;
       globeRef.current.setWindLook({
-        trails: windTrails ? Number(windTrails.value) : 12000,
+        trails: windTrails ? Number(windTrails.value) : 24000,
         length: windLength ? Number(windLength.value) : 199,
         fade: windFade ? Number(windFade.value) / 100 : 1,
         light: windLight ? Number(windLight.value) / 100 : 0.1,
