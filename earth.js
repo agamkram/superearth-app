@@ -182,7 +182,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e388";
+export const BUILD = "e389";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -5119,13 +5119,6 @@ export function createEarthGlobe(canvas, options = {}) {
     disposeWindMesh();
   }
 
-  function hideWind() {
-    windOn = false;
-    disposeWindMesh();
-    kick();
-    if (typeof onWind === "function") onWind();
-  }
-
   function ensureWindLines() {
     if (!mesh || windLines) return;
     windKeys = new Float32Array(WIND_TEX_W * WIND_TEX_ROWS * WIND_SEGS * 2);
@@ -5272,22 +5265,15 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function buildWindFields() {
     if (!windBuf) return;
+    const lev = windLevel < 0 ? 0 : windLevel;
     const plane = windNlon * windNlat;
-    const u = new Array(WIND_LEVELS);
-    const v = new Array(WIND_LEVELS);
-    for (let lev = 0; lev < WIND_LEVELS; lev++) {
-      const base = 16 + lev * plane * 4;
-      u[lev] = Float32Array.from(new Int16Array(windBuf, base, plane));
-      v[lev] = Float32Array.from(new Int16Array(windBuf, base + plane * 2, plane));
-    }
-    windU = u;
-    windV = v;
-    windBuf = null;
+    const base = 16 + lev * plane * 4;
+    windU = Float32Array.from(new Int16Array(windBuf, base, plane));
+    windV = Float32Array.from(new Int16Array(windBuf, base + plane * 2, plane));
   }
 
   function windSample(lat, lon) {
-    const lev = windLevel < 0 ? 0 : windLevel;
-    const raw = sampleUV(windU[lev], windV[lev], lat, lon, windNlon, windNlat);
+    const raw = sampleUV(windU, windV, lat, lon, windNlon, windNlat);
     return [raw[0] / windScale, raw[1] / windScale];
   }
 
@@ -5414,24 +5400,24 @@ export function createEarthGlobe(canvas, options = {}) {
     if (windOn) kick();
   }
 
-  function showWind(turningOn, changed) {
-    ensureWindLines();
-    if ((turningOn || changed) && windLines) resetWindField();
-    kick();
-    if (typeof onWind === "function") onWind();
-  }
-
   function setWind(level) {
     if (level < 0) {
-      hideWind();
+      windToken++;
+      disposeWind();
+      kick();
+      if (typeof onWind === "function") onWind();
       return;
     }
     const turningOn = !windOn;
     const changed = windLevel !== level;
     windLevel = level > WIND_LEVELS - 1 ? WIND_LEVELS - 1 : level;
     windOn = true;
-    if (windU) {
-      showWind(turningOn, changed);
+    if (windBuf) {
+      if (turningOn || changed || !windU) buildWindFields();
+      ensureWindLines();
+      if ((turningOn || changed) && windLines) resetWindField();
+      kick();
+      if (typeof onWind === "function") onWind();
       return;
     }
     const token = ++windToken;
