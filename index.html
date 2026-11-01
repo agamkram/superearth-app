@@ -342,19 +342,6 @@
       min-width: max-content;
     }
 
-    .soft-strip {
-      width: 100%;
-      height: calc(1.1rem + 5px);
-      margin: 0;
-      pointer-events: auto;
-    }
-
-    .soft-strip .vision-btn {
-      flex: 0 0 auto;
-      min-width: 4.2rem;
-      padding: 0 0.55rem;
-    }
-
     .tool-strip {
       display: flex;
       align-items: stretch;
@@ -600,10 +587,6 @@
       .tool-strip {
         height: calc(1.25rem + 5px);
         max-height: none;
-      }
-
-      .soft-strip {
-        height: calc(1.25rem + 5px);
       }
 
       .loc-place-row {
@@ -1439,17 +1422,6 @@
           </button>
         </div>
       </div>
-      <div class="tool-strip soft-strip" role="group" aria-label="Wind soft">
-        <button
-          type="button"
-          class="vision-btn"
-          id="wind-soft-btn"
-          title="Wind soft. Tap for the next amount."
-          aria-pressed="true"
-        >
-          Soft 6
-        </button>
-      </div>
       <div class="m-grid m-grid-rise" aria-label="Location sunrise solar noon sunset">
         <div class="m-cell loc-cell">
           <div class="k" id="loc-label">Current location</div>
@@ -1625,7 +1597,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e387";
+    import { createEarthGlobe } from "./earth.js?v=e388";
     import {
       loadPlaces,
       placeAt,
@@ -1670,7 +1642,6 @@
     const auroraBtn = document.getElementById("aurora-btn");
     const cloudsBtn = document.getElementById("clouds-btn");
     const windBtn = document.getElementById("wind-btn");
-    const windSoftBtn = document.getElementById("wind-soft-btn");
     const riversBtn = document.getElementById("rivers-btn");
     const blackBtn = document.getElementById("black-btn");
     const bordersBtn = document.getElementById("borders-btn");
@@ -3160,29 +3131,6 @@
         e.preventDefault();
         const next = windLevel < 0 ? 0 : windLevel >= 3 ? -1 : windLevel + 1;
         applyWind(next);
-      });
-    }
-    const WIND_SOFT_STEPS = [0, 2, 4, 6, 8];
-    let windSoft = 6;
-    function paintSoft() {
-      if (!windSoftBtn) return;
-      windSoftBtn.textContent = "Soft " + windSoft;
-      windSoftBtn.setAttribute("aria-pressed", windSoft > 0 ? "true" : "false");
-      windSoftBtn.title =
-        windSoft <= 0
-          ? "Raw wind, no soft. Tap for Soft 2."
-          : "Wind soft " + windSoft + ". Tap for the next amount.";
-    }
-    paintSoft();
-    if (windSoftBtn) {
-      windSoftBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        const i = WIND_SOFT_STEPS.indexOf(windSoft);
-        windSoft = WIND_SOFT_STEPS[i < 0 || i >= WIND_SOFT_STEPS.length - 1 ? 0 : i + 1];
-        paintSoft();
-        if (globeRef.current && globeRef.current.setWindLook) {
-          globeRef.current.setWindLook({ soft: windSoft });
-        }
       });
     }
     if (riversBtn) {

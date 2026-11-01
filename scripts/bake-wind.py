@@ -10,7 +10,7 @@ Four fields, all on the public 0.25° grid:
 The hour comes from the published cloud picture. The finished look at that
 hour is used when it is posted. Until then, the latest earlier run's
 forecast for that hour is used. A later better file for the same hour
-replaces it. The app blurs the wind when it draws.
+replaces it.
 
 With no arguments, writes wind.bin in the app folder.
 With a folder argument, writes wind.bin, CYCLE, RUN, and FHOUR there.
