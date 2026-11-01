@@ -181,7 +181,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e374";
+export const BUILD = "e375";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -4793,13 +4793,12 @@ export function createEarthGlobe(canvas, options = {}) {
   const WIND_TEX_ROWS = 10;
   let windStep = 6 / (12 * (WIND_HOUR / 1000));
   const windSoft = 6;
-  const WIND_LEVELS = ["10 m", "jet"];
   let windOn = false;
   let windLevel = 0;
   let windToken = 0;
   let windBuf = null;
-  let windU = [null, null];
-  let windV = [null, null];
+  let windU = null;
+  let windV = null;
   let windNlon = 0;
   let windNlat = 0;
   let windScale = 100;
@@ -5007,8 +5006,8 @@ export function createEarthGlobe(canvas, options = {}) {
   function disposeWind() {
     windOn = false;
     windBuf = null;
-    windU = [null, null];
-    windV = [null, null];
+    windU = null;
+    windV = null;
     windInfo = null;
     windReadyAt = 0;
     windFileAt = 0;
@@ -5161,22 +5160,15 @@ export function createEarthGlobe(canvas, options = {}) {
   function buildWindFields() {
     if (!windBuf) return;
     const plane = windNlon * windNlat;
-    for (let lev = 0; lev < 2; lev++) {
-      const uAt = 16 + lev * plane * 4;
-      const rawU = new Int16Array(windBuf, uAt, plane);
-      const rawV = new Int16Array(windBuf, uAt + plane * 2, plane);
-      if (windSoft <= 0) {
-        windU[lev] = rawU;
-        windV[lev] = rawV;
-      } else {
-        windU[lev] = softenWind(rawU, windNlon, windNlat, windSoft);
-        windV[lev] = softenWind(rawV, windNlon, windNlat, windSoft);
-      }
-    }
+    const rawU = new Int16Array(windBuf, 16, plane);
+    const rawV = new Int16Array(windBuf, 16 + plane * 2, plane);
+    windU = softenWind(rawU, windNlon, windNlat, windSoft);
+    windV = softenWind(rawV, windNlon, windNlat, windSoft);
+    windBuf = null;
   }
 
   // Neighbors in the file can almost reverse. Softening by a few forecast
-  // squares turns that pinch into a curve. The two winds are still there.
+  // squares turns that pinch into a curve. Only the surface wind is kept.
   function softenWind(src, nlon, nlat, sigma) {
     const radius = Math.max(1, Math.round(sigma * 3));
     const weight = new Float32Array(radius * 2 + 1);
@@ -5216,7 +5208,7 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function windSample(lat, lon) {
-    const raw = sampleUV(windU[windLevel], windV[windLevel], lat, lon, windNlon, windNlat);
+    const raw = sampleUV(windU, windV, lat, lon, windNlon, windNlat);
     return [raw[0] / windScale, raw[1] / windScale];
   }
 
@@ -5243,7 +5235,7 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function pullFreshWind() {
-    if (!windOn || !windInfo || windFileFlight || !windBuf) return;
+    if (!windOn || !windInfo || windFileFlight || !windU) return;
     if (String(windCycle) === windInfo.cycle) return;
     if (performance.now() < windFileAt) return;
     windFileAt = performance.now() + 60 * 1000;
@@ -5276,7 +5268,7 @@ export function createEarthGlobe(canvas, options = {}) {
     if (!windOn) return;
     if (!windReadyFlight && performance.now() >= windReadyAt) pullWindReady();
     pullFreshWind();
-    if (!windU[windLevel]) return;
+    if (!windU) return;
     if (!windLines) {
       ensureWindLines();
       if (!windLines) return;
@@ -5307,13 +5299,13 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function windHere() {
     if (!windOn) return null;
-    if (!windU[windLevel]) return { loading: true, level: windLevel };
+    if (!windU) return { loading: true, level: windLevel };
     const uv = windSample(observerLat, observerLon);
     const said = windFrom(uv[0], uv[1]);
     return {
       loading: false,
       level: windLevel,
-      levelName: WIND_LEVELS[windLevel],
+      levelName: "10 m",
       u: uv[0],
       v: uv[1],
       speed: said.speed,
@@ -5345,13 +5337,11 @@ export function createEarthGlobe(canvas, options = {}) {
       return;
     }
     const turningOn = !windOn;
-    const switched = windOn && windLevel !== level;
-    windLevel = level;
+    windLevel = 0;
     windOn = true;
-    if (windBuf) {
+    if (windU) {
       ensureWindLines();
-      if (switched) resetWindField();
-      else if (turningOn && windLines) resetWindField();
+      if (turningOn && windLines) resetWindField();
       kick();
       if (typeof onWind === "function") onWind();
       return;
