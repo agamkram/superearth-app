@@ -6,6 +6,7 @@ set -euo pipefail
 SRC=$(cd "$1" && pwd)
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 STAMP=$(cat "$SRC/STAMP")
+FORMAT=$(cat "$SRC/FORMAT")
 WORK=$(mktemp -d)
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
@@ -23,7 +24,7 @@ fi
 git add ./*.png
 git commit -q -m "Clouds ${STAMP}"
 SHA=$(git rev-parse HEAD)
-printf '{"stamp":"%s","sha":"%s"}\n' "$STAMP" "$SHA" > ready.json
+printf '{"stamp":"%s","sha":"%s","v":"%s"}\n' "$STAMP" "$SHA" "$FORMAT" > ready.json
 git add ready.json
 git commit -q -m "Clouds ${STAMP} ready"
 if [ -n "${GITHUB_ACTIONS:-}" ]; then

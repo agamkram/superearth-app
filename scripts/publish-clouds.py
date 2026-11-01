@@ -1,38 +1,60 @@
 #!/usr/bin/env python3
-"""Cut the current cloud photograph into eight lossless squares.
+"""Build the newest EUMETSAT cloud picture and cut it into eight lossless squares.
 
+The stamp is the satellite time of the picture, in 3-hour steps since 1970,
+so the wind job bakes the same hour the clouds show.
 The globe keeps the previous set until this one is published whole.
-Writes PNGs and a STAMP file into the directory given on the command line.
-If that photograph is already published, writes SKIP and does not cut.
+Writes PNGs, STAMP, and FORMAT into the directory given on the command line.
+If that picture is already published, writes SKIP and does not build.
 With --check, stops after that test and downloads nothing.
+make-clouds.js needs node and jimp 0.22.10 next to it.
 """
 import io
 import json
+import re
+import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 Image = None
 
 READY = "https://raw.githubusercontent.com/agamkram/superearth-app/cloud-tiles/ready.json"
-SOURCE = "https://clouds.matteason.co.uk/images/8192x4096/clouds-alpha.png"
+CAPS = "https://view.eumetsat.int/geoserver/mumi/{}/ows?service=WMS&version=1.3.0&request=GetCapabilities"
+LAYERS = ("worldcloudmap_ir108", "wideareacoverage_rgb_dust", "wideareacoverage_rgb_natural")
+MAKE = Path(__file__).resolve().parent / "make-clouds.js"
+FORMAT = "2"
 COLS = 4
 ROWS = 2
 
 
-def stamp_now():
-    return str(int(time.time() // (3 * 3600)))
+def get(url, timeout=60):
+    req = urllib.request.Request(url, headers={"User-Agent": "SuperEarth"})
+    with urllib.request.urlopen(req, timeout=timeout) as res:
+        return res.read()
 
 
-def published_stamp():
+def newest_time():
+    """Latest satellite time that all three layers have."""
+    ends = []
+    for name in LAYERS:
+        text = get(CAPS.format(name)).decode("utf-8", "replace")
+        m = re.search(r'<Dimension name="time"[^>]*>[^<]*/([0-9T:.\-]+)Z/PT3H', text)
+        if not m:
+            raise SystemExit(f"no time range for {name}")
+        ends.append(datetime.strptime(m.group(1)[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc))
+    return min(ends)
+
+
+def published():
     try:
-        req = urllib.request.Request(READY + "?t=" + stamp_now(), headers={"User-Agent": "SuperEarth"})
-        with urllib.request.urlopen(req, timeout=30) as res:
-            data = json.loads(res.read().decode())
-        return str(data.get("stamp") or "")
+        data = json.loads(get(READY + "?t=" + str(int(time.time() // 60)), timeout=30).decode())
+        return str(data.get("stamp") or ""), str(data.get("v") or "")
     except Exception:
-        return ""
+        return "", ""
 
 
 def pack(tile):
@@ -63,23 +85,24 @@ def main():
     for old in out.iterdir():
         if old.is_file():
             old.unlink()
-    stamp = stamp_now()
-    if published_stamp() == stamp:
+    when = newest_time()
+    stamp = str(int(when.timestamp()) // (3 * 3600))
+    if published() == (stamp, FORMAT):
         (out / "SKIP").write_text(stamp)
-        print("already published", stamp)
+        print("already published", stamp, when.isoformat())
         return
     if check_only:
-        print("needs publishing", stamp)
+        print("needs publishing", stamp, when.isoformat())
         return
     from PIL import Image
-    req = urllib.request.Request(SOURCE + "?t=" + stamp, headers={"User-Agent": "SuperEarth"})
-    with urllib.request.urlopen(req, timeout=180) as res:
-        raw = res.read()
-    if raw[:8] != b"\x89PNG\r\n\x1a\n":
-        raise SystemExit("cloud picture was not a png")
-    im = Image.open(io.BytesIO(raw))
-    im.load()
-    print("source", im.mode, im.size, "bytes", len(raw))
+
+    Image.MAX_IMAGE_PIXELS = None
+    with tempfile.TemporaryDirectory() as tmp:
+        picture = Path(tmp) / "clouds-alpha.png"
+        subprocess.run(["node", str(MAKE), when.strftime("%Y-%m-%dT%H:00:00Z"), str(picture)], check=True)
+        im = Image.open(picture)
+        im.load()
+    print("picture", when.isoformat(), im.mode, im.size)
     tw, th = im.size[0] // COLS, im.size[1] // ROWS
     if tw * COLS != im.size[0] or th * ROWS != im.size[1]:
         raise SystemExit("cloud picture is not divisible into eight")
@@ -94,6 +117,7 @@ def main():
             (out / f"{stamp}-c{c}r{r}.png").write_bytes(blob)
             tile.close()
     (out / "STAMP").write_text(stamp)
+    (out / "FORMAT").write_text(FORMAT)
     print("cut", stamp, "bytes", sum(p.stat().st_size for p in out.glob("*.png")))
 
 
