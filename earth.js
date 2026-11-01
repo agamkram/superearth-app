@@ -182,7 +182,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e392";
+export const BUILD = "e393";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -5340,19 +5340,15 @@ export function createEarthGlobe(canvas, options = {}) {
       });
   }
 
-  function loadBundledWind() {
-    return fetch(new URL(`./wind.bin?v=${TEX_VER}`, import.meta.url)).then((res) => {
-      if (!res.ok) throw new Error("wind " + res.status);
-      return res.arrayBuffer();
-    });
-  }
-
   function loadBestWind(token) {
     const readyUrl =
       "https://raw.githubusercontent.com/agamkram/superearth-app/wind-data/ready.json?t=" +
       Math.floor(Date.now() / 60000);
     fetch(readyUrl, { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : null))
+      .then((res) => {
+        if (!res.ok) throw new Error("wind ready");
+        return res.json();
+      })
       .then((data) => {
         if (disposed || token !== windToken) return null;
         const cycle = String((data && data.cycle) || "");
@@ -5369,16 +5365,10 @@ export function createEarthGlobe(canvas, options = {}) {
           }
         );
       })
-      .catch(() =>
-        loadBundledWind().then((buf) => {
-          if (disposed || token !== windToken) return null;
-          return { buf, sha: "" };
-        })
-      )
       .then((pack) => {
         if (!pack || disposed || token !== windToken) return;
         adoptWind(pack.buf);
-        windSha = pack.sha || "";
+        windSha = pack.sha;
         if (!windOn) return;
         ensureWindLines();
         kick();
