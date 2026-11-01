@@ -345,12 +345,12 @@
     .tool-strip {
       display: flex;
       align-items: stretch;
-      gap: 3px;
+      gap: 2px;
       flex: 1 1 auto;
       justify-self: stretch;
       width: 100%;
       min-width: 0;
-      height: 1.1rem;
+      height: calc(1.1rem + 5px);
       max-height: none;
       padding: 0;
       border-radius: 0;
@@ -379,6 +379,9 @@
       min-width: 0;
       height: 100%;
       min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       border: none;
       border-radius: 999px;
       background: rgba(255, 255, 255, 0.06);
@@ -582,7 +585,7 @@
       }
 
       .tool-strip {
-        height: 1.25rem;
+        height: calc(1.25rem + 5px);
         max-height: none;
       }
 
@@ -1342,7 +1345,7 @@
             title="Show the latest wind"
             aria-pressed="false"
           >
-            W
+            Wind
           </button>
           <button
             type="button"
@@ -1594,7 +1597,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e375";
+    import { createEarthGlobe } from "./earth.js?v=e377";
     import {
       loadPlaces,
       placeAt,
