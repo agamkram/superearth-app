@@ -27,6 +27,24 @@ _mac_eccodes = os.path.expanduser(
 )
 if os.path.isdir(_mac_eccodes):
     os.environ.setdefault("ECCODES_HOME", _mac_eccodes)
+elif "ECCODES_HOME" not in os.environ:
+    # The GitHub runner has no system decoder. The bundled file name is hashed,
+    # so expose it under the plain name the importer looks for.
+    try:
+        import ecmwflibs
+
+        bundled = ecmwflibs.find("eccodes")
+    except Exception:
+        bundled = None
+    if bundled:
+        home = tempfile.mkdtemp(prefix="eccodes-home-")
+        libdir = os.path.join(home, "lib")
+        os.makedirs(libdir)
+        os.symlink(bundled, os.path.join(libdir, "libeccodes.so"))
+        os.environ["ECCODES_HOME"] = home
+        dep = os.path.dirname(bundled)
+        prev = os.environ.get("LD_LIBRARY_PATH", "")
+        os.environ["LD_LIBRARY_PATH"] = dep if not prev else dep + ":" + prev
 
 import eccodes  # noqa: E402
 

@@ -26,7 +26,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install numpy eccodes
+      - run: pip install numpy eccodes ecmwflibs
       - id: cut
         run: |
           python3 scripts/bake-wind.py /tmp/wind-data
