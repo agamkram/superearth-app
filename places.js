@@ -76,6 +76,19 @@ function parsePolys(buf, q) {
 }
 
 const PLACES_VER = "e229";
+const LAND_W = 360;
+const LAND_H = 180;
+let landMask = null;
+
+// land-mask.bin: 360×180 bytes, one per degree. 1 means land.
+export function overLand(lat, lon) {
+  if (!landMask || !Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+  let L = ((lon + 180) % 360 + 360) % 360 - 180;
+  if (L === 180) L = -180;
+  const x = Math.max(0, Math.min(LAND_W - 1, Math.floor(L + 180)));
+  const y = Math.max(0, Math.min(LAND_H - 1, Math.floor(lat + 90)));
+  return landMask[y * LAND_W + x] === 1;
+}
 
 export function loadPlaces() {
   if (ready) return ready;
@@ -88,11 +101,15 @@ export function loadPlaces() {
       if (!r.ok) throw new Error("places-polys.bin");
       return r.arrayBuffer();
     }),
-  ]).then(([meta, buf]) => {
+    fetch(`land-mask.bin?v=e234`).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null),
+  ]).then(([meta, buf, maskBuf]) => {
     places = meta.places || [];
     polys = parsePolys(buf, meta.q || 100);
     if (polys.length !== places.length) {
       console.warn("places poly count mismatch", polys.length, places.length);
+    }
+    if (maskBuf && maskBuf.byteLength === LAND_W * LAND_H) {
+      landMask = new Uint8Array(maskBuf);
     }
     return places.length;
   });

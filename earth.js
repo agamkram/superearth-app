@@ -5,6 +5,7 @@
 import * as THREE from "three";
 import { loadOvationPrime, makeAuroraColor } from "./ovation.js?v=e223";
 import { earthPoint, sampleUV, stepWind, windFrom } from "./wind.mjs?v=e351";
+import { overLand } from "./places.js?v=e234";
 
 const RADIUS = 1;
 const HOME_FILL = 0.9;
@@ -181,7 +182,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e377";
+export const BUILD = "e378";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -4832,6 +4833,8 @@ export function createEarthGlobe(canvas, options = {}) {
   let windFileAt = 0;
   let windInfo = null;
   const _wLL = [0, 0];
+  const windQuat = new THREE.Quaternion();
+  const windLit = new THREE.Vector3();
   const uWindHead = { value: 0 };
   const uWindShow = { value: 60 };
   const uWindFade = { value: 1 };
@@ -4886,8 +4889,32 @@ export function createEarthGlobe(canvas, options = {}) {
     windKeys[o + 1] = Math.round(lon * 1000) + bright;
   }
 
-  function windHereBright(u, v) {
-    return windFloor + 0.28 * Math.min(1, Math.hypot(u, v) / 10);
+  function syncWindLight() {
+    if (!mesh) return;
+    windQuat.copy(earthTilt.quaternion).multiply(mesh.quaternion);
+  }
+
+  function windGroundLit(lat, lon) {
+    earthPoint(lat, lon, 1, _earthOut);
+    windLit.set(_earthOut[0], _earthOut[1], _earthOut[2]).applyQuaternion(windQuat);
+    return windLit.dot(sunDir);
+  }
+
+  function dayAmount(ndl) {
+    const t = Math.max(0, Math.min(1, (ndl + 0.04) / 0.24));
+    return t * t * (3 - 2 * t);
+  }
+
+  // Sea keeps speed as brightness. Day land is a bright photo, so the same
+  // line is lifted there even when the air is not that strong.
+  function windHereBright(u, v, lat, lon) {
+    const t = Math.min(1, Math.hypot(u, v) / 10);
+    const sea = windFloor + 0.28 * t;
+    if (!overLand(lat, lon)) return sea;
+    const day = dayAmount(windGroundLit(lat, lon));
+    if (day <= 0) return sea;
+    const lifted = 0.62 + 0.28 * t;
+    return sea + (lifted - sea) * day;
   }
 
   function flushWind(slots) {
@@ -4926,6 +4953,7 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function stepWindAll(dt, commit) {
     const slot = windHead;
+    syncWindLight();
     for (let i = 0; i < windCount; i++) {
       windAge[i] -= dt;
       if (windAge[i] <= 0) spawnWind(i);
@@ -4946,7 +4974,7 @@ export function createEarthGlobe(canvas, options = {}) {
         i,
         windLats[i],
         windLons[i],
-        windHereBright(windSu[i], windSv[i]),
+        windHereBright(windSu[i], windSv[i], windLats[i], windLons[i]),
         windBirth[i]
       );
     }
@@ -4954,7 +4982,7 @@ export function createEarthGlobe(canvas, options = {}) {
     if (commit) {
       const next = (windHead + 1) % WIND_SEGS;
       for (let i = 0; i < windCount; i++) {
-        const br = windHereBright(windSu[i], windSv[i]);
+        const br = windHereBright(windSu[i], windSv[i], windLats[i], windLons[i]);
         const birth = !windLive[i];
         writeKey(next, i, windLats[i], windLons[i], br, birth);
         windBirth[i] = birth ? 1 : 0;
@@ -4975,11 +5003,12 @@ export function createEarthGlobe(canvas, options = {}) {
     if (windKeys) windKeys.fill(-1000);
     if (windBirth) windBirth.fill(0);
     for (let i = 0; i < WIND_MAX; i++) spawnWind(i);
+    syncWindLight();
     for (let i = 0; i < windCount; i++) {
       const uv = windSample(windLats[i], windLons[i]);
       windSu[i] = uv[0];
       windSv[i] = uv[1];
-      writeKey(0, i, windLats[i], windLons[i], windHereBright(uv[0], uv[1]), false);
+      writeKey(0, i, windLats[i], windLons[i], windHereBright(uv[0], uv[1], windLats[i], windLons[i]), false);
       windLive[i] = 1;
     }
     windWarm = Math.round(windShowSegs());
