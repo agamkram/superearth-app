@@ -182,7 +182,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e386";
+export const BUILD = "e387";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -4793,6 +4793,8 @@ export function createEarthGlobe(canvas, options = {}) {
   const WIND_TEX_W = 4800;
   const WIND_TEX_ROWS = 10;
   let windStep = 6 / (12 * (WIND_HOUR / 1000));
+  let windSoft = 6;
+  let windSoften = 0;
   let windOn = false;
   let windLevel = 0;
   const WIND_LEVELS = 4;
@@ -5105,6 +5107,8 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function disposeWind() {
     windOn = false;
+    if (windSoften) clearTimeout(windSoften);
+    windSoften = 0;
     windBuf = null;
     windU = null;
     windV = null;
@@ -5270,19 +5274,98 @@ export function createEarthGlobe(canvas, options = {}) {
     buildWindFields();
   }
 
-  function buildWindFields() {
+  function softenWind(src, nlon, nlat, sigma) {
+    const radius = Math.max(1, Math.round(sigma * 3));
+    const weight = new Float32Array(radius * 2 + 1);
+    let sum = 0;
+    for (let i = -radius; i <= radius; i++) {
+      const w = Math.exp(-0.5 * (i / sigma) * (i / sigma));
+      weight[i + radius] = w;
+      sum += w;
+    }
+    for (let i = 0; i < weight.length; i++) weight[i] /= sum;
+    const wide = new Float32Array(src.length);
+    const out = new Float32Array(src.length);
+    for (let y = 0; y < nlat; y++) {
+      const row = y * nlon;
+      for (let x = 0; x < nlon; x++) {
+        let acc = 0;
+        for (let i = 0; i < weight.length; i++) {
+          const xx = (x + i - radius + nlon) % nlon;
+          acc += src[row + xx] * weight[i];
+        }
+        wide[row + x] = acc;
+      }
+    }
+    for (let y = 0; y < nlat; y++) {
+      for (let x = 0; x < nlon; x++) {
+        let acc = 0;
+        for (let i = 0; i < weight.length; i++) {
+          let yy = y + i - radius;
+          if (yy < 0) yy = 0;
+          else if (yy >= nlat) yy = nlat - 1;
+          acc += wide[yy * nlon + x] * weight[i];
+        }
+        out[y * nlon + x] = acc;
+      }
+    }
+    return out;
+  }
+
+  function softenLevel(lev) {
     if (!windBuf) return;
     const plane = windNlon * windNlat;
-    const u = new Array(WIND_LEVELS);
-    const v = new Array(WIND_LEVELS);
-    for (let lev = 0; lev < WIND_LEVELS; lev++) {
-      const base = 16 + lev * plane * 4;
-      u[lev] = Float32Array.from(new Int16Array(windBuf, base, plane));
-      v[lev] = Float32Array.from(new Int16Array(windBuf, base + plane * 2, plane));
+    const base = 16 + lev * plane * 4;
+    const rawU = new Int16Array(windBuf, base, plane);
+    const rawV = new Int16Array(windBuf, base + plane * 2, plane);
+    if (!windU) {
+      windU = new Array(WIND_LEVELS);
+      windV = new Array(WIND_LEVELS);
     }
-    windU = u;
-    windV = v;
-    windBuf = null;
+    if (windSoft <= 0) {
+      windU[lev] = Float32Array.from(rawU);
+      windV[lev] = Float32Array.from(rawV);
+      return;
+    }
+    windU[lev] = softenWind(rawU, windNlon, windNlat, windSoft);
+    windV[lev] = softenWind(rawV, windNlon, windNlat, windSoft);
+  }
+
+  function softenRest() {
+    windSoften = 0;
+    if (!windBuf || !windU) return;
+    for (let lev = 0; lev < WIND_LEVELS; lev++) {
+      if (windU[lev]) continue;
+      softenLevel(lev);
+      windSoften = setTimeout(softenRest, 0);
+      return;
+    }
+  }
+
+  function buildWindFields() {
+    if (!windBuf) return;
+    if (windSoften) clearTimeout(windSoften);
+    windSoften = 0;
+    windU = new Array(WIND_LEVELS);
+    windV = new Array(WIND_LEVELS);
+    softenLevel(windLevel < 0 ? 0 : windLevel);
+    if (windSoft > 0) windSoften = setTimeout(softenRest, 0);
+    else {
+      for (let lev = 0; lev < WIND_LEVELS; lev++) {
+        if (!windU[lev]) softenLevel(lev);
+      }
+    }
+  }
+
+  function applySoft(soft) {
+    const next = Math.max(0, Number(soft) || 0);
+    if (next === windSoft && windU && windU[windLevel < 0 ? 0 : windLevel]) return;
+    windSoft = next;
+    if (!windBuf) return;
+    buildWindFields();
+    if (windOn && windLines) resetWindField();
+    kick();
+    if (typeof onWind === "function") onWind();
   }
 
   function windSample(lat, lon) {
@@ -5392,6 +5475,7 @@ export function createEarthGlobe(canvas, options = {}) {
       loading: false,
       level: windLevel,
       levelName: ["Ground", "5000'", "15,000'", "Jet"][windLevel] || "Ground",
+      soft: windSoft,
       u: uv[0],
       v: uv[1],
       speed: said.speed,
@@ -5408,6 +5492,7 @@ export function createEarthGlobe(canvas, options = {}) {
     if (opts.length != null) windShow = Math.max(1, Math.min(400, opts.length | 0));
     if (opts.fade != null) windFadePow = opts.fade;
     if (opts.light != null) windFloor = opts.light;
+    if (opts.soft != null) applySoft(opts.soft);
     uWindShow.value = windShowSegs();
     uWindFade.value = windFadePow;
     syncWindDraw();
@@ -5431,6 +5516,7 @@ export function createEarthGlobe(canvas, options = {}) {
     windLevel = level > WIND_LEVELS - 1 ? WIND_LEVELS - 1 : level;
     windOn = true;
     if (windU) {
+      if (!windU[windLevel] && windBuf) softenLevel(windLevel);
       showWind(turningOn, changed);
       return;
     }
