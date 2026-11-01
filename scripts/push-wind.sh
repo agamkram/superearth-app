@@ -9,6 +9,7 @@ CYCLE=$(cat "$SRC/CYCLE")
 RUN=$(cat "$SRC/RUN")
 FHOUR=$(cat "$SRC/FHOUR")
 FORMAT=$(cat "$SRC/FORMAT")
+SOFT=$(cat "$SRC/SOFT")
 WORK=$(mktemp -d)
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
@@ -26,7 +27,7 @@ fi
 git add ./wind-*.bin
 git commit -q -m "Wind ${CYCLE}"
 SHA=$(git rev-parse HEAD)
-printf '{"cycle":"%s","sha":"%s","run":"%s","fhour":"%s","v":"%s"}\n' "$CYCLE" "$SHA" "$RUN" "$FHOUR" "$FORMAT" > ready.json
+printf '{"cycle":"%s","sha":"%s","run":"%s","fhour":"%s","v":"%s","soft":"%s"}\n' "$CYCLE" "$SHA" "$RUN" "$FHOUR" "$FORMAT" "$SOFT" > ready.json
 git add ready.json
 git commit -q -m "Wind ${CYCLE} ready"
 if [ -n "${GITHUB_ACTIONS:-}" ]; then
