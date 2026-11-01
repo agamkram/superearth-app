@@ -1961,17 +1961,12 @@
 
     function sameGridPick(ll) {
       if (!lastGridPick || !ll) return false;
+      // Only skip a true double-fire on the same tap. A nearby new pick must move.
       const px = Math.hypot(
         (ll.sx || 0) - lastGridPick.sx,
         (ll.sy || 0) - lastGridPick.sy
       );
-      if (px < 80) return true;
-      let dlon = ll.lon - lastGridPick.lon;
-      while (dlon > 180) dlon -= 360;
-      while (dlon < -180) dlon += 360;
-      const clat = Math.cos((ll.lat * Math.PI) / 180);
-      const deg = Math.hypot(ll.lat - lastGridPick.lat, dlon * clat);
-      return deg < 1.6;
+      return px < 14;
     }
 
     function fmtElev(m) {
