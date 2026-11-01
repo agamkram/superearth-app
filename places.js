@@ -85,18 +85,22 @@ let landSub = null;
 
 // Water, including just offshore, is not land. Coast cells are checked finely.
 export function overLand(lat, lon) {
-  if (!landCoarse || !Number.isFinite(lat) || !Number.isFinite(lon)) return false;
-  let L = ((lon + 180) % 360 + 360) % 360 - 180;
-  if (L === 180) L = -180;
-  const x = Math.max(0, Math.min(LAND_W - 1, Math.floor(L + 180)));
-  const y = Math.max(0, Math.min(LAND_H - 1, Math.floor(lat + 90)));
-  const c = landCoarse[y * LAND_W + x];
+  if (!landCoarse) return false;
+  let L = lon;
+  if (L < -180 || L >= 180) {
+    L = ((L + 180) % 360 + 360) % 360 - 180;
+    if (L === 180) L = -180;
+  }
+  const x = L < -180 ? 0 : (L + 180) | 0;
+  const y = lat <= -90 ? 0 : lat >= 90 ? LAND_H - 1 : (lat + 90) | 0;
+  const xi = x > LAND_W - 1 ? LAND_W - 1 : x;
+  const c = landCoarse[y * LAND_W + xi];
   if (c === 2) return true;
   if (c !== 1 || !landMixedAt || !landSub) return false;
-  const slot = landMixedAt[y * LAND_W + x];
+  const slot = landMixedAt[y * LAND_W + xi];
   if (slot === 65535) return false;
-  let sx = Math.floor((L + 180 - x) * LAND_SUB);
-  let sy = Math.floor((lat + 90 - y) * LAND_SUB);
+  let sx = ((L + 180 - xi) * LAND_SUB) | 0;
+  let sy = ((lat + 90 - y) * LAND_SUB) | 0;
   if (sx < 0) sx = 0;
   else if (sx >= LAND_SUB) sx = LAND_SUB - 1;
   if (sy < 0) sy = 0;

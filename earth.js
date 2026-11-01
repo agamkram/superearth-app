@@ -5,7 +5,7 @@
 import * as THREE from "three";
 import { loadOvationPrime, makeAuroraColor } from "./ovation.js?v=e223";
 import { earthPoint, sampleUV, stepWind, windFrom } from "./wind.mjs?v=e351";
-import { overLand } from "./places.js?v=e235";
+import { overLand } from "./places.js?v=e236";
 
 const RADIUS = 1;
 const HOME_FILL = 0.9;
@@ -182,7 +182,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e379";
+export const BUILD = "e380";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -4817,6 +4817,7 @@ export function createEarthGlobe(canvas, options = {}) {
   let windKeys = null;
   let windBirth = null;
   let windLats = null;
+  let windBright = null;
   let windLons = null;
   let windSu = null;
   let windSv = null;
@@ -4835,6 +4836,16 @@ export function createEarthGlobe(canvas, options = {}) {
   const _wLL = [0, 0];
   const windQuat = new THREE.Quaternion();
   const windLit = new THREE.Vector3();
+  const WIND_DAY_W = 90;
+  const WIND_DAY_H = 45;
+  const windDay = new Float32Array(WIND_DAY_W * WIND_DAY_H);
+  let windDayQx = NaN;
+  let windDayQy = NaN;
+  let windDayQz = NaN;
+  let windDayQw = NaN;
+  let windDaySx = NaN;
+  let windDaySy = NaN;
+  let windDaySz = NaN;
   const uWindHead = { value: 0 };
   const uWindShow = { value: 60 };
   const uWindFade = { value: 1 };
@@ -4889,11 +4900,6 @@ export function createEarthGlobe(canvas, options = {}) {
     windKeys[o + 1] = Math.round(lon * 1000) + bright;
   }
 
-  function syncWindLight() {
-    if (!mesh) return;
-    windQuat.copy(earthTilt.quaternion).multiply(mesh.quaternion);
-  }
-
   function windGroundLit(lat, lon) {
     earthPoint(lat, lon, 1, _earthOut);
     windLit.set(_earthOut[0], _earthOut[1], _earthOut[2]).applyQuaternion(windQuat);
@@ -4901,20 +4907,89 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function dayAmount(ndl) {
-    const t = Math.max(0, Math.min(1, (ndl + 0.04) / 0.24));
-    return t * t * (3 - 2 * t);
+    const t = ndl <= -0.04 ? 0 : ndl >= 0.2 ? 1 : (ndl + 0.04) / 0.24;
+    const u = t < 0 ? 0 : t > 1 ? 1 : t;
+    return u * u * (3 - 2 * u);
+  }
+
+  // Sunlight over land changes only when the Earth turns or the sun moves.
+  function refreshWindDay() {
+    if (!mesh) return;
+    windQuat.copy(earthTilt.quaternion).multiply(mesh.quaternion);
+    const qx = windQuat.x;
+    const qy = windQuat.y;
+    const qz = windQuat.z;
+    const qw = windQuat.w;
+    const sx = sunDir.x;
+    const sy = sunDir.y;
+    const sz = sunDir.z;
+    if (
+      qx === windDayQx && qy === windDayQy && qz === windDayQz && qw === windDayQw &&
+      sx === windDaySx && sy === windDaySy && sz === windDaySz
+    ) {
+      return;
+    }
+    windDayQx = qx;
+    windDayQy = qy;
+    windDayQz = qz;
+    windDayQw = qw;
+    windDaySx = sx;
+    windDaySy = sy;
+    windDaySz = sz;
+    const latStep = 180 / WIND_DAY_H;
+    const lonStep = 360 / WIND_DAY_W;
+    for (let y = 0; y < WIND_DAY_H; y++) {
+      const lat = -90 + (y + 0.5) * latStep;
+      const row = y * WIND_DAY_W;
+      for (let x = 0; x < WIND_DAY_W; x++) {
+        const lon = -180 + (x + 0.5) * lonStep;
+        windDay[row + x] = dayAmount(windGroundLit(lat, lon));
+      }
+    }
+  }
+
+  function windDayAt(lat, lon) {
+    let L = lon;
+    if (L < -180 || L >= 180) {
+      L = ((L + 180) % 360 + 360) % 360 - 180;
+    }
+    const fx = ((L + 180) / 360) * WIND_DAY_W - 0.5;
+    const fy = ((lat + 90) / 180) * WIND_DAY_H - 0.5;
+    let x0 = Math.floor(fx);
+    const tx = fx - x0;
+    x0 %= WIND_DAY_W;
+    if (x0 < 0) x0 += WIND_DAY_W;
+    const x1 = x0 + 1 === WIND_DAY_W ? 0 : x0 + 1;
+    let y0 = Math.floor(fy);
+    let ty = fy - y0;
+    if (y0 < 0) {
+      y0 = 0;
+      ty = 0;
+    }
+    let y1 = y0 + 1;
+    if (y1 >= WIND_DAY_H) {
+      y1 = WIND_DAY_H - 1;
+      ty = 0;
+    }
+    const i00 = windDay[y0 * WIND_DAY_W + x0];
+    const i10 = windDay[y0 * WIND_DAY_W + x1];
+    const i01 = windDay[y1 * WIND_DAY_W + x0];
+    const i11 = windDay[y1 * WIND_DAY_W + x1];
+    const a = i00 + (i10 - i00) * tx;
+    const b = i01 + (i11 - i01) * tx;
+    return a + (b - a) * ty;
   }
 
   // Water keeps speed as brightness, including just offshore.
   // Daytime land is lifted so the line shows on the bright ground.
   function windHereBright(u, v, lat, lon) {
-    const t = Math.min(1, Math.hypot(u, v) / 10);
+    const speed = Math.hypot(u, v);
+    const t = speed > 10 ? 1 : speed * 0.1;
     const sea = windFloor + 0.28 * t;
     if (!overLand(lat, lon)) return sea;
-    const day = dayAmount(windGroundLit(lat, lon));
+    const day = windDayAt(lat, lon);
     if (day <= 0) return sea;
-    const lifted = 0.62 + 0.28 * t;
-    return sea + (lifted - sea) * day;
+    return sea + (0.62 + 0.28 * t - sea) * day;
   }
 
   function flushWind(slots) {
@@ -4953,7 +5028,7 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function stepWindAll(dt, commit) {
     const slot = windHead;
-    syncWindLight();
+    refreshWindDay();
     for (let i = 0; i < windCount; i++) {
       windAge[i] -= dt;
       if (windAge[i] <= 0) spawnWind(i);
@@ -4968,23 +5043,17 @@ export function createEarthGlobe(canvas, options = {}) {
       stepWind(windLats[i], windLons[i], windSu[i], windSv[i], dt, WIND_HOUR, _wLL);
       windLats[i] = _wLL[0];
       windLons[i] = _wLL[1];
+      const br = windHereBright(windSu[i], windSv[i], windLats[i], windLons[i]);
+      windBright[i] = br;
       if (!windLive[i]) continue;
-      writeKey(
-        slot,
-        i,
-        windLats[i],
-        windLons[i],
-        windHereBright(windSu[i], windSv[i], windLats[i], windLons[i]),
-        windBirth[i]
-      );
+      writeKey(slot, i, windLats[i], windLons[i], br, windBirth[i]);
     }
     const dirty = [slot];
     if (commit) {
       const next = (windHead + 1) % WIND_SEGS;
       for (let i = 0; i < windCount; i++) {
-        const br = windHereBright(windSu[i], windSv[i], windLats[i], windLons[i]);
         const birth = !windLive[i];
-        writeKey(next, i, windLats[i], windLons[i], br, birth);
+        writeKey(next, i, windLats[i], windLons[i], windBright[i], birth);
         windBirth[i] = birth ? 1 : 0;
         windLive[i] = 1;
       }
@@ -5003,7 +5072,7 @@ export function createEarthGlobe(canvas, options = {}) {
     if (windKeys) windKeys.fill(-1000);
     if (windBirth) windBirth.fill(0);
     for (let i = 0; i < WIND_MAX; i++) spawnWind(i);
-    syncWindLight();
+    refreshWindDay();
     for (let i = 0; i < windCount; i++) {
       const uv = windSample(windLats[i], windLons[i]);
       windSu[i] = uv[0];
@@ -5029,7 +5098,7 @@ export function createEarthGlobe(canvas, options = {}) {
     windTex = null;
     windKeys = null;
     windBirth = null;
-    windLats = windLons = windSu = windSv = windAge = windLive = null;
+    windLats = windLons = windSu = windSv = windAge = windLive = windBright = null;
   }
 
   function disposeWind() {
@@ -5058,6 +5127,7 @@ export function createEarthGlobe(canvas, options = {}) {
     windSv = new Float32Array(WIND_MAX);
     windAge = new Float32Array(WIND_MAX);
     windLive = new Uint8Array(WIND_MAX);
+    windBright = new Float32Array(WIND_MAX);
     windTex = new THREE.DataTexture(
       windKeys,
       WIND_TEX_W,
