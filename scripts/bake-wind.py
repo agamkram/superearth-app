@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Bake wind for the same hour as the cloud picture.
 
-Three fields, all on the public 0.25° grid:
+Four fields, all on the public 0.25° grid:
   0  33 feet above the ground
   1  850 mb, about 5,000 feet
   2  15,000 feet above the sea
+  3  250 mb, about 34,000 feet, the jet stream
 
 The hour comes from the published cloud picture. The finished look at that
 hour is used when it is posted. Until then, the latest earlier run's
 forecast for that hour is used. A later better file for the same hour
-replaces it. 175 mb is read only to catch a flipped grid, and is not saved.
+replaces it.
 
 With no arguments, writes wind.bin in the app folder.
 With a folder argument, writes wind.bin, CYCLE, RUN, and FHOUR there.
@@ -61,9 +62,9 @@ OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
 NLON = 1440
 NLAT = 721
 SCALE = 100
-NLEV = 3
+NLEV = 4
 
-# Decoded message -> (component, level). Level 3 is the jet check only.
+# Decoded message -> (component, level).
 WANTED = {
     ("10u", "heightAboveGround", 10): ("u", 0),
     ("10v", "heightAboveGround", 10): ("v", 0),
@@ -71,8 +72,8 @@ WANTED = {
     ("v", "isobaricInhPa", 850): ("v", 1),
     ("u", "heightAboveSea", 4572): ("u", 2),
     ("v", "heightAboveSea", 4572): ("v", 2),
-    ("u", "isobaricInhPa", 175): ("u", 3),
-    ("v", "isobaricInhPa", 175): ("v", 3),
+    ("u", "isobaricInhPa", 250): ("u", 3),
+    ("v", "isobaricInhPa", 250): ("v", 3),
 }
 
 FETCH = [
@@ -83,6 +84,8 @@ FETCH = [
             ("VGRD", "10 m above ground"),
             ("UGRD", "850 mb"),
             ("VGRD", "850 mb"),
+            ("UGRD", "250 mb"),
+            ("VGRD", "250 mb"),
         ],
     ),
     (
@@ -90,8 +93,6 @@ FETCH = [
         [
             ("UGRD", "4572 m above mean sea level"),
             ("VGRD", "4572 m above mean sea level"),
-            ("UGRD", "175 mb"),
-            ("VGRD", "175 mb"),
         ],
     ),
 ]
@@ -272,7 +273,7 @@ def main():
     if trade_band >= 0:
         raise SystemExit("15°N wind is not from the east; grid may be flipped")
     if (jet_u ** 2 + jet_v ** 2) ** 0.5 < 12:
-        raise SystemExit("jet sample is too calm to be 175 hPa")
+        raise SystemExit("jet sample is too calm to be 34,000 feet")
 
     header = struct.pack("<4sHHHH I", b"WND1", NLON, NLAT, NLEV, SCALE, int(cycle))
     dest = out_dir / "wind.bin" if out_dir is not None else Path(OUT)
