@@ -182,7 +182,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e391";
+export const BUILD = "e392";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -5302,7 +5302,11 @@ export function createEarthGlobe(canvas, options = {}) {
   function pullFreshWind() {
     if (!windOn || !windInfo || windFileFlight || !windU) return;
     if (windInfo.sha === windBadSha) return;
-    if (String(windCycle) === windInfo.cycle && windSha === windInfo.sha) return;
+    // Same hour or older: keep what is on screen. Only a newer hour replaces it.
+    if (Number(windInfo.cycle) <= Number(windCycle)) {
+      if (String(windCycle) === windInfo.cycle) windSha = windInfo.sha;
+      return;
+    }
     if (performance.now() < windFileAt) return;
     windFileAt = performance.now() + 60 * 1000;
     const info = windInfo;
@@ -5333,6 +5337,57 @@ export function createEarthGlobe(canvas, options = {}) {
       .catch(() => {})
       .finally(() => {
         if (windFileFlight === ctrl) windFileFlight = null;
+      });
+  }
+
+  function loadBundledWind() {
+    return fetch(new URL(`./wind.bin?v=${TEX_VER}`, import.meta.url)).then((res) => {
+      if (!res.ok) throw new Error("wind " + res.status);
+      return res.arrayBuffer();
+    });
+  }
+
+  function loadBestWind(token) {
+    const readyUrl =
+      "https://raw.githubusercontent.com/agamkram/superearth-app/wind-data/ready.json?t=" +
+      Math.floor(Date.now() / 60000);
+    fetch(readyUrl, { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (disposed || token !== windToken) return null;
+        const cycle = String((data && data.cycle) || "");
+        const sha = String((data && data.sha) || "");
+        if (!/^\d{10}$/.test(cycle) || !/^[0-9a-f]{40}$/.test(sha)) {
+          throw new Error("wind ready");
+        }
+        windInfo = { cycle, sha };
+        windReadyAt = performance.now() + 10 * 60 * 1000;
+        return fetch(`https://cdn.jsdelivr.net/gh/agamkram/superearth-app@${sha}/wind.bin`).then(
+          (res) => {
+            if (!res.ok) throw new Error("wind " + res.status);
+            return res.arrayBuffer().then((buf) => ({ buf, sha }));
+          }
+        );
+      })
+      .catch(() =>
+        loadBundledWind().then((buf) => {
+          if (disposed || token !== windToken) return null;
+          return { buf, sha: "" };
+        })
+      )
+      .then((pack) => {
+        if (!pack || disposed || token !== windToken) return;
+        adoptWind(pack.buf);
+        windSha = pack.sha || "";
+        if (!windOn) return;
+        ensureWindLines();
+        kick();
+        if (typeof onWind === "function") onWind();
+      })
+      .catch(() => {
+        if (token !== windToken) return;
+        disposeWind();
+        if (typeof onWind === "function") onWind();
       });
   }
 
@@ -5421,24 +5476,7 @@ export function createEarthGlobe(canvas, options = {}) {
       return;
     }
     const token = ++windToken;
-    fetch(new URL(`./wind.bin?v=${TEX_VER}`, import.meta.url))
-      .then((res) => {
-        if (!res.ok) throw new Error("wind " + res.status);
-        return res.arrayBuffer();
-      })
-      .then((buf) => {
-        if (disposed || token !== windToken) return;
-        adoptWind(buf);
-        if (!windOn) return;
-        ensureWindLines();
-        kick();
-        if (typeof onWind === "function") onWind();
-      })
-      .catch(() => {
-        if (token !== windToken) return;
-        disposeWind();
-        if (typeof onWind === "function") onWind();
-      });
+    loadBestWind(token);
     kick();
   }
 
