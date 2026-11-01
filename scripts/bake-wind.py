@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
-"""Bake the latest NOAA GFS analysis into wind.bin.
+"""Bake wind for the same hour as the cloud picture.
 
-Two fields, both on the public 0.25° grid:
-  0  wind 10 m above the ground
-  1  wind at 175 hPa (the jet)
+Three fields, all on the public 0.25° grid:
+  0  33 feet above the ground
+  1  850 mb, about 5,000 feet
+  2  15,000 feet above the sea
+
+The hour comes from the published cloud picture. The finished look at that
+hour is used when it is posted. Until then, the latest earlier run's
+forecast for that hour is used. A later better file for the same hour
+replaces it. 175 mb is read only to catch a flipped grid, and is not saved.
 
 With no arguments, writes wind.bin in the app folder.
-With a folder argument, writes wind.bin and CYCLE there for publishing.
-If that forecast is already published, writes SKIP and does not download.
+With a folder argument, writes wind.bin, CYCLE, RUN, and FHOUR there.
+If that same file is already published, writes SKIP and does not download.
 """
 
 import json
@@ -50,18 +56,45 @@ import eccodes  # noqa: E402
 
 BASE = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
 READY = "https://raw.githubusercontent.com/agamkram/superearth-app/wind-data/ready.json"
+CLOUD_READY = "https://raw.githubusercontent.com/agamkram/superearth-app/cloud-tiles/ready.json"
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "wind.bin")
 NLON = 1440
 NLAT = 721
 SCALE = 100
+NLEV = 3
 
-# (file tag, shortName, typeOfLevel, level) -> slot 0 surface, 1 jet
+# Decoded message -> (component, level). Level 3 is the jet check only.
 WANTED = {
     ("10u", "heightAboveGround", 10): ("u", 0),
     ("10v", "heightAboveGround", 10): ("v", 0),
-    ("u", "isobaricInhPa", 175): ("u", 1),
-    ("v", "isobaricInhPa", 175): ("v", 1),
+    ("u", "isobaricInhPa", 850): ("u", 1),
+    ("v", "isobaricInhPa", 850): ("v", 1),
+    ("u", "heightAboveSea", 4572): ("u", 2),
+    ("v", "heightAboveSea", 4572): ("v", 2),
+    ("u", "isobaricInhPa", 175): ("u", 3),
+    ("v", "isobaricInhPa", 175): ("v", 3),
 }
+
+FETCH = [
+    (
+        "pgrb2.0p25",
+        [
+            ("UGRD", "10 m above ground"),
+            ("VGRD", "10 m above ground"),
+            ("UGRD", "850 mb"),
+            ("VGRD", "850 mb"),
+        ],
+    ),
+    (
+        "pgrb2b.0p25",
+        [
+            ("UGRD", "4572 m above mean sea level"),
+            ("VGRD", "4572 m above mean sea level"),
+            ("UGRD", "175 mb"),
+            ("VGRD", "175 mb"),
+        ],
+    ),
+]
 
 
 def get(url, extra=None):
@@ -70,19 +103,46 @@ def get(url, extra=None):
         return res.read()
 
 
-def latest_cycle():
-    now = datetime.now(timezone.utc)
-    for back in range(0, 3):
-        day = now - timedelta(days=back)
-        ymd = day.strftime("%Y%m%d")
-        for cc in ("18", "12", "06", "00"):
-            url = f"{BASE}/gfs.{ymd}/{cc}/atmos/gfs.t{cc}z.pgrb2.0p25.f000.idx"
-            try:
-                urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=30).close()
-            except Exception:
-                continue
-            return ymd, cc
-    raise SystemExit("no GFS cycle found")
+def cloud_hour():
+    """The hour of the cloud picture that is actually published."""
+    try:
+        data = json.loads(get(CLOUD_READY + "?t=" + str(int(time.time()))))
+        stamp = int(data["stamp"])
+        return datetime.fromtimestamp(stamp * 3 * 3600, timezone.utc)
+    except Exception:
+        now = datetime.now(timezone.utc)
+        secs = int(now.timestamp()) // (3 * 3600) * (3 * 3600)
+        return datetime.fromtimestamp(secs, timezone.utc)
+
+
+def idx_url(ymd, cc, tag, fhour):
+    return f"{BASE}/gfs.{ymd}/{cc}/atmos/gfs.t{cc}z.{tag}.f{fhour:03d}.idx"
+
+
+def have_run(ymd, cc, fhour):
+    for tag, _want in FETCH:
+        url = idx_url(ymd, cc, tag, fhour)
+        req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "superearth-bake-wind"})
+        try:
+            urllib.request.urlopen(req, timeout=30).close()
+        except Exception:
+            return False
+    return True
+
+
+def best_source(valid):
+    """Newest run that already has this hour. The finished file wins when it exists."""
+    hour = (valid.hour // 6) * 6
+    run = valid.replace(hour=hour, minute=0, second=0, microsecond=0)
+    for _ in range(12):
+        fhour = int((valid - run).total_seconds() // 3600)
+        if 0 <= fhour <= 36:
+            ymd = run.strftime("%Y%m%d")
+            cc = run.strftime("%H")
+            if have_run(ymd, cc, fhour):
+                return ymd, cc, fhour
+        run -= timedelta(hours=6)
+    raise SystemExit("no wind for the cloud hour")
 
 
 def idx_rows(text):
@@ -103,16 +163,11 @@ def range_of(rows, name, level):
     raise SystemExit(f"missing {name} {level}")
 
 
-def messages(ymd, cc):
+def messages(ymd, cc, fhour):
     blobs = []
-    specs = [
-        ("pgrb2.0p25", [("UGRD", "10 m above ground"), ("VGRD", "10 m above ground")]),
-        ("pgrb2b.0p25", [("UGRD", "175 mb"), ("VGRD", "175 mb")]),
-    ]
-    for tag, want in specs:
-        idx_url = f"{BASE}/gfs.{ymd}/{cc}/atmos/gfs.t{cc}z.{tag}.f000.idx"
-        rows = idx_rows(get(idx_url).decode("ascii"))
-        grib_url = f"{BASE}/gfs.{ymd}/{cc}/atmos/gfs.t{cc}z.{tag}.f000"
+    for tag, want in FETCH:
+        rows = idx_rows(get(idx_url(ymd, cc, tag, fhour)).decode("ascii"))
+        grib_url = f"{BASE}/gfs.{ymd}/{cc}/atmos/gfs.t{cc}z.{tag}.f{fhour:03d}"
         for name, level in want:
             start, end = range_of(rows, name, level)
             print(f"  {tag} {name} {level} bytes {start}-{end}", flush=True)
@@ -139,35 +194,40 @@ def field_from(gid):
     return vals.reshape(NLAT, NLON)
 
 
-def published_cycle():
+def published_info():
     try:
-        req = urllib.request.Request(
-            READY + "?t=" + str(int(time.time())),
-            headers={"User-Agent": "SuperEarth"},
-        )
-        with urllib.request.urlopen(req, timeout=30) as res:
-            data = json.loads(res.read().decode())
-        return str(data.get("cycle") or "")
+        data = json.loads(get(READY + "?t=" + str(int(time.time()))))
+        return data if isinstance(data, dict) else {}
     except Exception:
-        return ""
+        return {}
 
 
 def main():
     out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else None
-    ymd, cc = latest_cycle()
-    cycle = f"{ymd}{cc}"
-    print(f"GFS {ymd} {cc}z", flush=True)
+    valid = cloud_hour()
+    ymd, cc, fhour = best_source(valid)
+    cycle = valid.strftime("%Y%m%d%H")
+    run = f"{ymd}{cc}"
+    print(f"cloud hour {cycle} from {run} f{fhour:03d}", flush=True)
     if out_dir is not None:
         out_dir.mkdir(parents=True, exist_ok=True)
         for old in out_dir.iterdir():
             if old.is_file():
                 old.unlink()
-        if published_cycle() == cycle:
+        have = published_info()
+        if (
+            str(have.get("cycle") or "") == cycle
+            and str(have.get("run") or "") == run
+            and str(have.get("fhour") or "") == str(fhour)
+        ):
             (out_dir / "SKIP").write_text(cycle)
             print("already published", cycle)
             return
-    raw = messages(ymd, cc)
-    planes = {("u", 0): None, ("v", 0): None, ("u", 1): None, ("v", 1): None}
+    raw = messages(ymd, cc, fhour)
+    planes = {}
+    for comp in ("u", "v"):
+        for lev in range(4):
+            planes[(comp, lev)] = None
     tmp = tempfile.NamedTemporaryFile(suffix=".grib", delete=False)
     tmp.write(raw)
     tmp.close()
@@ -203,11 +263,10 @@ def main():
         row = int(round((90 - lat) / 0.25))
         return float(arr[row].mean())
 
-    trade_u = at(planes[("u", 0)], 15, -40)
     trade_band = row_mean(planes[("u", 0)], 15)
-    jet_u = at(planes[("u", 1)], 40, -70)
-    jet_v = at(planes[("v", 1)], 40, -70)
-    print(f"  15N surface zonal u={trade_band:.1f}  15N 40W u={trade_u:.1f}")
+    jet_u = at(planes[("u", 3)], 40, -70)
+    jet_v = at(planes[("v", 3)], 40, -70)
+    print(f"  15N ground zonal u={trade_band:.1f}")
     print(f"  jet 40N 70W u={jet_u:.1f} v={jet_v:.1f} m/s")
     # Trades along 15°N blow from the east. The jet sample should be a real wind.
     if trade_band >= 0:
@@ -215,18 +274,19 @@ def main():
     if (jet_u ** 2 + jet_v ** 2) ** 0.5 < 12:
         raise SystemExit("jet sample is too calm to be 175 hPa")
 
-    yyyymmddhh = int(ymd) * 100 + int(cc)
-    header = struct.pack("<4sHHHH I", b"WND1", NLON, NLAT, 2, SCALE, yyyymmddhh)
+    header = struct.pack("<4sHHHH I", b"WND1", NLON, NLAT, NLEV, SCALE, int(cycle))
     dest = out_dir / "wind.bin" if out_dir is not None else Path(OUT)
     with open(dest, "wb") as f:
         f.write(header)
-        for lev in (0, 1):
+        for lev in range(NLEV):
             for comp in ("u", "v"):
                 scaled = np.rint(planes[(comp, lev)] * SCALE).astype(np.int32)
                 np.clip(scaled, -32767, 32767).astype("<i2").tofile(f)
     if out_dir is not None:
         (out_dir / "CYCLE").write_text(cycle)
-    print(f"wrote {dest} ({dest.stat().st_size} bytes) cycle {yyyymmddhh}")
+        (out_dir / "RUN").write_text(run)
+        (out_dir / "FHOUR").write_text(str(fhour))
+    print(f"wrote {dest} ({dest.stat().st_size} bytes) hour {cycle} from {run} f{fhour:03d}")
 
 
 if __name__ == "__main__":

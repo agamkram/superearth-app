@@ -6,6 +6,8 @@ set -euo pipefail
 SRC=$(cd "$1" && pwd)
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 CYCLE=$(cat "$SRC/CYCLE")
+RUN=$(cat "$SRC/RUN")
+FHOUR=$(cat "$SRC/FHOUR")
 WORK=$(mktemp -d)
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
@@ -23,7 +25,7 @@ fi
 git add wind.bin
 git commit -q -m "Wind ${CYCLE}"
 SHA=$(git rev-parse HEAD)
-printf '{"cycle":"%s","sha":"%s"}\n' "$CYCLE" "$SHA" > ready.json
+printf '{"cycle":"%s","sha":"%s","run":"%s","fhour":"%s"}\n' "$CYCLE" "$SHA" "$RUN" "$FHOUR" > ready.json
 git add ready.json
 git commit -q -m "Wind ${CYCLE} ready"
 if [ -n "${GITHUB_ACTIONS:-}" ]; then

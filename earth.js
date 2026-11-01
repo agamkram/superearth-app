@@ -182,7 +182,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e380";
+export const BUILD = "e381";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -4796,6 +4796,7 @@ export function createEarthGlobe(canvas, options = {}) {
   const windSoft = 6;
   let windOn = false;
   let windLevel = 0;
+  const WIND_LEVELS = 3;
   let windToken = 0;
   let windBuf = null;
   let windU = null;
@@ -4833,6 +4834,8 @@ export function createEarthGlobe(canvas, options = {}) {
   let windFileFlight = null;
   let windFileAt = 0;
   let windInfo = null;
+  let windSha = "";
+  let windBadSha = "";
   const _wLL = [0, 0];
   const windQuat = new THREE.Quaternion();
   const windLit = new THREE.Vector3();
@@ -5107,6 +5110,7 @@ export function createEarthGlobe(canvas, options = {}) {
     windU = null;
     windV = null;
     windInfo = null;
+    windSha = "";
     windReadyAt = 0;
     windFileAt = 0;
     if (windReadyFlight) windReadyFlight.abort();
@@ -5244,14 +5248,18 @@ export function createEarthGlobe(canvas, options = {}) {
       view.getUint8(2),
       view.getUint8(3)
     );
-    if (magic !== "WND1") throw new Error("wind " + magic);
-    windNlon = view.getUint16(4, true);
-    windNlat = view.getUint16(6, true);
+    const nlon = view.getUint16(4, true);
+    const nlat = view.getUint16(6, true);
     const nlev = view.getUint16(8, true);
+    const plane = nlon * nlat;
+    if (magic !== "WND1") throw new Error("wind " + magic);
+    if (nlev < WIND_LEVELS || buf.byteLength < 16 + plane * 4 * WIND_LEVELS) {
+      throw new Error("wind short");
+    }
+    windNlon = nlon;
+    windNlat = nlat;
     windScale = view.getUint16(10, true) || 100;
     windCycle = view.getUint32(12, true);
-    const plane = windNlon * windNlat;
-    if (nlev < 2 || buf.byteLength < 16 + plane * 4 * 2) throw new Error("wind short");
     windBuf = buf;
     buildWindFields();
   }
@@ -5259,15 +5267,22 @@ export function createEarthGlobe(canvas, options = {}) {
   function buildWindFields() {
     if (!windBuf) return;
     const plane = windNlon * windNlat;
-    const rawU = new Int16Array(windBuf, 16, plane);
-    const rawV = new Int16Array(windBuf, 16 + plane * 2, plane);
-    windU = softenWind(rawU, windNlon, windNlat, windSoft);
-    windV = softenWind(rawV, windNlon, windNlat, windSoft);
+    const u = [];
+    const v = [];
+    for (let lev = 0; lev < WIND_LEVELS; lev++) {
+      const base = 16 + lev * plane * 4;
+      const rawU = new Int16Array(windBuf, base, plane);
+      const rawV = new Int16Array(windBuf, base + plane * 2, plane);
+      u.push(softenWind(rawU, windNlon, windNlat, windSoft));
+      v.push(softenWind(rawV, windNlon, windNlat, windSoft));
+    }
+    windU = u;
+    windV = v;
     windBuf = null;
   }
 
   // Neighbors in the file can almost reverse. Softening by a few forecast
-  // squares turns that pinch into a curve. Only the surface wind is kept.
+  // squares turns that pinch into a curve.
   function softenWind(src, nlon, nlat, sigma) {
     const radius = Math.max(1, Math.round(sigma * 3));
     const weight = new Float32Array(radius * 2 + 1);
@@ -5307,7 +5322,8 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function windSample(lat, lon) {
-    const raw = sampleUV(windU, windV, lat, lon, windNlon, windNlat);
+    const lev = windLevel < 0 ? 0 : windLevel;
+    const raw = sampleUV(windU[lev], windV[lev], lat, lon, windNlon, windNlat);
     return [raw[0] / windScale, raw[1] / windScale];
   }
 
@@ -5335,7 +5351,8 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function pullFreshWind() {
     if (!windOn || !windInfo || windFileFlight || !windU) return;
-    if (String(windCycle) === windInfo.cycle) return;
+    if (windInfo.sha === windBadSha) return;
+    if (String(windCycle) === windInfo.cycle && windSha === windInfo.sha) return;
     if (performance.now() < windFileAt) return;
     windFileAt = performance.now() + 60 * 1000;
     const info = windInfo;
@@ -5351,7 +5368,13 @@ export function createEarthGlobe(canvas, options = {}) {
       })
       .then((buf) => {
         if (disposed || token !== windToken || !windOn) return;
-        adoptWind(buf);
+        try {
+          adoptWind(buf);
+        } catch (err) {
+          windBadSha = info.sha;
+          return;
+        }
+        windSha = info.sha;
         ensureWindLines();
         if (windLines) resetWindField();
         kick();
@@ -5404,7 +5427,7 @@ export function createEarthGlobe(canvas, options = {}) {
     return {
       loading: false,
       level: windLevel,
-      levelName: "10 m",
+      levelName: ["Ground", "5000'", "15,000'"][windLevel] || "Ground",
       u: uv[0],
       v: uv[1],
       speed: said.speed,
@@ -5436,11 +5459,12 @@ export function createEarthGlobe(canvas, options = {}) {
       return;
     }
     const turningOn = !windOn;
-    windLevel = 0;
+    const changed = windLevel !== level;
+    windLevel = level > WIND_LEVELS - 1 ? WIND_LEVELS - 1 : level;
     windOn = true;
     if (windU) {
       ensureWindLines();
-      if (turningOn && windLines) resetWindField();
+      if ((turningOn || changed) && windLines) resetWindField();
       kick();
       if (typeof onWind === "function") onWind();
       return;

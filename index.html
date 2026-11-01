@@ -1597,7 +1597,7 @@
 
   <script src="astronomy.js"></script>
   <script type="module">
-    import { createEarthGlobe } from "./earth.js?v=e380";
+    import { createEarthGlobe } from "./earth.js?v=e381";
     import {
       loadPlaces,
       placeAt,
@@ -2750,24 +2750,32 @@
     let blackOn = false;
     let windLevel = -1;
 
+    const WIND_FACE = ["Ground", "5000'", "15,000'"];
+    const WIND_TIP = [
+      "Show the 5,000 foot wind",
+      "Show the 15,000 foot wind",
+      "Hide the wind",
+    ];
+
+    function paintWind(level) {
+      if (!windBtn) return;
+      const on = level >= 0;
+      windBtn.textContent = on ? WIND_FACE[level] : "Wind";
+      windBtn.setAttribute("aria-pressed", on ? "true" : "false");
+      windBtn.title = on ? WIND_TIP[level] : "Show the ground wind";
+    }
+
     function noteWind() {
       if (windLevel < 0) return;
       const here = globeRef.current && globeRef.current.windHere && globeRef.current.windHere();
       if (here) return;
       windLevel = -1;
-      if (windBtn) {
-        windBtn.setAttribute("aria-pressed", "false");
-        windBtn.title = "Show the latest wind";
-      }
+      paintWind(-1);
     }
 
     function applyWind(level) {
       windLevel = level;
-      const on = level >= 0;
-      if (windBtn) {
-        windBtn.setAttribute("aria-pressed", on ? "true" : "false");
-        windBtn.title = on ? "Hide the wind" : "Show the latest wind";
-      }
+      paintWind(level);
       if (globeRef.current && globeRef.current.setWind) globeRef.current.setWind(level);
     }
 
@@ -3120,7 +3128,7 @@
     if (windBtn) {
       windBtn.addEventListener("click", (e) => {
         e.preventDefault();
-        const next = windLevel < 0 ? 0 : -1;
+        const next = windLevel < 0 ? 0 : windLevel >= 2 ? -1 : windLevel + 1;
         applyWind(next);
       });
     }
