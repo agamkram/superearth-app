@@ -78,16 +78,62 @@ function parsePolys(buf, q) {
 const PLACES_VER = "e229";
 const LAND_W = 360;
 const LAND_H = 180;
-let landMask = null;
+const LAND_SUB = 8;
+let landCoarse = null;
+let landMixedAt = null;
+let landSub = null;
 
-// land-mask.bin: 360×180 bytes, one per degree. 1 means land.
+// Water, including just offshore, is not land. Coast cells are checked finely.
 export function overLand(lat, lon) {
-  if (!landMask || !Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+  if (!landCoarse || !Number.isFinite(lat) || !Number.isFinite(lon)) return false;
   let L = ((lon + 180) % 360 + 360) % 360 - 180;
   if (L === 180) L = -180;
   const x = Math.max(0, Math.min(LAND_W - 1, Math.floor(L + 180)));
   const y = Math.max(0, Math.min(LAND_H - 1, Math.floor(lat + 90)));
-  return landMask[y * LAND_W + x] === 1;
+  const c = landCoarse[y * LAND_W + x];
+  if (c === 2) return true;
+  if (c !== 1 || !landMixedAt || !landSub) return false;
+  const slot = landMixedAt[y * LAND_W + x];
+  if (slot === 65535) return false;
+  let sx = Math.floor((L + 180 - x) * LAND_SUB);
+  let sy = Math.floor((lat + 90 - y) * LAND_SUB);
+  if (sx < 0) sx = 0;
+  else if (sx >= LAND_SUB) sx = LAND_SUB - 1;
+  if (sy < 0) sy = 0;
+  else if (sy >= LAND_SUB) sy = LAND_SUB - 1;
+  return landSub[(slot * LAND_SUB + sy) * LAND_SUB + sx] === 1;
+}
+
+function takeLandMask(buf) {
+  if (!buf || buf.byteLength < 10) return;
+  const view = new DataView(buf);
+  const magic = String.fromCharCode(
+    view.getUint8(0),
+    view.getUint8(1),
+    view.getUint8(2),
+    view.getUint8(3)
+  );
+  if (magic !== "LND1") return;
+  if (view.getUint16(4, true) !== LAND_SUB) return;
+  if (view.getUint16(6, true) !== LAND_W || view.getUint16(8, true) !== LAND_H) return;
+  const n = LAND_W * LAND_H;
+  let o = 10;
+  if (buf.byteLength < o + n + 4) return;
+  const coarse = new Uint8Array(buf, o, n);
+  o += n;
+  const nMixed = view.getUint32(o, true);
+  o += 4;
+  if (buf.byteLength < o + nMixed * 4 + nMixed * LAND_SUB * LAND_SUB) return;
+  const at = new Uint16Array(n);
+  at.fill(65535);
+  for (let i = 0; i < nMixed; i++) {
+    const id = view.getUint32(o, true);
+    o += 4;
+    if (id < n) at[id] = i;
+  }
+  landCoarse = coarse;
+  landMixedAt = at;
+  landSub = new Uint8Array(buf, o, nMixed * LAND_SUB * LAND_SUB);
 }
 
 export function loadPlaces() {
@@ -101,16 +147,14 @@ export function loadPlaces() {
       if (!r.ok) throw new Error("places-polys.bin");
       return r.arrayBuffer();
     }),
-    fetch(`land-mask.bin?v=e234`).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null),
+    fetch(`land-mask.bin?v=e235`).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null),
   ]).then(([meta, buf, maskBuf]) => {
     places = meta.places || [];
     polys = parsePolys(buf, meta.q || 100);
     if (polys.length !== places.length) {
       console.warn("places poly count mismatch", polys.length, places.length);
     }
-    if (maskBuf && maskBuf.byteLength === LAND_W * LAND_H) {
-      landMask = new Uint8Array(maskBuf);
-    }
+    takeLandMask(maskBuf);
     return places.length;
   });
   return ready;

@@ -5,7 +5,7 @@
 import * as THREE from "three";
 import { loadOvationPrime, makeAuroraColor } from "./ovation.js?v=e223";
 import { earthPoint, sampleUV, stepWind, windFrom } from "./wind.mjs?v=e351";
-import { overLand } from "./places.js?v=e234";
+import { overLand } from "./places.js?v=e235";
 
 const RADIUS = 1;
 const HOME_FILL = 0.9;
@@ -182,7 +182,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e378";
+export const BUILD = "e379";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -4905,8 +4905,8 @@ export function createEarthGlobe(canvas, options = {}) {
     return t * t * (3 - 2 * t);
   }
 
-  // Sea keeps speed as brightness. Day land is a bright photo, so the same
-  // line is lifted there even when the air is not that strong.
+  // Water keeps speed as brightness, including just offshore.
+  // Daytime land is lifted so the line shows on the bright ground.
   function windHereBright(u, v, lat, lon) {
     const t = Math.min(1, Math.hypot(u, v) / 10);
     const sea = windFloor + 0.28 * t;
