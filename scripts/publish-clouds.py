@@ -4,6 +4,7 @@
 The globe keeps the previous set until this one is published whole.
 Writes PNGs and a STAMP file into the directory given on the command line.
 If that photograph is already published, writes SKIP and does not cut.
+With --check, stops after that test and downloads nothing.
 """
 import io
 import json
@@ -12,7 +13,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-from PIL import Image
+Image = None
 
 READY = "https://raw.githubusercontent.com/agamkram/superearth-app/cloud-tiles/ready.json"
 SOURCE = "https://clouds.matteason.co.uk/images/8192x4096/clouds-alpha.png"
@@ -55,7 +56,9 @@ def same_pixels(tile, blob):
 
 
 def main():
-    out = Path(sys.argv[1])
+    global Image
+    check_only = "--check" in sys.argv[1:]
+    out = Path([a for a in sys.argv[1:] if a != "--check"][0])
     out.mkdir(parents=True, exist_ok=True)
     for old in out.iterdir():
         if old.is_file():
@@ -65,6 +68,10 @@ def main():
         (out / "SKIP").write_text(stamp)
         print("already published", stamp)
         return
+    if check_only:
+        print("needs publishing", stamp)
+        return
+    from PIL import Image
     req = urllib.request.Request(SOURCE + "?t=" + stamp, headers={"User-Agent": "SuperEarth"})
     with urllib.request.urlopen(req, timeout=180) as res:
         raw = res.read()

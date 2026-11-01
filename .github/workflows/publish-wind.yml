@@ -23,11 +23,23 @@ jobs:
         with:
           fetch-depth: 1
           sparse-checkout: scripts
-      - uses: actions/setup-python@v5
+      # The runner's own Python is enough to see whether anything is new.
+      - id: check
+        run: |
+          python3 scripts/bake-wind.py --check /tmp/wind-data
+          if [ -f /tmp/wind-data/SKIP ]; then
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=0" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.check.outputs.skip != '1'
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install numpy eccodes ecmwflibs
-      - id: cut
+      - if: steps.check.outputs.skip != '1'
+        run: pip install numpy eccodes ecmwflibs
+      - if: steps.check.outputs.skip != '1'
+        id: cut
         run: |
           python3 scripts/bake-wind.py /tmp/wind-data
           if [ -f /tmp/wind-data/SKIP ]; then
@@ -35,7 +47,7 @@ jobs:
           else
             echo "skip=0" >> "$GITHUB_OUTPUT"
           fi
-      - if: steps.cut.outputs.skip != '1'
+      - if: steps.check.outputs.skip != '1' && steps.cut.outputs.skip != '1'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/push-wind.sh /tmp/wind-data

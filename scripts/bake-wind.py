@@ -12,9 +12,12 @@ hour is used when it is posted. Until then, the latest earlier run's
 forecast for that hour is used. A later better file for the same hour
 replaces it.
 
-With no arguments, writes wind.bin in the app folder.
-With a folder argument, writes wind.bin, CYCLE, RUN, and FHOUR there.
+Writes wind-0.bin to wind-3.bin, one per height, plus CYCLE, RUN, FHOUR,
+and FORMAT into the folder given (default .tmp/wind-data in the app folder).
+Each file is the WND2 layout: a 16 byte header, then u and v as int16
+tenths of a m/s, each row stored as steps from the cell to its west.
 If that same file is already published, writes SKIP and does not download.
+With --check, stops after that test and downloads nothing.
 """
 
 import json
@@ -27,42 +30,51 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import numpy as np
-
-_mac_eccodes = os.path.expanduser(
-    "~/Library/Python/3.9/lib/python/site-packages/ecmwflibs"
-)
-if os.path.isdir(_mac_eccodes):
-    os.environ.setdefault("ECCODES_HOME", _mac_eccodes)
-elif "ECCODES_HOME" not in os.environ:
-    # The GitHub runner has no system decoder. The bundled file name is hashed,
-    # so expose it under the plain name the importer looks for.
-    try:
-        import ecmwflibs
-
-        bundled = ecmwflibs.find("eccodes")
-    except Exception:
-        bundled = None
-    if bundled:
-        home = tempfile.mkdtemp(prefix="eccodes-home-")
-        libdir = os.path.join(home, "lib")
-        os.makedirs(libdir)
-        os.symlink(bundled, os.path.join(libdir, "libeccodes.so"))
-        os.environ["ECCODES_HOME"] = home
-        dep = os.path.dirname(bundled)
-        prev = os.environ.get("LD_LIBRARY_PATH", "")
-        os.environ["LD_LIBRARY_PATH"] = dep if not prev else dep + ":" + prev
-
-import eccodes  # noqa: E402
+np = None
+eccodes = None
 
 BASE = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
 READY = "https://raw.githubusercontent.com/agamkram/superearth-app/wind-data/ready.json"
 CLOUD_READY = "https://raw.githubusercontent.com/agamkram/superearth-app/cloud-tiles/ready.json"
-OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "wind.bin")
+OUT_DIR = Path(__file__).resolve().parent.parent / ".tmp" / "wind-data"
 NLON = 1440
 NLAT = 721
-SCALE = 100
+SCALE = 10
 NLEV = 4
+FORMAT = "2"
+
+
+def load_decoder():
+    """numpy and the GRIB decoder load only when a file is baked."""
+    global np, eccodes
+    import numpy
+
+    mac_eccodes = os.path.expanduser("~/Library/Python/3.9/lib/python/site-packages/ecmwflibs")
+    if os.path.isdir(mac_eccodes):
+        os.environ.setdefault("ECCODES_HOME", mac_eccodes)
+    elif "ECCODES_HOME" not in os.environ:
+        # The GitHub runner has no system decoder. The bundled file name is hashed,
+        # so expose it under the plain name the importer looks for.
+        try:
+            import ecmwflibs
+
+            bundled = ecmwflibs.find("eccodes")
+        except Exception:
+            bundled = None
+        if bundled:
+            home = tempfile.mkdtemp(prefix="eccodes-home-")
+            libdir = os.path.join(home, "lib")
+            os.makedirs(libdir)
+            os.symlink(bundled, os.path.join(libdir, "libeccodes.so"))
+            os.environ["ECCODES_HOME"] = home
+            dep = os.path.dirname(bundled)
+            prev = os.environ.get("LD_LIBRARY_PATH", "")
+            os.environ["LD_LIBRARY_PATH"] = dep if not prev else dep + ":" + prev
+
+    import eccodes as decoder
+
+    np = numpy
+    eccodes = decoder
 
 # Decoded message -> (component, level).
 WANTED = {
@@ -204,26 +216,32 @@ def published_info():
 
 
 def main():
-    out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else None
+    check_only = "--check" in sys.argv[1:]
+    args = [a for a in sys.argv[1:] if a != "--check"]
+    out_dir = Path(args[0]) if args else OUT_DIR
     valid = cloud_hour()
     ymd, cc, fhour = best_source(valid)
     cycle = valid.strftime("%Y%m%d%H")
     run = f"{ymd}{cc}"
     print(f"cloud hour {cycle} from {run} f{fhour:03d}", flush=True)
-    if out_dir is not None:
-        out_dir.mkdir(parents=True, exist_ok=True)
-        for old in out_dir.iterdir():
-            if old.is_file():
-                old.unlink()
-        have = published_info()
-        if (
-            str(have.get("cycle") or "") == cycle
-            and str(have.get("run") or "") == run
-            and str(have.get("fhour") or "") == str(fhour)
-        ):
-            (out_dir / "SKIP").write_text(cycle)
-            print("already published", cycle)
-            return
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for old in out_dir.iterdir():
+        if old.is_file():
+            old.unlink()
+    have = published_info()
+    if (
+        str(have.get("cycle") or "") == cycle
+        and str(have.get("run") or "") == run
+        and str(have.get("fhour") or "") == str(fhour)
+        and str(have.get("v") or "") == FORMAT
+    ):
+        (out_dir / "SKIP").write_text(cycle)
+        print("already published", cycle)
+        return
+    if check_only:
+        print("needs publishing", cycle)
+        return
+    load_decoder()
     raw = messages(ymd, cc, fhour)
     planes = {}
     for comp in ("u", "v"):
@@ -275,19 +293,24 @@ def main():
     if (jet_u ** 2 + jet_v ** 2) ** 0.5 < 12:
         raise SystemExit("jet sample is too calm to be 34,000 feet")
 
-    header = struct.pack("<4sHHHH I", b"WND1", NLON, NLAT, NLEV, SCALE, int(cycle))
-    dest = out_dir / "wind.bin" if out_dir is not None else Path(OUT)
-    with open(dest, "wb") as f:
-        f.write(header)
-        for lev in range(NLEV):
+    total = 0
+    for lev in range(NLEV):
+        header = struct.pack("<4sHHHHI", b"WND2", NLON, NLAT, lev, SCALE, int(cycle))
+        dest = out_dir / f"wind-{lev}.bin"
+        with open(dest, "wb") as f:
+            f.write(header)
             for comp in ("u", "v"):
-                scaled = np.rint(planes[(comp, lev)] * SCALE).astype(np.int32)
-                np.clip(scaled, -32767, 32767).astype("<i2").tofile(f)
-    if out_dir is not None:
-        (out_dir / "CYCLE").write_text(cycle)
-        (out_dir / "RUN").write_text(run)
-        (out_dir / "FHOUR").write_text(str(fhour))
-    print(f"wrote {dest} ({dest.stat().st_size} bytes) hour {cycle} from {run} f{fhour:03d}")
+                scaled = np.clip(np.rint(planes[(comp, lev)] * SCALE), -32767, 32767).astype(np.int32)
+                steps = np.diff(scaled, axis=1, prepend=0)
+                if np.abs(steps).max() > 32767:
+                    raise SystemExit(f"wind step too large at height {lev}")
+                steps.astype("<i2").tofile(f)
+        total += dest.stat().st_size
+    (out_dir / "CYCLE").write_text(cycle)
+    (out_dir / "RUN").write_text(run)
+    (out_dir / "FHOUR").write_text(str(fhour))
+    (out_dir / "FORMAT").write_text(FORMAT)
+    print(f"wrote {out_dir} ({total} bytes) hour {cycle} from {run} f{fhour:03d}")
 
 
 if __name__ == "__main__":

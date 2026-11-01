@@ -4,7 +4,7 @@
  */
 import * as THREE from "three";
 import { loadOvationPrime, makeAuroraColor } from "./ovation.js?v=e223";
-import { earthPoint, sampleUV, stepWind, windFrom } from "./wind.mjs?v=e351";
+import { earthPoint, sampleUV, stepWind, windFrom } from "./wind.mjs?v=e394";
 import { overLand } from "./places.js?v=e236";
 
 const RADIUS = 1;
@@ -181,9 +181,13 @@ function createStarfield() {
   return points;
 }
 
-/** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e393";
-const TEX_VER = BUILD;
+/** Cache-bust for earth.js. Bump when the code changes. */
+export const BUILD = "e394";
+/**
+ * Cache-bust for the map photos and .bin line files. Browsers keep those for
+ * up to a year, so change this only when one of them is rebuilt.
+ */
+const TEX_VER = "e393";
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
 const SPHERE_SEGMENTS = 320;
@@ -4797,7 +4801,8 @@ export function createEarthGlobe(canvas, options = {}) {
   let windLevel = 0;
   const WIND_LEVELS = 4;
   let windToken = 0;
-  let windBuf = null;
+  let windAll = null;
+  let windFieldLevel = -1;
   let windU = null;
   let windV = null;
   let windNlon = 0;
@@ -4836,6 +4841,7 @@ export function createEarthGlobe(canvas, options = {}) {
   let windSha = "";
   let windBadSha = "";
   const _wLL = [0, 0];
+  const _wUV = [0, 0];
   const windQuat = new THREE.Quaternion();
   const windLit = new THREE.Vector3();
   const WIND_DAY_W = 90;
@@ -4985,7 +4991,7 @@ export function createEarthGlobe(canvas, options = {}) {
   // Water keeps speed as brightness, including just offshore.
   // Daytime land is lifted so the line shows on the bright ground.
   function windHereBright(u, v, lat, lon) {
-    const speed = Math.hypot(u, v);
+    const speed = Math.sqrt(u * u + v * v);
     const t = speed > 10 ? 1 : speed * 0.1;
     const sea = windFloor + 0.28 * t;
     if (!overLand(lat, lon)) return sea;
@@ -5105,7 +5111,8 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function disposeWind() {
     windOn = false;
-    windBuf = null;
+    windAll = null;
+    windFieldLevel = -1;
     windU = null;
     windV = null;
     windInfo = null;
@@ -5249,32 +5256,84 @@ export function createEarthGlobe(canvas, options = {}) {
     );
     const nlon = view.getUint16(4, true);
     const nlat = view.getUint16(6, true);
-    const nlev = view.getUint16(8, true);
     const plane = nlon * nlat;
-    if (magic !== "WND1") throw new Error("wind " + magic);
-    if (nlev < WIND_LEVELS || buf.byteLength < 16 + plane * 4 * WIND_LEVELS) {
-      throw new Error("wind short");
+    // WND1 holds every height. WND2 holds one height, each row stored as
+    // steps from the cell to its west.
+    let one = -1;
+    if (magic === "WND1") {
+      const nlev = view.getUint16(8, true);
+      if (nlev < WIND_LEVELS || buf.byteLength < 16 + plane * 4 * WIND_LEVELS) {
+        throw new Error("wind short");
+      }
+    } else if (magic === "WND2") {
+      one = view.getUint16(8, true);
+      if (one >= WIND_LEVELS || buf.byteLength < 16 + plane * 4) throw new Error("wind short");
+    } else {
+      throw new Error("wind " + magic);
     }
     windNlon = nlon;
     windNlat = nlat;
     windScale = view.getUint16(10, true) || 100;
     windCycle = view.getUint32(12, true);
-    windBuf = buf;
-    buildWindFields();
+    if (one < 0) {
+      windAll = buf;
+      buildWindFields();
+      return;
+    }
+    windAll = null;
+    const inv = 1 / windScale;
+    const u = new Int16Array(buf, 16, plane);
+    const v = new Int16Array(buf, 16 + plane * 2, plane);
+    windU = new Float32Array(plane);
+    windV = new Float32Array(plane);
+    for (let row = 0; row < plane; row += nlon) {
+      let su = 0;
+      let sv = 0;
+      for (let i = row, end = row + nlon; i < end; i++) {
+        su += u[i];
+        sv += v[i];
+        windU[i] = su * inv;
+        windV[i] = sv * inv;
+      }
+    }
+    windFieldLevel = one;
   }
 
   function buildWindFields() {
-    if (!windBuf) return;
+    if (!windAll) return;
     const lev = windLevel < 0 ? 0 : windLevel;
     const plane = windNlon * windNlat;
     const base = 16 + lev * plane * 4;
-    windU = Float32Array.from(new Int16Array(windBuf, base, plane));
-    windV = Float32Array.from(new Int16Array(windBuf, base + plane * 2, plane));
+    const inv = 1 / windScale;
+    const u = new Int16Array(windAll, base, plane);
+    const v = new Int16Array(windAll, base + plane * 2, plane);
+    windU = new Float32Array(plane);
+    windV = new Float32Array(plane);
+    for (let i = 0; i < plane; i++) {
+      windU[i] = u[i] * inv;
+      windV[i] = v[i] * inv;
+    }
+    windFieldLevel = lev;
+  }
+
+  function windHas(level) {
+    return windFieldLevel === level || !!windAll;
   }
 
   function windSample(lat, lon) {
-    const raw = sampleUV(windU, windV, lat, lon, windNlon, windNlat);
-    return [raw[0] / windScale, raw[1] / windScale];
+    return sampleUV(windU, windV, lat, lon, windNlon, windNlat, _wUV);
+  }
+
+  function readWindInfo(data) {
+    const cycle = String((data && data.cycle) || "");
+    const sha = String((data && data.sha) || "");
+    if (!/^\d{10}$/.test(cycle) || !/^[0-9a-f]{40}$/.test(sha)) return null;
+    return { cycle, sha, v: String((data && data.v) || "1") };
+  }
+
+  function windFileUrl(info, level) {
+    const file = info.v === "2" ? `wind-${level}.bin` : "wind.bin";
+    return `https://cdn.jsdelivr.net/gh/agamkram/superearth-app@${info.sha}/${file}`;
   }
 
   function pullWindReady() {
@@ -5288,9 +5347,8 @@ export function createEarthGlobe(canvas, options = {}) {
     fetch(readyUrl, { cache: "no-store", signal: ctrl.signal })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        const cycle = String((data && data.cycle) || "");
-        const sha = String((data && data.sha) || "");
-        if (/^\d{10}$/.test(cycle) && /^[0-9a-f]{40}$/.test(sha)) windInfo = { cycle, sha };
+        const info = readWindInfo(data);
+        if (info) windInfo = info;
       })
       .catch(() => {})
       .finally(() => {
@@ -5300,7 +5358,7 @@ export function createEarthGlobe(canvas, options = {}) {
   }
 
   function pullFreshWind() {
-    if (!windOn || !windInfo || windFileFlight || !windU) return;
+    if (!windOn || !windInfo || windFileFlight || !windU || !windHas(windLevel)) return;
     if (windInfo.sha === windBadSha) return;
     // Same hour or older: keep what is on screen. Only a newer hour replaces it.
     if (Number(windInfo.cycle) <= Number(windCycle)) {
@@ -5313,9 +5371,7 @@ export function createEarthGlobe(canvas, options = {}) {
     const token = ++windToken;
     const ctrl = new AbortController();
     windFileFlight = ctrl;
-    fetch(`https://cdn.jsdelivr.net/gh/agamkram/superearth-app@${info.sha}/wind.bin`, {
-      signal: ctrl.signal,
-    })
+    fetch(windFileUrl(info, windLevel), { signal: ctrl.signal })
       .then((res) => {
         if (!res.ok) throw new Error("wind " + res.status);
         return res.arrayBuffer();
@@ -5340,7 +5396,34 @@ export function createEarthGlobe(canvas, options = {}) {
       });
   }
 
+  function windFailed(token) {
+    if (token !== windToken) return;
+    disposeWind();
+    if (typeof onWind === "function") onWind();
+  }
+
+  // The height on screen keeps moving until the new one arrives.
+  function loadWindFile(info, level, token) {
+    return fetch(windFileUrl(info, level))
+      .then((res) => {
+        if (!res.ok) throw new Error("wind " + res.status);
+        return res.arrayBuffer();
+      })
+      .then((buf) => {
+        if (disposed || token !== windToken) return;
+        adoptWind(buf);
+        windSha = info.sha;
+        if (!windOn) return;
+        const had = !!windLines;
+        ensureWindLines();
+        if (had) resetWindField();
+        kick();
+        if (typeof onWind === "function") onWind();
+      });
+  }
+
   function loadBestWind(token) {
+    windReadyAt = performance.now() + 10 * 60 * 1000;
     const readyUrl =
       "https://raw.githubusercontent.com/agamkram/superearth-app/wind-data/ready.json?t=" +
       Math.floor(Date.now() / 60000);
@@ -5351,34 +5434,13 @@ export function createEarthGlobe(canvas, options = {}) {
       })
       .then((data) => {
         if (disposed || token !== windToken) return null;
-        const cycle = String((data && data.cycle) || "");
-        const sha = String((data && data.sha) || "");
-        if (!/^\d{10}$/.test(cycle) || !/^[0-9a-f]{40}$/.test(sha)) {
-          throw new Error("wind ready");
-        }
-        windInfo = { cycle, sha };
+        const info = readWindInfo(data);
+        if (!info) throw new Error("wind ready");
+        windInfo = info;
         windReadyAt = performance.now() + 10 * 60 * 1000;
-        return fetch(`https://cdn.jsdelivr.net/gh/agamkram/superearth-app@${sha}/wind.bin`).then(
-          (res) => {
-            if (!res.ok) throw new Error("wind " + res.status);
-            return res.arrayBuffer().then((buf) => ({ buf, sha }));
-          }
-        );
+        return loadWindFile(info, windLevel, token);
       })
-      .then((pack) => {
-        if (!pack || disposed || token !== windToken) return;
-        adoptWind(pack.buf);
-        windSha = pack.sha;
-        if (!windOn) return;
-        ensureWindLines();
-        kick();
-        if (typeof onWind === "function") onWind();
-      })
-      .catch(() => {
-        if (token !== windToken) return;
-        disposeWind();
-        if (typeof onWind === "function") onWind();
-      });
+      .catch(() => windFailed(token));
   }
 
   function updateWind(now) {
@@ -5416,7 +5478,7 @@ export function createEarthGlobe(canvas, options = {}) {
 
   function windHere() {
     if (!windOn) return null;
-    if (!windU) return { loading: true, level: windLevel };
+    if (!windU || windFieldLevel !== windLevel) return { loading: true, level: windLevel };
     const uv = windSample(observerLat, observerLon);
     const said = windFrom(uv[0], uv[1]);
     return {
@@ -5457,8 +5519,8 @@ export function createEarthGlobe(canvas, options = {}) {
     const changed = windLevel !== level;
     windLevel = level > WIND_LEVELS - 1 ? WIND_LEVELS - 1 : level;
     windOn = true;
-    if (windBuf) {
-      if (turningOn || changed || !windU) buildWindFields();
+    if (windHas(windLevel)) {
+      if (windFieldLevel !== windLevel || !windU) buildWindFields();
       ensureWindLines();
       if ((turningOn || changed) && windLines) resetWindField();
       kick();
@@ -5466,7 +5528,11 @@ export function createEarthGlobe(canvas, options = {}) {
       return;
     }
     const token = ++windToken;
-    loadBestWind(token);
+    if (windInfo && performance.now() < windReadyAt) {
+      loadWindFile(windInfo, windLevel, token).catch(() => windFailed(token));
+    } else {
+      loadBestWind(token);
+    }
     kick();
   }
 

@@ -31,7 +31,7 @@ export function stepWind(lat, lon, u, v, dt, timeScale, out) {
   }
   if (lat2 > 90) lat2 = 90;
   if (lat2 < -90) lat2 = -90;
-  lon2 = (((lon2 + 180) % 360) + 360) % 360 - 180;
+  if (lon2 < -180 || lon2 >= 180) lon2 = (((lon2 + 180) % 360) + 360) % 360 - 180;
   out[0] = lat2;
   out[1] = lon2;
   return out;
@@ -39,13 +39,16 @@ export function stepWind(lat, lon, u, v, dt, timeScale, out) {
 
 /**
  * Bilinear sample. Row 0 is 90°N, column 0 is lon 0, spacing 360/nlon and 180/(nlat-1).
- * u and v are flat row-major arrays.
+ * u and v are flat row-major arrays. Pass out to reuse one array per frame.
  */
-export function sampleUV(u, v, latDeg, lonDeg, nlon, nlat) {
+export function sampleUV(u, v, latDeg, lonDeg, nlon, nlat, out = [0, 0]) {
   const dlon = 360 / nlon;
   const dlat = 180 / (nlat - 1);
-  let lon = lonDeg % 360;
-  if (lon < 0) lon += 360;
+  let lon = lonDeg;
+  if (lon < 0 || lon >= 360) {
+    lon %= 360;
+    if (lon < 0) lon += 360;
+  }
   let x = lon / dlon;
   if (x >= nlon) x -= nlon;
   let y = (90 - latDeg) / dlat;
@@ -63,7 +66,9 @@ export function sampleUV(u, v, latDeg, lonDeg, nlon, nlat) {
   const i11 = y1 * nlon + x1;
   const uu = (u[i00] * (1 - tx) + u[i10] * tx) * (1 - ty) + (u[i01] * (1 - tx) + u[i11] * tx) * ty;
   const vv = (v[i00] * (1 - tx) + v[i10] * tx) * (1 - ty) + (v[i01] * (1 - tx) + v[i11] * tx) * ty;
-  return [uu, vv];
+  out[0] = uu;
+  out[1] = vv;
+  return out;
 }
 
 const FROM = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"];

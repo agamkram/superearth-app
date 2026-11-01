@@ -8,13 +8,14 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 CYCLE=$(cat "$SRC/CYCLE")
 RUN=$(cat "$SRC/RUN")
 FHOUR=$(cat "$SRC/FHOUR")
+FORMAT=$(cat "$SRC/FORMAT")
 WORK=$(mktemp -d)
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 cd "$WORK"
 git init -q
 git checkout -q --orphan wind-data-build
-cp "$SRC/wind.bin" .
+cp "$SRC"/wind-*.bin .
 if [ -n "${GITHUB_ACTIONS:-}" ]; then
   git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
   git config user.name "github-actions[bot]"
@@ -22,10 +23,10 @@ else
   git config user.email "$(git -C "$ROOT" config user.email)"
   git config user.name "$(git -C "$ROOT" config user.name)"
 fi
-git add wind.bin
+git add ./wind-*.bin
 git commit -q -m "Wind ${CYCLE}"
 SHA=$(git rev-parse HEAD)
-printf '{"cycle":"%s","sha":"%s","run":"%s","fhour":"%s"}\n' "$CYCLE" "$SHA" "$RUN" "$FHOUR" > ready.json
+printf '{"cycle":"%s","sha":"%s","run":"%s","fhour":"%s","v":"%s"}\n' "$CYCLE" "$SHA" "$RUN" "$FHOUR" "$FORMAT" > ready.json
 git add ready.json
 git commit -q -m "Wind ${CYCLE} ready"
 if [ -n "${GITHUB_ACTIONS:-}" ]; then
