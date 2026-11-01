@@ -7,12 +7,10 @@ Four fields, all on the public 0.25° grid:
   2  15,000 feet above the sea
   3  250 mb, about 34,000 feet, the jet stream
 
-The four heights are blurred by 6 before they are saved. The app draws
-that finished wind. The hour comes from the published cloud picture. The
-finished look at that hour is used when it is posted. Until then, the
-latest earlier run's forecast for that hour is used. A later better file
-for the same hour replaces it. The direction checks use the raw forecast,
-before the blur.
+The hour comes from the published cloud picture. The finished look at that
+hour is used when it is posted. Until then, the latest earlier run's
+forecast for that hour is used. A later better file for the same hour
+replaces it.
 
 With no arguments, writes wind.bin in the app folder.
 With a folder argument, writes wind.bin, CYCLE, RUN, and FHOUR there.
@@ -65,7 +63,6 @@ NLON = 1440
 NLAT = 721
 SCALE = 100
 NLEV = 4
-SOFT = 6
 
 # Decoded message -> (component, level).
 WANTED = {
@@ -99,23 +96,6 @@ FETCH = [
         ],
     ),
 ]
-
-
-def soften_wind(src, sigma=SOFT):
-    """Wrap east-west, clamp at the poles, width 6. Same blend as before."""
-    radius = max(1, int(round(sigma * 3)))
-    offsets = np.arange(-radius, radius + 1, dtype=np.float32)
-    weight = np.exp(-0.5 * (offsets / np.float32(sigma)) ** 2).astype(np.float32)
-    weight /= weight.sum()
-    wide = np.zeros_like(src, dtype=np.float32)
-    for shift, wk in zip(offsets.astype(np.int32), weight):
-        wide += np.roll(src, -int(shift), axis=1) * wk
-    nlat = src.shape[0]
-    out = np.zeros_like(wide)
-    rows = np.arange(nlat)
-    for shift, wk in zip(offsets.astype(np.int32), weight):
-        out += wide[np.clip(rows + int(shift), 0, nlat - 1)] * wk
-    return out
 
 
 def get(url, extra=None):
@@ -240,7 +220,6 @@ def main():
             str(have.get("cycle") or "") == cycle
             and str(have.get("run") or "") == run
             and str(have.get("fhour") or "") == str(fhour)
-            and str(have.get("soft") or "") == str(SOFT)
         ):
             (out_dir / "SKIP").write_text(cycle)
             print("already published", cycle)
@@ -296,25 +275,19 @@ def main():
     if (jet_u ** 2 + jet_v ** 2) ** 0.5 < 12:
         raise SystemExit("jet sample is too calm to be 34,000 feet")
 
-    for lev in range(NLEV):
-        for comp in ("u", "v"):
-            scaled = np.rint(planes[(comp, lev)] * SCALE).astype(np.float32)
-            planes[(comp, lev)] = soften_wind(scaled)
-
     header = struct.pack("<4sHHHH I", b"WND1", NLON, NLAT, NLEV, SCALE, int(cycle))
     dest = out_dir / "wind.bin" if out_dir is not None else Path(OUT)
     with open(dest, "wb") as f:
         f.write(header)
         for lev in range(NLEV):
             for comp in ("u", "v"):
-                scaled = np.rint(planes[(comp, lev)]).astype(np.int32)
+                scaled = np.rint(planes[(comp, lev)] * SCALE).astype(np.int32)
                 np.clip(scaled, -32767, 32767).astype("<i2").tofile(f)
     if out_dir is not None:
         (out_dir / "CYCLE").write_text(cycle)
         (out_dir / "RUN").write_text(run)
         (out_dir / "FHOUR").write_text(str(fhour))
-        (out_dir / "SOFT").write_text(str(SOFT))
-    print(f"wrote {dest} ({dest.stat().st_size} bytes) hour {cycle} from {run} f{fhour:03d} soft {SOFT}")
+    print(f"wrote {dest} ({dest.stat().st_size} bytes) hour {cycle} from {run} f{fhour:03d}")
 
 
 if __name__ == "__main__":
