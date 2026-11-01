@@ -182,7 +182,7 @@ function createStarfield() {
 }
 
 /** Cache-bust for textures and earth.js. Bump when those change. */
-export const BUILD = "e384";
+export const BUILD = "e385";
 const TEX_VER = BUILD;
 
 const NORMAL_URL = `earth-normal-4k.jpg?v=${TEX_VER}`;
@@ -2520,7 +2520,7 @@ export function createEarthGlobe(canvas, options = {}) {
         `#include <alphamap_fragment>
         float ndl = dot(normalize(vWorldN), normalize(uSunDir));
         float lit = uSunOn * smoothstep(-0.2, 0.35, ndl);
-        diffuseColor.a *= mix(0.22, 1.0, lit);`
+        diffuseColor.a *= mix(0.35, 0.80, lit);`
       );
     };
     return mat;
