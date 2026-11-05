@@ -25,16 +25,17 @@ const SOURCE_HEIGHT = SOURCE_WIDTH / 2;
 const cachedJpegDecoder = Jimp.decoders["image/jpeg"];
 Jimp.decoders["image/jpeg"] = (data) => cachedJpegDecoder(data, { maxMemoryUsageInMB: 1024 });
 
-// EUMETSAT cuts a request off at about 200 seconds, and a 4096 square takes
-// about that long to draw. Each half is fetched as four 2048 pieces on the
-// same pixel grid and joined.
-const PIECE = SOURCE_HEIGHT / 2;
+// EUMETSAT cuts a request off at about 200 seconds. A 2048 square often
+// does not finish, and the hour then fails. Each half is sixteen 1024
+// squares, 45 degrees on a side, on the same pixel grid.
+const PIECE = 1024;
+const SPAN = 45;
 
 function pieceUrl(name, latMin, lonMin) {
   return (
     "https://view.eumetsat.int/geoserver/ows?service=WMS&request=GetMap&version=1.3.0" +
     `&layers=mumi:${name}&styles=&format=image/png&crs=EPSG:4326` +
-    `&bbox=${latMin},${lonMin},${latMin + 90},${lonMin + 90}` +
+    `&bbox=${latMin},${lonMin},${latMin + SPAN},${lonMin + SPAN}` +
     `&width=${PIECE}&height=${PIECE}&time=${TIME}`
   );
 }
@@ -52,40 +53,47 @@ function limited(job) {
           if (waiting.length) waiting.shift()();
         });
     };
-    if (running < 6) start();
+    if (running < 4) start();
     else waiting.push(start);
   });
 }
 
 async function half(name, west) {
   const out = new Jimp(SOURCE_HEIGHT, SOURCE_HEIGHT);
-  const spots = [
-    [0, west, 0, 0],
-    [0, west + 90, PIECE, 0],
-    [-90, west, 0, PIECE],
-    [-90, west + 90, PIECE, PIECE],
-  ];
-  const pieces = await Promise.all(
-    spots.map(([lat, lon]) => limited(() => download(pieceUrl(name, lat, lon))).then((b) => Jimp.read(b)))
-  );
-  pieces.forEach((p, i) => {
-    if (p.bitmap.width !== PIECE || p.bitmap.height !== PIECE) throw new Error("piece size " + name);
-    out.blit(p, spots[i][2], spots[i][3]);
-  });
+  const jobs = [];
+  for (let row = 0; row < 4; row++) {
+    for (let col = 0; col < 4; col++) {
+      const latMin = 90 - (row + 1) * SPAN;
+      const lonMin = west + col * SPAN;
+      const x = col * PIECE;
+      const y = row * PIECE;
+      jobs.push(
+        limited(() => download(pieceUrl(name, latMin, lonMin)))
+          .then((b) => Jimp.read(b))
+          .then((img) => {
+            if (img.bitmap.width !== PIECE || img.bitmap.height !== PIECE) {
+              throw new Error("piece size " + name);
+            }
+            out.blit(img, x, y);
+          })
+      );
+    }
+  }
+  await Promise.all(jobs);
   return out;
 }
 
-function download(url, tries = 3) {
+function download(url, tries = 5) {
   return fetchOnce(url).catch((err) => {
     if (tries <= 1) throw err;
-    console.log("retrying after:", err.message);
+    console.log("retrying after:", err.message, (url.match(/bbox=[^&]+/) || [""])[0]);
     return download(url, tries - 1);
   });
 }
 
 function fetchOnce(url) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, { timeout: 600000 }, (res) => {
+    const req = https.get(url, { timeout: 120000 }, (res) => {
       const type = String(res.headers["content-type"] || "");
       if (res.statusCode !== 200 || !type.startsWith("image/png")) {
         res.resume();
@@ -94,7 +102,15 @@ function fetchOnce(url) {
       }
       const parts = [];
       res.on("data", (d) => parts.push(d));
-      res.on("end", () => resolve(Buffer.concat(parts)));
+      res.on("end", () => {
+        const buf = Buffer.concat(parts);
+        const expect = Number(res.headers["content-length"] || 0);
+        if ((expect && buf.length !== expect) || buf.length < 1000 || buf[0] !== 0x89) {
+          reject(new Error("bad cloud piece " + buf.length));
+          return;
+        }
+        resolve(buf);
+      });
       res.on("error", reject);
     });
     req.on("timeout", () => req.destroy(new Error("EUMETSAT timed out for " + url)));
